@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charmiss KOL Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- ดับเบิลคลิกไฟล์นี้เพื่อเปิดโปรแกรม (ไม่ต้องใช้ Node) · ไฟล์ทั้งหมดต้องอยู่ในโฟลเดอร์เดียวกันตามเดิม -->
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="sidenav" id="sidenav">
+    <div class="sn-top"><div class="brand" id="brand"></div>
+      <button type="button" class="icon-btn sn-collapse" id="navCollapse"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10.5 5 5.5 10l5 5M15 5l-5 5 5 5"/></svg></button></div>
+    <nav class="sn-nav" id="nav"></nav>
+    <div class="sn-bottom">
+      <div id="userCard"></div>
+      <button type="button" class="sn-item" id="themeBtn"><span class="ic"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 0 0 13z" class="fill"/></svg></span><span class="lb"></span></button>
+      <details class="menu sn-more" id="moreMenu"><summary class="sn-item" id="moreBtn"><span class="ic"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.2" class="fill"/><circle cx="10" cy="10" r="1.2" class="fill"/><circle cx="15.5" cy="10" r="1.2" class="fill"/></svg><span class="dot hidden" id="moreDot"></span></span><span class="lb"></span></summary>
+        <div class="menu-list up" id="moreList"></div></details>
+    </div>
+  </aside>
+  <div class="sn-overlay hidden" id="navOverlay"></div>
+  <div class="app-main">
+    <header class="topbar"><button type="button" class="icon-btn" id="navOpen"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg></button><b id="topTitle"></b></header>
+    <div class="viewas hidden" id="viewAs" role="status"></div>
+    <div class="banners" id="banners" role="status"></div>
+    <main>
+      <section id="tab-overview" class="hidden"></section>
+      <section id="tab-deals" class="hidden"></section>
+      <section id="tab-payments" class="hidden"></section>
+      <section id="tab-kol" class="hidden"></section>
+      <section id="tab-campaign" class="hidden"></section>
+      <section id="tab-settings" class="hidden"></section>
+      <section id="tab-roles" class="hidden"></section>
+    </main>
+  </div>
+</div>
+<div class="drawer-wrap hidden" id="drawer"><div class="drawer-overlay" data-dr-close></div><aside class="drawer" role="dialog" aria-modal="true" id="drawer_content"></aside></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<dialog id="dlg"></dialog>
+<script src="data/seed.js"></script>
+<script src="src/content.js"></script>
+<script src="src/icons.js"></script>
+<script src="src/rules.js"></script>
+<script src="src/rules-phase.js"></script>
+<script src="src/rules-deal.js"></script>
+<script src="src/rules-products.js"></script>
+<script src="src/rules-perf.js"></script>
+<script src="src/rules-overview.js"></script>
+<script src="src/rules-io.js"></script>
+<script src="src/rules-roles.js"></script>
+<script src="src/rules-kol.js"></script>
+<script src="src/rules-journey.js"></script>
+<script src="src/rules-pay.js"></script>
+<script src="src/rules-dash.js"></script>
+<script src="src/store.js"></script>
+<script src="src/vault.js"></script>
+<script src="src/xlsx.js"></script>
+<script src="src/export.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/screen-payee.js"></script>
+<script src="src/screen-overview.js"></script>
+<script src="src/screen-deals.js"></script>
+<script src="src/screen-payments.js"></script>
+<script src="src/screen-kol.js"></script>
+<script src="src/screen-campaign.js"></script>
+<script src="src/screen-settings.js"></script>
+<script src="src/screen-roles.js"></script>
+<script src="src/screen-planner.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KOL Tracker · Tests</title>
+<!-- ดับเบิลคลิกไฟล์นี้เพื่อรัน test ทั้งหมดในเบราว์เซอร์ (ไม่ต้องใช้ Node) -->
+<link rel="stylesheet" href="../src/styles.css">
+<style>
+  .t-sum{font-size:18px;font-weight:700;margin:0 0 12px}
+  .t-sum.ok{color:var(--ok)} .t-sum.bad{color:var(--err)}
+  .t-group{margin:16px 0 6px;font-weight:700}
+  .t-row{display:flex;gap:8px;font-size:13px;padding:3px 0}
+  .t-row.ok{color:var(--ok)} .t-row.bad{color:var(--err)}
+  .t-err{white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace;background:var(--err-soft);color:var(--err);border-radius:8px;padding:8px;margin:2px 0 8px 22px}
+</style>
+</head>
+<body>
+<main>
+  <div class="card"><p class="t-sum" id="sum">กำลังรัน…</p><div id="out"></div></div>
+</main>
+<script src="../data/seed.js"></script>
+<script src="../src/content.js"></script>
+<script src="../src/icons.js"></script>
+<script src="../src/rules.js"></script>
+<script src="../src/rules-phase.js"></script>
+<script src="../src/rules-deal.js"></script>
+<script src="../src/rules-products.js"></script>
+<script src="../src/rules-perf.js"></script>
+<script src="../src/rules-overview.js"></script>
+<script src="../src/rules-io.js"></script>
+<script src="../src/rules-roles.js"></script>
+<script src="../src/rules-kol.js"></script>
+<script src="../src/rules-journey.js"></script>
+<script src="../src/rules-pay.js"></script>
+<script src="../src/rules-dash.js"></script>
+<script src="../src/store.js"></script>
+<script src="../src/vault.js"></script>
+<script src="../src/xlsx.js"></script>
+<script src="../src/export.js"></script>
+<script src="rules.spec.js"></script>
+<script src="cr02.spec.js"></script>
+<script src="cr03.spec.js"></script>
+<script src="cr04.spec.js"></script>
+<script src="cr05.spec.js"></script>
+<script src="cr06.spec.js"></script>
+<script src="cr07.spec.js"></script>
+<script src="cr08.spec.js"></script>
+<script src="cr09.spec.js"></script>
+<script>
+/* tiny browser runner with the parts of node:test / node:assert the spec uses */
+(async function () {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const show = v => { try { return JSON.stringify(v); } catch (e) { return String(v); } };
+  function deepEq(a, b) {
+    if (Object.is(a, b)) return true;
+    if (typeof a !== 'object' || typeof b !== 'object' || !a || !b || Array.isArray(a) !== Array.isArray(b)) return false;
+    const ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && deepEq(a[k], b[k]));
+  }
+  const fail = (msg, a, b) => { throw new Error((msg ? msg + '\n' : '') + 'actual:   ' + show(a) + '\nexpected: ' + show(b)); };
+  const assert = {
+    equal: (a, b, m) => { if (!Object.is(a, b)) fail(m, a, b); },
+    notEqual: (a, b, m) => { if (Object.is(a, b)) fail((m || '') + ' (should differ)', a, b); },
+    deepEqual: (a, b, m) => { if (!deepEq(a, b)) fail(m, a, b); },
+    ok: (v, m) => { if (!v) throw new Error(m || 'expected a truthy value'); },
+  };
+  const groups = [];
+  let cur = null;
+  const describe = (name, fn) => { cur = { name, tests: [] }; groups.push(cur); fn(); cur = null; };
+  const test = (name, fn) => cur.tests.push({ name, fn });   // the spec always calls test() inside describe()
+  (window.KT_SPECS || []).forEach(spec => spec({ describe, test, assert, R: KT.rules, S: KT.store, C: KT.content, SEED: window.KT_SEED, V: KT.vault, X: KT.xlsx, E: KT.export }));
+
+  let pass = 0, failN = 0, html = '';
+  for (const g of groups) {
+    html += `<div class="t-group">${esc(g.name)}</div>`;
+    for (const t of g.tests) {
+      try { await t.fn(); pass++; html += `<div class="t-row ok">✔ <span>${esc(t.name)}</span></div>`; }
+      catch (e) { failN++; html += `<div class="t-row bad">✖ <span>${esc(t.name)}</span></div><div class="t-err">${esc(e && e.message || e)}</div>`; }
+    }
+  }
+  document.getElementById('out').innerHTML = html;
+  const sum = document.getElementById('sum');
+  sum.textContent = failN ? `ไม่ผ่าน ${failN} จาก ${pass + failN} ข้อ` : `ผ่านทั้งหมด ${pass} ข้อ`;
+  sum.className = 't-sum ' + (failN ? 'bad' : 'ok');
+  document.title = (failN ? '✖ ' : '✔ ') + document.title;
+})();
+</script>
+</body>
+</html>
