@@ -304,22 +304,24 @@
       const { s, run, ready } = setUp(3), ctx = ctxFor(s); R.addToRun(s, run, ready, ctx);
       const sheets = R.prSheets(s, run, null), t = R.runTotals(R.runLines(s, run.run_id));
       assert.equal(R.prFileName(run.pay_date), 'PR_09_10_26.xlsx');
+      assert.equal(R.prFileName(run.pay_date, run.run_id), `PR_09_10_26_${run.run_id}.xlsx`, 'CR-09 §4.15.1: the file names its run');
       assert.deepEqual(sheets.map(x => x.name.replace(/ \d{6}$/, '')).slice(-1), ['Summary']);
       assert.ok(sheets.slice(0, -1).every(x => /^ยอด/.test(x.name) && x.name.endsWith('091026')));
-      const rows = sheets.slice(0, -1).flatMap(x => x.rows.slice(1, -1));
+      /* CR-09 §4.15.1: row 1 = the run line · row 2 = the header · lines from row 3 */
+      const rows = sheets.slice(0, -1).flatMap(x => x.rows.slice(2, -1));
       assert.equal(rows.length, 3);
       rows.forEach(r => [4, 5, 6, 7, 9, 10].forEach(c => assert.equal(r[c], '')));
       assert.equal(R.round2(rows.reduce((a, r) => a + r[11].v, 0)), t.gross);
       assert.equal(R.round2(rows.reduce((a, r) => a + r[15].v, 0)), t.net);
       const last = sheets[0].rows[sheets[0].rows.length - 1];
-      assert.deepEqual([last[11].v, last[15].v], [`SUM(L2:L${sheets[0].rows.length - 1})`, `SUM(P2:P${sheets[0].rows.length - 1})`]);
+      assert.deepEqual([last[11].v, last[15].v], [`SUM(L3:L${sheets[0].rows.length - 1})`, `SUM(P3:P${sheets[0].rows.length - 1})`]);
       assert.ok(sheets[sheets.length - 1].rows.some(r => r[0] && r[0].v === C.pay.prSummary.noPayee));
       assert.deepEqual(C.pay.prCols.length, 21);
     });
     test('TC-18: unlocked — the six columns come from the decrypted details · Link = docs folder + post links', () => {
       const { s, run, ready } = setUp(1), ctx = ctxFor(s); R.addToRun(s, run, ready, ctx);
       const p = R.payeeOfKol(s, ready[0].kol_id), rec = { full_name: 'Test Person', id_address: 'Test address', phone: '0800000000', wht_contact: 'test@example.com', bank_name: 'KBank', account_no: '000-0-00001' };
-      const row = R.prSheets(s, run, new Map([[p.payee_id, rec]]))[0].rows[1];
+      const row = R.prSheets(s, run, new Map([[p.payee_id, rec]]))[0].rows[2];   // CR-09: the run line is row 1
       assert.deepEqual([4, 5, 6, 7, 9, 10].map(c => row[c]), ['Test Person', 'Test address', '0800000000', 'test@example.com', 'KBank', '000-0-00001']);
       assert.ok(row[16].startsWith('https://drive.google.com/drive/folders/test\n') && row[16].includes('tiktok'));
       assert.deepEqual([row[3], row[8].v, row[18].v, row[19], row[20]], ['KOL', false, false, p.payee_id, R.runLines(s, run.run_id)[0].line_id]);
@@ -449,7 +451,7 @@
       const it = R.payItem(s, TD, { line: l });
       assert.deepEqual([it.status, it.pic], ['ready', 'Amp'], 'the person who added it is its PIC');
       const run = R.newRun(s, { pay_date: '2026-10-09', user: 'U000' }); s.payment_runs.push(run); R.addToRun(s, run, [it], ctx);
-      assert.equal(R.prSheets(s, run, null)[0].rows[1][3], 'AFF');
+      assert.equal(R.prSheets(s, run, null)[0].rows[2][3], 'AFF');
       const after = R.dealTiles(s, s.deals, s.phases.map(x => x.phase_id), TD);
       assert.deepEqual([after.committed, after.unpaid, after.paid], [before.committed, before.unpaid, before.paid]);
       assert.deepEqual([before.committed, before.unpaid], [1783579, 130]);
@@ -460,7 +462,7 @@
       assert.equal(R.payItem(s, TD, { line: l }).status, 'ready', 'no payee documents when a staff member is paid back');
       const run = R.newRun(s, { pay_date: '2026-10-09', user: 'U000' }); s.payment_runs.push(run);
       R.addToRun(s, run, [R.payItem(s, TD, { line: l })], ctx);
-      assert.ok(R.prSheets(s, run, null)[0].rows[1][16].split('\n').includes('Reimburse: Dream'));
+      assert.ok(R.prSheets(s, run, null)[0].rows[2][16].split('\n').includes('Reimburse: Dream'));
       R.submitRun(s, run, TD, ctx); R.markPaid(s, run, null, '2026-10-09', ctx);
       const d = s.deals.find(y => y.deal_id === x.deal_id);
       assert.ok(d.paid_full || d.paid_50);

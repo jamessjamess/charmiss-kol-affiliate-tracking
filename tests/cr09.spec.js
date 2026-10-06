@@ -178,17 +178,147 @@
       const v8 = JSON.parse(JSON.stringify(fresh()));
       v8.schema_version = 8; v8.users = v8.users.filter(u => u.display_name !== 'Earn'); delete v8.campaign_events;
       const m = S.migrate(JSON.parse(JSON.stringify(v8)));
-      assert.deepEqual([m.schema_version, m.campaign_events, m.users.filter(u => u.display_name === 'Earn').map(u => [u.user_id, u.role, u.is_pic, u.active])], [9, [], [['U008', 'accounting', false, true]]]);
+      assert.deepEqual([m.schema_version >= 9, m.campaign_events, m.users.filter(u => u.display_name === 'Earn').map(u => [u.user_id, u.role, u.is_pic, u.active])], [true, [], [['U008', 'accounting', false, true]]]);
       const store = memStorage(), now = () => new Date('2026-10-06T03:00:00Z'), st = S.createStore({ seed: SEED, storage: store, now });
       const backup = Object.assign({}, v8, { campaign_events: [] });   // a real v8 Backup has the list (since v5)
       const r = st.restore(JSON.stringify(backup), 'kol_tracker_backup_v8.json');
-      assert.deepEqual([r.ok, r.migratedFrom, st.state.schema_version], [true, 8, 9]);
+      assert.deepEqual([r.ok, r.migratedFrom, st.state.schema_version], [true, 8, S.SCHEMA_VERSION]);
       st.state.users = st.state.users.filter(u => u.display_name !== 'Earn'); st.save();
       const again = S.createStore({ seed: SEED, storage: store, now });
       assert.equal(again.state.users.some(u => u.display_name === 'Earn'), false, 'not added back');
       const s = fresh(), t = R.dealTiles(s, s.deals, s.phases.map(p => p.phase_id), TD);
       assert.deepEqual([t.committed, t.unpaid, t.paid], [1783579, 130, 774579]);
       assert.deepEqual([R.payQueue(s, TD).items.filter(x => x.status !== 'not_due').length, R.round2(R.payQueue(s, TD).items.filter(x => x.status !== 'not_due').reduce((a, x) => a + x.tax.gross, 0))], [125, 826950]);
+    });
+  });
+
+  describe('CR-09 R4 · Deals: one set of stage names · Pipeline stages · stage money', () => {
+    const stages = (s, deals) => R.groupDeals(s, deals, 'stage', R.dealContext(s), TD).map(g => { const m = R.stageMoney(s, g.rows); return [g.key, m.n, m.amount, m.kind]; });
+    test('TC-21: Perfect Heart — Contacted 3 · ฿8,300 pending · Brief 9 · ฿37,600 · Approve Draft 1 5 · ฿22,900 · Post 70 · ฿511,179 · Cancelled 3 · ฿11,000 · 90 (Open 17)', () => {
+      const s = fresh(), ph = s.deals.filter(d => d.campaign_id === 'PH');
+      assert.deepEqual(stages(s, ph), [['Contacted', 3, 8300, 'pending'], ['Brief', 9, 37600, 'committed'], ['Approve Draft 1', 5, 22900, 'committed'], ['Post', 70, 511179, 'committed'], ['Cancelled', 3, 11000, 'cancelled']]);
+      assert.equal(ph.length, 90);
+      assert.equal(ph.filter(R.isOpenDeal).length, 17);
+      /* the Pipeline puts a deal in the column of the same name — so its counts are the Table's */
+      const col = name => ph.filter(d => R.stageKey(s.lookups, d) === name).length;
+      assert.deepEqual(R.stageOrder(s.lookups).map(x => [x.key, col(x.key)]), [['Shortlist', 0], ['Contacted', 3], ['Confirm QT', 0], ['Brief', 9], ['Approve Script', 0], ['Approve Draft 1', 5], ['Approve Draft 2', 0], ['Approve Draft 3', 0], ['Post', 70], ['Cancelled', 3]]);
+      assert.ok(!/Draft 1 of 1/.test(R.stageLabel(s.lookups, ph.find(d => d.sub_status === 'Approve Draft 1'))));
+      assert.equal(C.stage.ofPlan(1, 2), '(1 of 2)');
+    });
+    test('TC-22: kxplai Contacted → Confirm QT — Confirm QT 1 · Contacted 2 · Committed +฿2,500 · Pending −฿2,500', () => {
+      const s = fresh(), d = s.deals.find(x => x.campaign_id === 'PH' && x.sub_status === 'Contacted' && (R.kolById(s, x.kol_id) || {}).display_name === 'kxplai');
+      assert.ok(d, 'kxplai is Contacted in Perfect Heart');
+      const tile = () => { const ph = s.deals.filter(x => x.campaign_id === 'PH'); const t = R.dealTiles(s, ph, s.phases.filter(p => p.campaign_id === 'PH').map(p => p.phase_id), TD); return [t.committed, t.shortlist]; };
+      const before = tile();
+      const r = R.applyMove(s, d, 'Confirm QT', { date: TD, note: '' }, { logId: 9999, quoteId: 'Q-T', eventId: 9999, now: new Date('2026-10-06T03:00:00Z'), user: 'U000' });
+      s.deals[s.deals.indexOf(d)] = r.deal; s.deal_status_log.push(r.log);
+      const after = tile();
+      assert.deepEqual([after[0] - before[0], after[1] - before[1]], [2500, -2500]);
+      const g = stages(s, s.deals.filter(x => x.campaign_id === 'PH'));
+      assert.deepEqual(g.slice(0, 2).map(x => [x[0], x[1]]), [['Contacted', 2], ['Confirm QT', 1]]);
+    });
+  });
+
+  describe('CR-09 R5 · Deal drawer 50% · Days in stage', () => {
+    test('TC-27 / TC-28 / TC-38: Deal drawer 1440 → 720 · 1920 → 960 · its own saved width (560 … content − 320) · KOL drawer 60%: 1440 → 864 · 1920 → 1152', () => {
+      /* CR-10 §4.13 supersedes the Deal drawer's 50%: every detail drawer is 60% */
+      assert.deepEqual([R.dealDrawerWidth(1440, 232), R.dealDrawerWidth(1920, 232), R.dealDrawerWidth(1440, 64, 900), R.dealDrawerWidth(1440, 232, 900)], [864, 1152, 900, 900]);
+      assert.deepEqual([R.kolDrawerWidth(1440, 232), R.kolDrawerWidth(1920, 232), R.kolDrawerWidth(2560, 232), R.kolDrawerWidth(1024, 64)], [864, 1152, 1200, 960]);
+      assert.equal(R.kolDrawerWidth(1280, 232), 768, '1280 with the menu open → 768 (the window keeps 512px)');
+    });
+    test('TC-29: Days in stage = today − the date the deal came to its stage (its log, else the step date on the deal) · none = null', () => {
+      const s = fresh(), d = s.deals.find(x => x.campaign_id === 'PH' && x.sub_status === 'Brief');
+      assert.equal(R.stageSince(s, d), null, 'the seed has no date for it');
+      assert.equal(R.stageSince(s, Object.assign({}, d, { brief_date: '2026-09-20' })), '2026-09-20');
+      s.deal_status_log.push({ log_id: 99999, deal_id: d.deal_id, sub_status: 'Brief', effective_date: '2026-09-25' });
+      assert.equal(R.stageSince(s, d), '2026-09-25');
+      assert.equal(R.dayDiff(TD, R.stageSince(s, d)), 11);
+    });
+  });
+
+  describe('CR-09 R6 · To pay grouped by Amount', () => {
+    test('TC-33: PIC Amp by Amount — 18 lines · ฿85,000 / WHT ฿2,535 / Net ฿82,465 · Under ฿1,000 = 1 · ฿500 · ฿1,000 – ฿9,999 = 16 · ฿54,500 · ฿10,000 and above = 1 · ฿30,000', () => {
+      const s = fresh(), S = R.paySettings(s.lookups), amp = R.payQueue(s, TD).items.filter(x => x.pic === 'Amp' && ['ready', 'missing_docs', 'in_run', 'submitted'].includes(x.status));
+      const sum = (rows, k) => R.round2(rows.reduce((a, x) => a + x.tax[k], 0));
+      assert.deepEqual([amp.length, sum(amp, 'gross'), sum(amp, 'wht'), sum(amp, 'net')], [18, 85000, 2535, 82465]);
+      assert.deepEqual(R.amountLabels(S), ['Under ฿1,000', '฿1,000 – ฿9,999', '฿10,000 and above']);
+      assert.deepEqual([0, 1, 2].map(b => { const g = amp.filter(x => x.band === b); return [g.length, sum(g, 'gross')]; }), [[1, 500], [16, 54500], [1, 30000]]);
+      assert.deepEqual(C.pay.amountNote, ['No WHT', '', 'Separate approval']);
+      assert.ok(!/Band/.test(JSON.stringify(C.pay.groupBy)), 'no "Band" any more');
+    });
+  });
+
+  describe('CR-09 R7 · Payments tabs · Payment runs · Accounting · role Accounting', () => {
+    const ctxFor = s => { let e = 0; return { lineId: () => 'PL-' + String((s.payment_lines.length + 1)).padStart(6, '0'), eventId: () => 9000 + e++, now: '2026-10-06T03:00:00Z', user: 'U000' }; };
+    const payeeFor = (s, kolId) => { const p = R.blankPayee(s, { payee_id: 'PY-' + kolId, kol_id: kolId });
+      Object.assign(p, { secure: { key_id: 'k', wrapped_key: 'w', iv: 'i', ciphertext: 'c' }, bank_name: 'KBank', account_last4: '7890', details_version: 1, docs: { id_copy: TD, bank_book: TD, company_cert: null, vat_cert: null } }); s.payee_profiles.push(p); return p; };
+    /* three To pay rows made Ready with test payees → Create payment run (next Friday · prepared by Dream) */
+    const created = () => {
+      const s = fresh(), ctx = ctxFor(s), pick = R.payQueue(s, TD).items.filter(x => x.status === 'missing_docs' && !x.missing.includes('post_evidence')).slice(0, 3);
+      pick.forEach(x => { if (!R.payeeOfKol(s, x.kol_id)) payeeFor(s, x.kol_id); });
+      const q = R.payQueue(s, TD).items, items = pick.map(x => q.find(y => y.key === x.key));
+      const run = R.newRun(s, { pay_date: R.nextRunDate(TD, R.paySettings(s.lookups).run_weekday), preparedBy: 'U003', user: 'U001', now: ctx.now }); s.payment_runs.push(run);
+      R.addToRun(s, run, items, ctx);
+      return { s, ctx, run, items };
+    };
+    const earnOf = s => s.users.find(u => u.display_name === 'Earn');
+    test('TC-39: tabs To pay · Payment runs · Accounting — no History · an ⓘ line for each', () => {
+      assert.deepEqual(Object.entries(C.pay.tabs), [['topay', 'To pay'], ['runs', 'Payment runs'], ['accounting', 'Accounting']]);
+      assert.ok(Object.keys(C.pay.tabs).every(k => C.pay.tabTip[k]));
+      assert.equal(C.pay.csvTip, 'To send to Accounting, create a payment run');
+    });
+    test('TC-40: 3 rows → Create payment run — PR-2026-10-09 · Draft · prepared by the person picked · 3 lines In run', () => {
+      const { s, run } = created();
+      assert.deepEqual([run.run_id, run.pay_date, run.status, run.prepared_by, R.runStatusLabel(run)], ['PR-2026-10-09', '2026-10-09', 'draft', 'U003', 'Draft']);
+      assert.deepEqual(R.runLines(s, run.run_id).map(l => l.status), ['in_run', 'in_run', 'in_run']);
+    });
+    test('TC-41: Export PR — every sheet starts with "รอบจ่าย: PR-2026-10-09 · วันจ่าย 09/10/2026" · header row 2 · sums from row 3 · the file name has the run id', () => {
+      const { s, run } = created(), sheets = R.prSheets(s, run, null);
+      sheets.forEach(sh => assert.equal(sh.rows[0][0].v, 'รอบจ่าย: PR-2026-10-09 · วันจ่าย 09/10/2026', sh.name));
+      sheets.slice(0, -1).forEach(sh => { assert.equal(sh.rows[1][0].v, C.pay.prCols[0]); assert.equal(sh.freeze, 2); assert.ok(/^SUM\(L3:/.test(sh.rows[sh.rows.length - 1][11].v), sh.name); });
+      assert.equal(R.prFileName(run.pay_date, run.run_id), 'PR_09_10_26_PR-2026-10-09.xlsx');
+    });
+    test('TC-42 / TC-51: Submit to Accounting → "With Accounting" for the run and its lines · Earn (Accounting) may Mark paid / Return to team · no Settings / Role Management · not a PIC', () => {
+      const { s, ctx, run } = created();
+      assert.ok(R.submitRun(s, run, TD, ctx));
+      assert.deepEqual([R.runStatusKey(run), R.runStatusLabel(run), C.pay.status.submitted], ['with_accounting', 'With Accounting', 'With Accounting']);
+      R.runLines(s, run.run_id).forEach(l => assert.equal(C.pay.status[R.payItem(s, TD, { line: l }).status], 'With Accounting'));
+      const earn = earnOf(s);
+      assert.deepEqual([earn.user_id, earn.role, earn.is_pic], ['U008', 'accounting', false]);
+      assert.deepEqual(['payment.paid', 'roles', 'settings.lists', 'settings.payments', 'payment.run'].map(a => R.can(earn, a)), [true, false, false, false, false]);
+      assert.equal(R.opsPic(s, earn, ''), '__all', 'Operations starts on All PICs');
+    });
+    test('TC-43: Return to team (a reason) → Draft marked Returned · lines back In run · reason / who / when kept · Submit again clears them', () => {
+      const { s, ctx, run } = created(); R.submitRun(s, run, TD, ctx);
+      const evs = R.returnRun(s, run, '  Bank name wrong on line 2 ', Object.assign({}, ctx, { user: 'U008' }));
+      assert.equal(evs.length, 3);
+      assert.deepEqual([run.status, R.runStatusKey(run), R.runStatusLabel(run), run.returned_reason, run.returned_by, run.returned_at], ['draft', 'returned', 'Returned', 'Bank name wrong on line 2', 'U008', ctx.now]);
+      assert.ok(R.runLines(s, run.run_id).every(l => l.status === 'in_run'));
+      assert.equal(C.pay.returnedBanner('Earn', '10/10/2026', 'Bank name wrong on line 2'), 'Returned by Earn on 10/10/2026 — Bank name wrong on line 2');
+      R.submitRun(s, run, TD, ctx);
+      assert.deepEqual([run.status, run.returned_reason, run.returned_at, run.returned_by, R.runStatusKey(run)], ['submitted', null, null, null, 'with_accounting']);
+    });
+    test('TC-44 / TC-52: KOL Manager sees Accounting read only (no Mark paid / Close run) · Earn marks every line paid → the run is Paid, the deals synced', () => {
+      const { s, ctx, run, items } = created(); R.submitRun(s, run, TD, ctx);
+      const km = { user_id: 'UKM', role: 'kol_manager', active: true };   // the seed has no KOL Manager
+      assert.deepEqual([R.can(km, 'view'), R.can(km, 'payment.paid'), R.can(km, 'payment.run')], [true, false, true]);
+      R.markPaid(s, run, null, '2026-10-09', ctx);
+      assert.deepEqual([run.status, R.runStatusLabel(run)], ['paid', 'Paid']);
+      items.forEach(x => { const d = s.deals.find(y => y.deal_id === x.deal_id); assert.ok(d.paid_full || d.paid_50, x.deal_id); });
+    });
+    test('TC-46: Role Management — Accounting in the roles · a column in the matrix (CR-09 §4.16) · label "Accounting"', () => {
+      assert.deepEqual(R.ROLES, ['admin', 'kol_manager', 'staff', 'viewer', 'accounting']);
+      assert.ok(R.PERMISSIONS.every(p => typeof p.accounting === 'boolean'), 'every row says yes / no for Accounting');
+      const want = { view: [1, 1, 1, 1, 1], 'deal.edit': [1, 1, 1, 0, 0], 'kol.edit': [1, 1, 1, 0, 0], 'campaign.edit': [1, 1, 0, 0, 0], 'campaign.products': [1, 1, 1, 0, 0],
+        'payment.request': [1, 1, 1, 0, 0], 'payment.run': [1, 1, 0, 0, 0], 'payee.edit': [1, 1, 1, 0, 1], 'payee.unlock': [1, 1, 0, 0, 1], 'payee.verify': [1, 1, 0, 0, 1],
+        'payment.paid': [1, 0, 0, 0, 1], 'payment.reopen': [1, 0, 0, 0, 0], roles: [1, 0, 0, 0, 0] };
+      Object.entries(want).forEach(([a, row]) => assert.deepEqual(R.ROLES.map(r => (R.can({ role: r, active: true }, a) ? 1 : 0)), row, a));
+      assert.equal(C.roles.role.accounting, 'Accounting');
+    });
+    test('TC-53 / TC-54: Earn edits only the Payee section (Unlock · Replace bank details · Mark as verified) · no deal / KOL edits · Export allowed', () => {
+      const s = fresh(), earn = earnOf(s), k = s.kol_master[0];
+      assert.equal(R.canEditPayee(s, earn, null, k), true);
+      assert.deepEqual(['payee.unlock', 'payee.verify', 'kol.edit', 'deal.edit', 'export'].map(a => R.can(earn, a)), [true, true, false, false, true]);
     });
   });
 });

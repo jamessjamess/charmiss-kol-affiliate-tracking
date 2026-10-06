@@ -83,6 +83,7 @@
     KT.vault.lock();   // CR-08 §4.4: the next person unlocks for themselves
     KT.ui.roleOverride.set(null);   // a View as role belongs to the admin who chose it
     KT.ui.commit(RK.switched(u.display_name));
+    if (u.role === 'accounting') { KT.ui.go('payments', { tab: 'accounting' }); return; }   // CR-09 §4.16: the accounts team starts on Accounting
     showTab(current, parseHash().id);
   });
 
@@ -188,6 +189,7 @@
   applyTheme(pref.get('theme', 'light'));
   renderBanners();
   const h = parseHash();
+  if (!h.tab && (KT.ui.me() || {}).role === 'accounting') { history.replaceState(null, '', '#payments/accounting'); Object.assign(h, { tab: 'payments', id: 'accounting' }); }
   if (!h.tab) history.replaceState(null, '', '#' + C.tabs[0].route);
   showTab(h.tab, h.id);
   if (store.status.source === 'seed' && !store.status.corrupt) toast(C.banner.firstLoad);

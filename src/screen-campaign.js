@@ -9,7 +9,19 @@ KT.screens.campaign = (function () {
   const { C, R, $, esc, today, store, state, commit, toast, checksHTML, kv, field, range, dm, stChip, phaseChip, info, ICON, dateHTML, confirmDialog, openDialog, closeDialog, openDrawer, fillDrawer, setHash, go, can, guard, userId, optionsHTML, activeList } = U;
   const K = C.campaign;
   const cp = { mode: 'none', kind: null, id: null, draft: null, touched: new Set(), dirty: false, collapsed: new Set(),
-    year: null, status: '', q: '', view: U.pref.get('cpview', 'table') === 'timeline' ? 'timeline' : 'table', zoom: 'month', includeCancelled: false, sortDays: null, prodEdit: null };
+    year: null, status: '', q: '', view: U.pref.get('cpview', 'table') === 'timeline' ? 'timeline' : 'table', zoom: 'month', includeCancelled: false, sortDays: null, prodEdit: null,
+    camps: null, campsUser: null, campQ: '' };   // CR-10 §4.9: the Campaigns picked (empty = All campaigns), kept for each person
+  /* CR-10 §4.9 — the Campaign filter, remembered per person */
+  function camps() {
+    const uid = U.userId() || '';
+    if (cp.campsUser !== uid) { cp.campsUser = uid; let v = []; try { v = JSON.parse(U.pref.get('cpcamps_' + uid, '[]')); } catch (e) { v = []; } cp.camps = new Set(Array.isArray(v) ? v : []); }
+    [...cp.camps].forEach(id => { if (!campById(id)) cp.camps.delete(id); });
+    return cp.camps;
+  }
+  function setCamps(ids) {
+    const was = camps().size; cp.camps = new Set(ids); U.pref.set('cpcamps_' + (U.userId() || ''), JSON.stringify([...cp.camps]));
+    if (!was && cp.camps.size) cp.zoom = 'fit'; else if (was && !cp.camps.size && cp.zoom === 'fit') cp.zoom = 'month';   // picking Campaigns zooms to Fit
+  }
   const editing = () => cp.mode === 'edit';
   const campById = id => state().campaigns.find(c => c.campaign_id === id);
   const phaseById = id => state().phases.find(p => p.phase_id === id);
@@ -36,12 +48,14 @@ KT.screens.campaign = (function () {
       <div class="stabs dtabs" id="cp_view" role="tablist"><button type="button" role="tab" data-view="table">${esc(K.viewTable)}</button><button type="button" role="tab" data-view="timeline">${esc(K.viewTimeline)}</button></div>
       <div class="toolbar">
         <select id="cp_year" aria-label="${esc(K.year)}"></select>
+        <details class="menu cp-cmenu" id="cp_cmenu"><summary class="btn"><span id="cp_csum"></span> ▾</summary><div class="popover cp-cpop" id="cp_cpop"></div></details>
         <input type="search" class="search" id="cp_q" placeholder="${esc(K.search)}" autocomplete="off">
         <label class="tick small"><input type="checkbox" id="cp_inclCancel"> ${esc(K.includeCancelled)}</label>
         <span class="spacer"></span>
-        <div class="seg hidden" id="cp_zoom" role="group" aria-label="${esc(K.zoom)}"><button type="button" data-zoom="month">${esc(K.zoomMonth)}</button><button type="button" data-zoom="quarter">${esc(K.zoomQuarter)}</button></div>
+        <div class="seg hidden" id="cp_zoom" role="group" aria-label="${esc(K.zoom)}"><button type="button" data-zoom="month">${esc(K.zoomMonth)}</button><button type="button" data-zoom="quarter">${esc(K.zoomQuarter)}</button><button type="button" data-zoom="fit" title="${esc(K.zoomFitTip)}">${esc(K.zoomFit)}</button></div>
         <button type="button" class="btn small hidden" id="cp_today">${esc(K.today)}</button>
       </div>
+      <div class="fchips hidden" id="cp_chips"></div>
       <div class="stabs" id="cp_tabs" role="tablist"></div>
       <div id="cp_body"></div>`;
     $('cp_newMenu').addEventListener('click', e => {
@@ -58,6 +72,13 @@ KT.screens.campaign = (function () {
     let qT;
     $('cp_q').addEventListener('input', e => { clearTimeout(qT); qT = setTimeout(() => { cp.q = e.target.value; renderTable(); }, 150); });
     $('cp_tabs').addEventListener('click', e => { const b = e.target.closest('[data-st]'); if (b) { cp.status = b.dataset.st; renderTable(); } });
+    $('cp_cpop').addEventListener('change', e => { const c = e.target.closest('[data-camp]'); if (!c) return; const set = new Set(camps()); c.checked ? set.add(c.dataset.camp) : set.delete(c.dataset.camp); setCamps(set); renderTable(); $('cp_cmenu').open = true; });
+    $('cp_cpop').addEventListener('input', e => { if (e.target.id === 'cp_cq') { cp.campQ = e.target.value; campMenu(state(), today()); const q = $('cp_cq'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); } });
+    $('cp_cpop').addEventListener('click', e => { if (e.target.closest('[data-campsclear]')) { setCamps([]); renderTable(); } });
+    $('cp_chips').addEventListener('click', e => {
+      if (e.target.closest('[data-clearfilters]')) { cp.q = ''; cp.status = ''; $('cp_q').value = ''; setCamps([]); renderTable(); return; }
+      const u = e.target.closest('[data-unset]'); if (u) { const set = new Set(camps()); set.delete(u.dataset.unset.slice(2)); setCamps(set); renderTable(); }
+    });
     $('cp_today').addEventListener('click', () => scrollToToday(true));
     $('cp_body').addEventListener('click', e => {
       if (e.target.closest('button.info')) return;
@@ -65,7 +86,7 @@ KT.screens.campaign = (function () {
       const sd = e.target.closest('[data-sortdays]'); if (sd) { cp.sortDays = cp.sortDays === 'asc' ? 'desc' : cp.sortDays === 'desc' ? null : 'asc'; renderTable(); return; }
       const ch = e.target.closest('[data-toggle]');
       if (ch) { const c = ch.dataset.toggle; cp.collapsed.has(c) ? cp.collapsed.delete(c) : cp.collapsed.add(c); renderTable(); return; }
-      if (e.target.closest('[data-clear]')) { cp.q = ''; cp.status = ''; $('cp_q').value = ''; renderTable(); return; }
+      if (e.target.closest('[data-clear]')) { cp.q = ''; cp.status = ''; $('cp_q').value = ''; setCamps([]); renderTable(); return; }
       const gd = e.target.closest('[data-godeals]'); if (gd) { const [campaign, phaseSel] = gd.dataset.godeals.split('|'); go('deals', { filter: { campaign, phaseSel } }); return; }
       const hit = e.target.closest('[data-id]'); if (hit) select(hit.dataset.kind, hit.dataset.id);
     });
@@ -94,9 +115,9 @@ KT.screens.campaign = (function () {
     return [...ys].sort();
   }
   /* Campaigns in §4.7 order (On going → Not started → On hold → Complete → Cancelled) with the Phases to show, after Year and Search */
-  function listed(s, td) {
-    const q = R.trim(cp.q).toLowerCase(), hit = v => String(v || '').toLowerCase().includes(q);
-    return R.sortCampaigns(s.campaigns, s.phases, td).map(c => {
+  function listed(s, td, all) {
+    const q = R.trim(cp.q).toLowerCase(), hit = v => String(v || '').toLowerCase().includes(q), picked = camps();
+    return R.sortCampaigns(s.campaigns, s.phases, td).filter(c => all || !picked.size || picked.has(c.campaign_id)).map(c => {
       const all = phasesOf(c.campaign_id), inYear = cp.year === 'all' ? all : all.filter(p => overlaps(p, cp.year));
       if (all.length && !inYear.length) return null;
       const cHit = !q || hit(c.campaign_name);
@@ -130,6 +151,7 @@ KT.screens.campaign = (function () {
     const tl = cp.view === 'timeline';
     $('cp_zoom').classList.toggle('hidden', !tl); $('cp_today').classList.toggle('hidden', !tl);
     document.querySelectorAll('#cp_zoom [data-zoom]').forEach(b => b.classList.toggle('on', b.dataset.zoom === cp.zoom));
+    campMenu(s, td);
     const all = listed(s, td), counts = { '': all.length };
     R.CAMPAIGN_STATUSES.forEach(k => { counts[k] = 0; });
     all.forEach(x => { counts[x.status]++; });
@@ -145,6 +167,19 @@ KT.screens.campaign = (function () {
     }
     if (tl) renderTimeline(s, items, td); else renderGrid(s, items, td);
     markSelected();
+  }
+  /* CR-10 §4.9 — the Campaign multi-select: the Campaigns of the Year (cancelled ones only with Include cancelled), searchable, a status chip each */
+  function campMenu(s, td) {
+    const picked = camps(), q = R.trim(cp.campQ).toLowerCase();
+    const opts = R.sortCampaigns(s.campaigns, s.phases, td).map(c => ({ c, st: R.campaignEffectiveStatus(c, phasesOf(c.campaign_id), td) }))
+      .filter(x => picked.has(x.c.campaign_id) || ((cp.includeCancelled || x.st !== 'cancelled') && (cp.year === 'all' || !phasesOf(x.c.campaign_id).length || phasesOf(x.c.campaign_id).some(p => overlaps(p, cp.year)))));
+    const shown = opts.filter(x => !q || x.c.campaign_name.toLowerCase().includes(q));
+    $('cp_csum').textContent = !picked.size ? K.allCampaigns : picked.size === 1 ? (campById([...picked][0]) || {}).campaign_name || '' : K.campN(picked.size);
+    $('cp_cpop').innerHTML = `<input type="search" class="search" id="cp_cq" placeholder="${esc(K.searchCampaign)}" value="${esc(cp.campQ)}" autocomplete="off">` +
+      `<div class="cp-copts">${shown.map(x => `<label class="tick"><input type="checkbox" data-camp="${esc(x.c.campaign_id)}"${picked.has(x.c.campaign_id) ? ' checked' : ''}> <span class="cp-cname">${esc(x.c.campaign_name)}</span>${chip(x.st)}</label>`).join('')}</div>` +
+      (picked.size ? `<button type="button" class="btn small ghost" data-campsclear>${esc(K.clearCampaigns)}</button>` : '');
+    const chips = [...picked].map(id => ['c:' + id, K.campChip((campById(id) || {}).campaign_name || id)]);
+    U.filterChips($('cp_chips'), chips, chips.length + (R.trim(cp.q) ? 1 : 0) + (cp.status ? 1 : 0));
   }
   /* a Phase's committed against its budget, in the Campaign drawer */
   const usageHTML = (budget, committed) => (budget == null ? `<span class="muted">${esc(K.noBudget)}</span>` : usedHTML(R.moneyOf(budget, committed, 0, 0)));
@@ -200,15 +235,20 @@ KT.screens.campaign = (function () {
       phases.forEach(p => { const y = R.phaseSummary(s, p.phase_id); rows.push({ kind: 'phase', id: p.phase_id, name: R.phaseName(s, p.phase_id), start: p.start_date, end: p.end_date, status: R.phaseStatus(p, td), over: y.over, campaign: c.campaign_id, campStatus: status, budget: y.budget, committed: y.committed }); });
     });
     const dated = rows.filter(r => r.start && r.end);
-    let from, to;
-    if (cp.year !== 'all') { from = `${cp.year}-01-01`; to = `${cp.year}-12-31`; }
+    let from, to, fit = null;
+    /* CR-10 §4.9 Fit: a week before the first Phase … a week after the last of the Campaigns shown · the axis of CR-09 (R.timeAxis) */
+    if (cp.zoom === 'fit') fit = R.fitRange(s, items.map(x => x.c.campaign_id));
+    if (fit) { from = fit.from; to = fit.to; }
+    else if (cp.year !== 'all') { from = `${cp.year}-01-01`; to = `${cp.year}-12-31`; }
     else if (dated.length) { from = dated.map(b => b.start).sort()[0].slice(0, 7) + '-01'; const e = dated.map(b => b.end).sort().pop(); to = R.addDays(R.addDays(e.slice(0, 7) + '-01', 32).slice(0, 7) + '-01', -1); }
     else { from = `${td.slice(0, 4)}-01-01`; to = `${td.slice(0, 4)}-12-31`; }
     const months = []; for (let m = from; m <= to; m = R.addDays(m, 32).slice(0, 7) + '-01') months.push(m);
     const days = R.dayDiff(R.addDays(to, 1), from), pct = iso => R.dayDiff(iso, from) / days * 100;
-    const minW = cp.zoom === 'quarter' ? Math.max(480, months.length * 26) : Math.max(640, months.length * 64);
+    const minW = fit ? 560 : cp.zoom === 'quarter' ? Math.max(480, months.length * 26) : Math.max(640, months.length * 64);
     const multi = months[0].slice(0, 4) !== months[months.length - 1].slice(0, 4);
-    const ticks = cp.zoom === 'quarter'
+    const ax = fit ? R.timeAxis(from, to) : null, grid = fit ? ax.ticks.map(t => t.date).filter(d => d >= from && d <= to) : months.filter(m => m >= from);
+    const ticks = fit ? ax.ticks.filter(t => t.date >= from && t.date <= to).map(t => `<span class="gt-tick" style="left:${pct(t.date)}%">${esc(t.label)}</span><i class="gt-grid" style="left:${pct(t.date)}%"></i>`).join('')
+      : cp.zoom === 'quarter'
       ? months.filter(m => ['01', '04', '07', '10'].includes(m.slice(5, 7)) || m === months[0]).map(m => `<span class="gt-tick q" style="left:${pct(m)}%">${esc(`Q${Math.floor((+m.slice(5, 7) - 1) / 3) + 1}${multi || m === months[0] ? ' ' + m.slice(0, 4) : ''}`)}</span>`).join('') +
         months.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')
       : months.map(m => `<span class="gt-tick" style="left:${pct(m)}%">${esc(K.months[+m.slice(5, 7) - 1])}${multi && m.slice(5, 7) === '01' ? ` ${m.slice(0, 4)}` : ''}</span><i class="gt-grid" style="left:${pct(m)}%"></i>`).join('');
@@ -229,7 +269,7 @@ KT.screens.campaign = (function () {
       rows.map(r => `<tr class="click ${r.kind === 'campaign' ? 'grp' : 'child'}" tabindex="0" data-kind="${r.kind}" data-id="${esc(r.id)}">` +
         `<td class="gn">${r.kind === 'campaign' ? `<div class="nmw"><button type="button" class="chevbtn${cp.collapsed.has(r.id) ? '' : ' open'}" data-toggle="${esc(r.id)}" aria-label="${esc(cp.collapsed.has(r.id) ? K.expand : K.collapse)}">${ICON.chevron}</button><b>${esc(r.name)}</b></div>` : `<span class="pn">${esc(r.name)}</span>`}</td>` +
         `<td class="gs">${r.kind === 'phase' && (r.campStatus === 'on_hold' || r.campStatus === 'cancelled') ? chip(r.campStatus, true) : chip(r.status)}</td>` +
-        `<td class="gtl"><div class="gt-row">${months.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${hatch(r)}</div></td></tr>`).join('') +
+        `<td class="gtl"><div class="gt-row">${grid.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${hatch(r)}</div></td></tr>`).join('') +
       `</tbody></table></div>`;
     const pane = $('cp_tl'), head = pane.querySelector('th.gtl');
     pane.dataset.today = showToday ? String(head.offsetLeft + head.offsetWidth * pct(td) / 100) : '';
@@ -242,6 +282,7 @@ KT.screens.campaign = (function () {
 
   /* ===================== drawer ===================== */
   const owner = {
+    kind: 'campaign',   // CR-10 §4.13: 60% like every detail drawer
     isDirty: () => (editing() && cp.dirty) || !!(cp.prodEdit && cp.prodEdit.dirty),
     onClose: () => { Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null, prodEdit: null }); cp.touched.clear(); if (U.currentTab() === 'campaign') setHash('campaign'); markSelected(); },
     onSuspend: () => { if (!editing()) Object.assign(cp, { mode: 'none', id: null }); },
@@ -304,7 +345,8 @@ KT.screens.campaign = (function () {
   }
   function wireProducts() {
     const pe = cp.prodEdit, chk = () => { const r = R.checkCampaignProducts(state(), cp.id, pe.codes); $('cp_prodchk').innerHTML = checksHTML(r, ''); return r; };
-    U.wireProductPicker($('cp_prodpick'), { get: () => pe.codes, set: codes => { pe.codes = codes; pe.dirty = true; chk(); }, locked: code => R.productDealsInCampaign(state(), cp.id, code).length,
+    const title = () => { const h = $('cp_prodpick').closest('.sec').querySelector('.sec-h span'); if (h) h.textContent = K.secProducts(pe.codes.length); };
+    U.wireProductPicker($('cp_prodpick'), { get: () => pe.codes, set: codes => { pe.codes = codes; pe.dirty = true; title(); chk(); }, locked: code => R.productDealsInCampaign(state(), cp.id, code).length,
       canNew: can('campaign.products'), askUsed: true });
     chk();
   }

@@ -114,20 +114,20 @@
       assert.deepEqual(R.activeKolFilters(Object.assign({}, f, { q: '', tier: '', type: ['beauty'] })), ['type']);
       assert.equal(fresh().kol_master.length, 911);
     });
-    test('TC-20 / TC-21: KOL drawer 1920 → 960 · 1440 → 720 · 1280 (menu open) → 680 · 1024 (rail) → the content area · 390 → the screen', () => {
-      assert.equal(R.kolDrawerWidth(1920, 240), 960);
-      assert.equal(R.kolDrawerWidth(1440, 240), 720);
-      assert.equal(R.kolDrawerWidth(1280, 240), 680);
-      assert.equal(R.kolDrawerWidth(1024, 64), 960);
-      assert.equal(R.kolDrawerWidth(390, 0), 390);
-      assert.equal(R.kolDrawerWidth(2560, 240), 1100, 'at most 1100px');
+    test('TC-20 / TC-21: drawer widths — CR-10 §4.13: every detail drawer 60% · 1920 → 1152 · 1440 → 864 · 1280 (menu open) → 768 · 1024 (rail) → the content area · 390 → the screen', () => {
+      assert.equal(R.dealDrawerWidth(1920, 240), 1152);
+      assert.equal(R.dealDrawerWidth(1440, 240), 864);
+      assert.equal(R.dealDrawerWidth(1280, 240), 768);
+      assert.equal(R.dealDrawerWidth(1024, 64), 960);
+      assert.equal(R.dealDrawerWidth(390, 0), 390);
+      assert.equal(R.dealDrawerWidth(2560, 240), 1200, 'at most 1200px');
     });
-    test('TC-22: a dragged width is kept (560px … content − 320px)', () => {
+    test('TC-22: a dragged width is kept (560px … window − 320px — CR-10 §4.13)', () => {
       assert.equal(R.kolDrawerWidth(1920, 240, 900), 900);
       assert.equal(R.kolDrawerWidth(1920, 240, 400), 560, 'at least 560px');
-      assert.equal(R.kolDrawerWidth(1920, 240, 1600), 1360, 'leaves 320px of the page');
-      assert.equal(R.kolDrawerWidth(1440, 240, 900), 880);
-      assert.equal(R.kolDrawerWidth(1024, 64, 900), 640);
+      assert.equal(R.kolDrawerWidth(1920, 240, 1700), 1600, 'leaves 320px of the window');
+      assert.equal(R.kolDrawerWidth(1440, 240, 900), 900);
+      assert.equal(R.kolDrawerWidth(1024, 64, 900), 704);
       assert.equal(R.kolDrawerWidth(800, 64, 900), 736, 'too narrow for any drawer beside the page → the content area');
     });
   });

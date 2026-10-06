@@ -43,7 +43,7 @@ KT.screens.roles = (function () {
   const lastText = (s, u) => { const t = R.lastActive(s, u.user_id); return t ? R.fmtDateTime(t) : ''; };
   function renderTable() {
     const s = state(), meId = userId();
-    const order = { admin: 0, kol_manager: 1, staff: 2, viewer: 3 };
+    const order = { admin: 0, kol_manager: 1, staff: 2, viewer: 3, accounting: 4 };
     const users = (s.users || []).slice().sort((a, b) => (a.active === false) - (b.active === false) || order[a.role] - order[b.role] || a.display_name.localeCompare(b.display_name, 'th'));
     $('rm_body').innerHTML = `<div class="tablewrap"><table class="tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colEmail)}</th><th>${esc(K.colRole)}</th><th>${esc(K.colPic)}</th>` +
       `<th>${esc(K.colStatus)}</th><th class="num">${esc(K.colDeals)}</th><th>${esc(K.colLast)}</th></tr></thead><tbody>` +

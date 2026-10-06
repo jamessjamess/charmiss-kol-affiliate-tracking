@@ -97,7 +97,7 @@
       assert.equal(r.ok, true);
       assert.equal(r.migratedFrom, 1);
       assert.equal(st.state.schema_version, S.SCHEMA_VERSION);
-      assert.deepEqual(st.counts(), { campaigns: 5, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0 });
+      assert.deepEqual(st.counts(), { campaigns: 5, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214 });   // CR-10 §3: the v11 migration
       assert.deepEqual(countBy(st.state.deals, d => d.draft_rounds), { 1: 237, 2: 68 });
       assert.equal(JSON.parse(st.backup().text).schema_version, S.SCHEMA_VERSION);
     });

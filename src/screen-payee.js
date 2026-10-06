@@ -13,7 +13,7 @@ KT.payee = (function () {
   /* ===================== the section in the KOL drawer ===================== */
   function bodyHTML(kol) {
     const s = state(), p = R.payeeOfKol(s, kol.kol_id), vault = vaultOf(), canEdit = R.canEditPayee(s, U.actor(), p, kol);
-    if (!p) return `<div class="hint">${esc(PY.none)}</div>` + (canEdit ? `<button type="button" class="btn small" data-payee-edit style="margin-top:8px">${esc(PY.add)}</button>` : '');
+    if (!p) return `<div class="hint">${esc(PY.none)}</div>` + (canEdit ? `<button type="button" class="btn small" data-payee-edit style="margin-top:8px">${esc(PY.add)}</button>` : '') + shippingRow(kol, null);
     const S = R.paySettings(s.lookups), miss = R.payeeDocsMissing(p);
     const terms = [PY.types[p.payee_type], p.vat_registered ? PY.vatShort : PY.noVat, PY.whtShort(p.default_wht_rate != null ? p.default_wht_rate : S.default_wht_individual), PY.basisShort[p.price_basis]].join(' · ');
     const bank = p.secure ? `<b>${esc(PY.bankLine(p.bank_name, p.account_last4))}</b>${p.details_updated_at ? ` <span class="muted small">${esc(PY.updatedBy(R.dmy(p.details_updated_at.slice(0, 10)), userName(p.details_updated_by)))}</span>` : ''}`
@@ -30,12 +30,20 @@ KT.payee = (function () {
       (p.secure && V.isUnlocked(vault) ? `<div class="py-secure" data-payee-secure="${esc(p.payee_id)}"><span class="muted small">…</span></div>` : '') +
       `<div class="py-docs">${sum}${docs}</div>` +
       (p.docs_link ? `<div class="small" style="margin-top:6px"><a href="${esc(p.docs_link)}" target="_blank" rel="noopener">${esc(PY.openFolder)}</a></div>` : '') +
-      (unlockBtn ? `<div style="margin-top:8px">${unlockBtn}</div>` : '');
+      (unlockBtn ? `<div style="margin-top:8px">${unlockBtn}</div>` : '') + shippingRow(kol, p);
+  }
+  /* CR-10 §4.14 — Payee & shipping: the shipping details on file (encrypted · shown in full while unlocked) */
+  function shippingRow(kol, p) {
+    const SM = C.samples, on = !!(p && p.shipping_on_file && p.secure_ship), ok = R.canEditPayee(state(), U.actor(), p, kol);
+    return `<div class="kv py-ship"><span>${esc(SM.shippingDetails)}</span><b>${on ? `<span class="chip ok-chip">${esc(SM.addressOnFile)}</span>` : `<span class="chip">${esc(SM.noAddress)}</span>`}` +
+      (ok ? ` <button type="button" class="btn small" data-smship="${esc(kol.kol_id)}">${esc(SM.shippingDetails)}</button>` : '') + `</b></div>` +
+      (on && V.isUnlocked(vaultOf()) && can('payee.unlock') ? `<div class="sm-shipsecure" data-smsecure="${esc(kol.kol_id)}"><span class="muted small">…</span></div>` : '');
   }
   const editBtn = kol => (R.canEditPayee(state(), U.actor(), R.payeeOfKol(state(), kol.kol_id), kol) ? `<button type="button" class="icon-btn edit-sec" data-payee-edit title="${esc(PY.edit)}" aria-label="${esc(PY.edit)}">${PENCIL}</button>` : '');
   const PENCIL = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.6l2.8 2.8L6 12.8H3.2V10z"/></svg>';
   /* after the drawer is drawn: decrypt the open payee into the page (memory only) */
   async function fillSecure(root) {
+    KT.samples.fillSecure(root);
     const box = root && root.querySelector('[data-payee-secure]'); if (!box) return;
     const p = R.payeeById(state(), box.dataset.payeeSecure), rec = p ? await V.decrypt(p.secure) : null;
     if (!rec || !box.isConnected) { box.innerHTML = ''; return; }
@@ -49,6 +57,7 @@ KT.payee = (function () {
   const mask = v => { const d = String(v).replace(/\D/g, ''); return '•••••' + d.slice(-4); };
   /* clicks inside the section · → true when handled */
   function onClick(e, kol, rerender) {
+    if (e.target.closest('[data-smship]')) { KT.samples.shippingDialog(kol.kol_id, rerender); return true; }
     if (e.target.closest('[data-payee-edit]')) { openDialog_({ kolId: kol.kol_id, onSaved: rerender }); return true; }
     if (e.target.closest('[data-payee-unlock]')) { unlockDialog(rerender); return true; }
     const vf = e.target.closest('[data-payee-verify]');

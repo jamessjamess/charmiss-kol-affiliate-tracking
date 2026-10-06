@@ -63,17 +63,28 @@
    schema_version 9 (CR-09) — Accounting:
      campaign_events     type 'products' {from: {products: [tr_code]}, to: {products}} also when Staff change a Campaign's products (§4.7) — the list is made when missing
      users.role          + 'accounting' · the migration adds Earn (Accounting, not a PIC) once — a user deleted later is not added back
-     payment_runs        + returned_reason · returned_at · returned_by (Accounting sends a run back to the team; empty = never returned) */
+     payment_runs        + returned_reason · returned_at · returned_by (Accounting sends a run back to the team; empty = never returned)
+   schema_version 10 (CR-10) — post performance:
+     deal_posts          + metrics_source ('manual' | 'paste' | 'legacy' | null) · metrics_updated_by (user id | null) — a post that has metrics but no
+                         metrics_updated_at becomes 'legacy' (shown "Imported") · views … saves stay whole numbers ≥ 0 or null (null = no data ≠ 0)
+     lookups.metrics_stale_days = 14 (Settings › Lists) · deal_events type 'metrics' (from / to = the five values) from CR-10 R2
+   schema_version 11 (CR-10 R6) — Samples:
+     sample_shipments    new: {shipment_id SH000001, deal_id, kol_id, items [{tr_code, qty}], ship_by, status (to_ship | shipped | delivered | problem | not_required),
+                         ship_by_overridden, shipped_date, carrier, tracking_no, delivered_date, problem_reason, not_required_reason, source (auto | manual | legacy), note,
+                         created_by/at, updated_by/at} — a deal with delivered = true gets a Delivered (legacy) shipment, an open deal from Confirm QT on gets a To ship (auto)
+                         (rules-samples.js migrateSamples) · deals.delivered / delivery_date stay and follow the shipments from now on (ui.commit → R.syncShipments)
+     lookups.sample_settings  lead_days 7 · carriers · tracking_url {carrier: 'https://…{tracking}'}
+     payee_profiles.secure_ship  the shipping details (recipient · phone · address) encrypted like the bank details · shipping_on_file true / false */
 KT.store = (function (R) {
   'use strict';
   const KEY = 'charmiss_kol_tracker_v1';
   const CORRUPT_KEY = KEY + '_corrupt';
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 9;
+  const SCHEMA_VERSION = 11;
   const QUOTA_MB = 5;
-  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs'];
+  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments'];
   /* collections that older versions do not have yet (they are created by migrate) */
-  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8 };
+  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11 };
   /* client-side IDs continue from the highest number in use */
   const ID_FORMATS = {
     kol: { prefix: 'K', coll: 'kol_master', key: 'kol_id', width: 4 },
@@ -84,6 +95,7 @@ KT.store = (function (R) {
     line: { prefix: 'PL-', coll: 'payment_lines', key: 'line_id', width: 6 },
     post: { prefix: 'P', coll: 'deal_posts', key: 'post_id', width: 6 },
     user: { prefix: 'U', coll: 'users', key: 'user_id', width: 3 },
+    shipment: { prefix: 'SH', coll: 'sample_shipments', key: 'shipment_id', width: 6 },
   };
 
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -225,6 +237,18 @@ KT.store = (function (R) {
     }
     obj.schema_version = 9;
   }
+  /* v9 → v10 (see the top of this file) — the metric values are not touched */
+  function toV10(obj) {
+    (obj.deal_posts || []).forEach(p => {
+      const has = R.METRICS.some(k => p[k] != null && p[k] !== '');
+      if (p.metrics_source === undefined) p.metrics_source = has && !p.metrics_updated_at ? 'legacy' : null;
+      if (p.metrics_updated_by === undefined) p.metrics_updated_by = null;
+    });
+    if (obj.lookups.metrics_stale_days == null) obj.lookups.metrics_stale_days = 14;
+    obj.schema_version = 10;
+  }
+  /* v10 → v11 (see the top of this file) */
+  function toV11(obj) { R.migrateSamples(obj); obj.schema_version = 11; }
   /* upgrade older saved states step by step, once */
   function migrate(obj) {
     if (obj.schema_version === 1) toV2(obj);
@@ -235,6 +259,8 @@ KT.store = (function (R) {
     if (obj.schema_version === 6) toV7(obj);
     if (obj.schema_version === 7) toV8(obj);
     if (obj.schema_version === 8) toV9(obj);
+    if (obj.schema_version === 9) toV10(obj);
+    if (obj.schema_version === 10) toV11(obj);
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }

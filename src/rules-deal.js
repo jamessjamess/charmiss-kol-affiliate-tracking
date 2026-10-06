@@ -184,24 +184,21 @@ Object.assign(KT.rules, (function (R, C) {
   const termDiffers = (deal, kol) => { const def = kol && R.isTerm(kol.default_payment_term) ? kol.default_payment_term : null; return !!def && R.termOf(deal) !== def; };
 
   /* ===================== CR-04 §4.3 — Group by ===================== */
-  /* the Stage group of a deal = the Stage column's words without "of m": Shortlist · Contacted · Confirm QT · Brief · Script · Draft n · Posted · Cancelled */
-  function stageKey(lookups, d) {
-    if (d.status === 'Complete') return 'Posted';
-    if (d.status === 'Cancel') return 'Cancelled';
-    const st = R.stepOf(lookups, d.sub_status);
-    if (st && R.isScriptStep(st)) return 'Script';
-    const n = st ? R.draftNo(st) : 0;
-    return n ? `Draft ${n}` : d.sub_status || '';
-  }
-  /* Stage groups in journey order (Posted, then Cancelled, last) with their status */
-  function stageOrder(lookups) {
-    const out = [], seen = new Set();
-    R.stepsOf(lookups).forEach(st => {
-      if (st.status === 'Complete' || st.status === 'Cancel') return;
-      const k = stageKey(lookups, { status: st.status, sub_status: st.sub_status });
-      if (!seen.has(k)) { seen.add(k); out.push({ key: k, status: st.status }); }
-    });
-    return out.concat([{ key: 'Posted', status: 'Complete' }, { key: 'Cancelled', status: 'Cancel' }]);
+  /* CR-09 §4.9 — one set of stage names, the journey steps of the Pipeline (lookups.journey_steps), the same in the Table groups, the Stage cell,
+     the Pipeline columns, Move stage, the Stage popup, Filters and exports: Shortlist · Contacted · Confirm QT · Brief · Approve Script ·
+     Approve Draft 1–3 · Post · Cancelled. stageOf = the step the deal is at (its last step passed) */
+  const stageOf = (lookups, d) => (d.status === 'Cancel' ? R.stepsOf(lookups).find(R.isCancelStep) : R.stepOf(lookups, d.sub_status)) || null;
+  const stageName = st => (!st ? '' : R.isCancelStep(st) ? C.stage.cancelled : st.sub_status);
+  function stageKey(lookups, d) { const st = stageOf(lookups, d); return st ? stageName(st) : d.status === 'Cancel' ? C.stage.cancelled : d.sub_status || ''; }
+  const stageLabel = stageKey;
+  /* every stage in journey order (Cancelled last) with its status */
+  const stageOrder = lookups => R.stepsOf(lookups).map(st => ({ key: stageName(st), status: st.status, step: st }));
+  /* the money of a stage — the same in a Table group header, a Pipeline column and the Stage popup:
+     Shortlist / Contacted = pending · Cancelled = what those deals were worth · every other stage = committed */
+  function stageMoney(state, deals) {
+    const amount = deals.reduce((a, d) => a + totalCost(d), 0), d0 = deals[0];
+    const kind = !d0 ? 'committed' : d0.status === 'Cancel' ? 'cancelled' : R.isShortlist(state.lookups, d0) ? 'pending' : 'committed';
+    return { n: deals.length, amount, kind };
   }
   /* by: 'phase' | 'stage' | 'tier' | 'none' → [{key, rows}] in display order, empty groups left out */
   function groupDeals(state, deals, by, ctx, today) {
@@ -270,7 +267,12 @@ Object.assign(KT.rules, (function (R, C) {
       const orig = p.post_id ? storedPost.get(p.post_id) : null;
       if (!p.account_id) both(issue(f('account_id'), M.postAccountRequired(n)));
       else if (!acc || acc.kol_id !== d.kol_id) both(issue(f('account_id'), M.postAccountOther(n)));
-      METRIC_KEYS.forEach(k => { if (!isBlank(p[k]) && (isNaN(p[k]) || Number(p[k]) < 0)) both(issue(f(k), M.postNumber(n, k))); });
+      /* CR-10 §4.5: one reader for a count (12,500 · 12.5K · 1.3M) and the same warnings as Deals › Performance */
+      METRIC_KEYS.forEach(k => { if (!isBlank(p[k]) && R.parseCount(p[k]).error) both(issue(f(k), M.postCount(n, k))); });
+      if (METRIC_KEYS.every(k => isBlank(p[k]) || !R.parseCount(p[k]).error)) {
+        const vals = Object.fromEntries(METRIC_KEYS.map(k => [k, isBlank(p[k]) ? null : R.parseCount(p[k]).value]));
+        if (orig ? !R.sameMetrics(orig, vals) : true) R.metricsWarnings(orig, vals).forEach(w => warns.push(issue(f('views'), `${n}: ${w.msg}`)));
+      }
       POST_DATE_KEYS.forEach(k => { if (!isBlank(p[k]) && !isISODate(p[k])) both(issue(f(k), M.dateInvalid(`${n} ${C.deal.f[k]}`))); });
       if (!isBlank(p.post_link)) {
         if (!isHttpLink(p.post_link)) both(issue(f('post_link'), M.postLinkFormat(n)));
@@ -659,17 +661,34 @@ Object.assign(KT.rules, (function (R, C) {
   const KOL_FILTER_KEYS = ['q', 'platform', 'tier', 'lastWorked', 'category', 'type', 'pic', 'status', 'term', 'history', 'source'];
   const activeKolFilters = f => KOL_FILTER_KEYS.filter(k => (k === 'q' ? !!trim(f.q) : Array.isArray(f[k]) ? f[k].length > 0 : !!f[k]));
 
-  /* CR-07 §4.7 — the KOL drawer: clamp(680px, half the window, 1100px), or the width it was dragged to (560px … content − 320px) ·
-     it fills the content area (window − menu) when less than 320px of the page would be left */
-  function kolDrawerWidth(viewport, menuWidth, saved) {
-    const content = viewport - (menuWidth || 0), max = content - 320;
-    if (max < 560) return content;
-    const w = saved ? Math.min(Math.max(saved, 560), max) : Math.min(1100, Math.max(680, Math.round(viewport / 2)));
+  /* the wide drawers (CR-07 §4.7, CR-09 §4.12 / §4.17): KOL clamp(720px, 60% of the window, 1200px) · Deal clamp(680px, 50%, 1100px) ·
+     or the width it was dragged to (560px … content − 320px) · the whole content area (window − menu) when less than 320px of the page would be left */
+  function wideDrawerWidth(viewport, menuWidth, saved, pct, min, max) {
+    const content = viewport - (menuWidth || 0), top = content - 320;
+    if (top < 560) return content;
+    const w = saved ? Math.min(Math.max(saved, 560), top) : Math.min(max, Math.max(min, Math.round(viewport * pct)));
     return content - w < 320 ? content : w;
+  }
+  /* CR-10 §4.13 — one rule for every detail drawer (Deal · KOL · Campaign · Phase Planner): clamp(720px, 60% of the window, 1200px) · the Planner
+     at least 880px · a width dragged by hand (560px … window − 320px) is kept per kind · when the window would keep less than 320px beside it,
+     the drawer takes the whole content area (window − menu) — 1920 → 1152 · 1440 → 864 · 1280 (menu open) → 768 · 1024 (rail) → the content area */
+  function drawerWidth(kind, viewport, menuWidth, saved) {
+    const content = viewport - (menuWidth || 0), min = kind === 'planner' ? 880 : 720;
+    let w = saved ? Math.min(Math.max(saved, 560), viewport - 320) : Math.min(1200, Math.max(min, Math.round(viewport * 0.6)));
+    if (kind === 'planner') w = Math.max(w, 880);
+    return w < 560 || viewport - w < 320 || w > content ? content : w;
+  }
+  const kolDrawerWidth = (viewport, menuWidth, saved) => drawerWidth('kol', viewport, menuWidth, saved);
+  const dealDrawerWidth = (viewport, menuWidth, saved) => drawerWidth('deal', viewport, menuWidth, saved);
+  /* CR-09 §4.13 — the date the deal came to its stage (its last log at that step) · null when not recorded */
+  function stageSince(state, d) {
+    const st = stageOf(state.lookups, d); if (!st) return null;
+    const logs = R.logsOf(state, d.deal_id).filter(l => l.sub_status === st.sub_status && l.effective_date);
+    return logs.length ? logs[logs.length - 1].effective_date : (st.date_field && R.isISODate(d[st.date_field]) ? d[st.date_field] : null);   // else the step's own date on the deal
   }
 
   return {
-    UNKNOWN_TIER, dealTier, tierOrder, tierRange, stageKey, stageOrder, groupDeals, groupStats,
+    UNKNOWN_TIER, dealTier, tierOrder, tierRange, stageKey, stageOrder, stageOf, stageName, stageLabel, stageMoney, groupDeals, groupStats,
     DEAL_SECTIONS, POST_EDIT_FIELDS, AUTO_FIELDS, paymentRecorded, fieldEditable, sectionEditable, diffFields, diffPosts, editEvent, pillarCleared,
     campaignCta, ctaDiffers, dealsWithCta, termSource, termDiffers,
     MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, validateTiers,
@@ -678,7 +697,7 @@ Object.assign(KT.rules, (function (R, C) {
     dropPlan, DEAL_TABS, NEEDS_REASONS, needsReasons, dealTabOf, dealTabs, inDealTab, defaultDealsCampaign,
     TEMPLATE_HEADERS, TEMPLATE_PLATFORMS, platformMark, dealPostSummary, templateRow, filterDeals, dealTiles,
     pipeline, overviewWindow, postBins, overviewTiles, paymentAttention, phaseAttention, funnel, niceStep, dataIssues, newDeal, blankPost,
-    blankDealFilter, activeFilters, clearFilters, KOL_FILTER_KEYS, activeKolFilters, kolDrawerWidth,
+    blankDealFilter, activeFilters, clearFilters, KOL_FILTER_KEYS, activeKolFilters, kolDrawerWidth, dealDrawerWidth, wideDrawerWidth, drawerWidth, stageSince,
   };
 
 })(KT.rules, KT.content));

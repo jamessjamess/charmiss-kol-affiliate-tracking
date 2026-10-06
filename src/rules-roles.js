@@ -21,14 +21,16 @@ Object.assign(KT.rules, (function (R, C) {
     { key: 'settings.tiers', actions: ['settings.tiers'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },// Settings › Tier rules
     { key: 'data.restore', actions: ['data.restore'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },   // Restore · Reset to seed
     { key: 'roles', actions: ['roles'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },                 // Role Management
-    /* CR-08 §4.9 — Payments (seeing them is the 'view' row) · Staff edit payees of their own KOLs / payees they created (rules-pay.js canEditPayee) */
-    { key: 'payee.edit', actions: ['payee.edit', 'payment.request', 'payment.manual'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
-    { key: 'payee.unlock', actions: ['payee.unlock'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
-    { key: 'payee.verify', actions: ['payee.verify'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
+    /* CR-08 §4.9 + CR-09 §4.16 — Payments (seeing them is the 'view' row) · Staff edit payees of their own KOLs / payees they created (rules-pay.js canEditPayee) ·
+       the accounts team (Accounting) confirms payments, the KOL team prepares them */
+    { key: 'payee.edit', actions: ['payee.edit'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: true },
+    { key: 'payment.request', actions: ['payment.request', 'payment.manual'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
+    { key: 'payee.unlock', actions: ['payee.unlock'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: true },
+    { key: 'payee.verify', actions: ['payee.verify'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: true },
     { key: 'vault.admin', actions: ['vault.admin'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'payee.import', actions: ['payee.import'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
     { key: 'payment.run', actions: ['payment.run'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
-    { key: 'payment.paid', actions: ['payment.paid'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
+    { key: 'payment.paid', actions: ['payment.paid'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: true },
     { key: 'payment.reopen', actions: ['payment.reopen'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'settings.payments', actions: ['settings.payments'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
   ];

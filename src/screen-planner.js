@@ -14,6 +14,7 @@ KT.planner = (function () {
   const box = () => $('drawer_content');
   const mine = () => !!pl && U.drawerOwner() === owner;
   const owner = {
+    kind: 'planner',   // CR-10 §4.13: 60%, at least 880px
     isDirty: () => !!(pl && pl.dirty),
     onClose: () => { detach(); pl = null; if (U.currentTab() === 'campaign') setHash('campaign'); },
     /* leaving the page keeps the plan; Campaign & Phase shows it again */
@@ -108,7 +109,8 @@ KT.planner = (function () {
     const last = pl.rows[pl.rows.length - 1];
     pl.rows.push({ key: 'k' + (++seq), phase_id: null, label: '', start_date: last && R.isISODate(last.end_date) ? R.addDays(last.end_date, 1) : '', end_date: '', amount: '', pct: '' });
     pl.dirty = true;
-    if (rerender) { render(); focusRow(pl.rows.length - 1); }
+    /* CR-10 §4.8: + Add phase opens the new row's picker on the day after the last Phase, waiting for the end */
+    if (rerender) { render(); const r = pl.rows[pl.rows.length - 1], el = box().querySelector(`[data-row="${pl.rows.length - 1}"] .drange`); if (el && r.start_date) U.openRange(el, { from: r.start_date, to: '' }); else focusRow(pl.rows.length - 1); }
   }
   const planRows = () => pl.rows.map(r => ({ key: r.key, phase_id: r.phase_id, label: r.label, start_date: r.start_date, end_date: r.end_date, budget_kol: r.amount, budget_pct: pl.unit === 'pct' ? r.pct : '' }));
   const campDraft = () => ({ campaign_id: pl.campaignId, campaign_name: pl.camp.campaign_name, budget_kol: pl.camp.budget_kol });
@@ -131,8 +133,7 @@ KT.planner = (function () {
     const s = state(), canDel = !r.phase_id || R.canDeletePhase(s, r.phase_id), inp = pl.unit === 'pct' ? 'pct' : 'amount';
     return `<tr data-row="${i}"${r.key === pl.moved ? ' class="moved"' : ''}><td class="pl-seq" data-seqname>${esc(rowNames()[i])}</td>
       <td><input data-k="label" data-key="row${i}_label" value="${esc(r.label)}" placeholder="${esc(K.labelPh)}" aria-label="${esc(K.colLabel)}" autocomplete="off"></td>
-      <td>${dateHTML(`data-k="start_date" data-key="row${i}_start"`, r.start_date, { label: K.colStart })}</td>
-      <td>${dateHTML(`data-k="end_date" data-key="row${i}_end"`, r.end_date, { label: K.colEnd })}</td>
+      <td class="pl-per">${U.rangeHTML(`data-range="row" data-key="row${i}_start" data-key2="row${i}_end"`, R.isISODate(r.start_date) ? r.start_date : '', R.isISODate(r.end_date) ? r.end_date : '', { label: `${rowNames()[i]} · ${K.colPeriod}` })}</td>
       <td class="num" data-days></td>
       <td><input type="number" min="0" step="${inp === 'pct' ? '0.01' : '1'}" inputmode="decimal" data-k="${inp}" data-key="row${i}_budget" value="${esc(r[inp])}" aria-label="${esc(inp === 'pct' ? K.colBudgetPct : K.colBudgetAmt)}"></td>
       <td class="num" data-other></td>
@@ -152,7 +153,7 @@ KT.planner = (function () {
       </div>`;
     const n = pl.rows.length, presets = [['even', K.presetEven]].concat(n === 3 ? [['launch', K.presetLaunch]] : []).concat([['custom', K.presetCustom]]);
     const plan = `<div class="pl-plan">
-        <div class="field"><label>${esc(K.period)}</label><div class="pl-period">${dateHTML('data-pp="start" data-key="period"', pl.period.start, { label: `${K.period} · ${K.colStart}` })}<span class="muted">–</span>${dateHTML('data-pp="end" data-key="period"', pl.period.end, { label: `${K.period} · ${K.colEnd}` })}</div><div class="hint">${esc(K.periodHint)}</div></div>
+        <div class="field"><label>${esc(K.period)}</label><div class="pl-period">${U.rangeHTML('data-range="period" data-key="period"', pl.period.start, pl.period.end, { label: K.period, clearable: true })}</div><div class="hint">${esc(K.periodHint)}</div></div>
         <div class="field"><label for="pl_count">${esc(K.count)}</label><span class="stepper-n pl-count"><button type="button" class="icon-btn" data-count="-1" aria-label="${esc(K.fewer)}"${n <= 1 ? ' disabled' : ''}>−</button>` +
           `<input type="number" id="pl_count" min="1" max="${R.MAX_PHASES}" step="1" inputmode="numeric" data-key="count" value="${n}"><button type="button" class="icon-btn" data-count="1" aria-label="${esc(K.more)}"${n >= R.MAX_PHASES ? ' disabled' : ''}>+</button></span></div>
         <div class="field"><label>&nbsp;</label><button type="button" class="btn small" data-splitdates title="${esc(K.splitDatesTip)}">${esc(K.splitDates)}</button></div>
@@ -160,7 +161,7 @@ KT.planner = (function () {
       <div class="btns pl-tools"><span class="muted small">${esc(K.allocation)}</span><div class="seg" role="group" aria-label="${esc(K.allocation)}">${presets.map(([k, l]) => `<button type="button" data-preset="${k}" class="${pl.preset === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>` +
         `<div class="seg" role="group" aria-label="${esc(K.unit)}"><button type="button" data-unit="pct" class="${pct ? 'on' : ''}">%</button><button type="button" data-unit="amount" class="${pct ? '' : 'on'}">฿</button></div>` +
         `<button type="button" class="btn small" data-fill title="${esc(K.fillTip)}">${esc(K.fill)}</button></div>`;
-    const table = plan + `<div class="tablewrap"><table class="tbl pl-tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colLabel)}</th><th>${esc(K.colStart)}</th><th>${esc(K.colEnd)}</th><th class="num">${esc(K.colDays)}</th>` +
+    const table = plan + `<div class="tablewrap"><table class="tbl pl-tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colLabel)}</th><th>${esc(K.colPeriod)}</th><th class="num">${esc(K.colDays)}</th>` +
       `<th>${esc(pct ? K.colBudgetPct : K.colBudgetAmt)}</th><th class="num">${esc(pct ? K.colAmount : K.colPct)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody></table></div>` +
       `<div class="btns" style="margin-top:8px"><button type="button" class="btn small" data-add>${esc(K.add)}</button></div><div class="pl-bar" id="pl_bar"></div>`;
     return `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(isNew ? K.newTitle : K.title(pl.camp.campaign_name))}</h2><div class="dr-sub"><span>${esc(K.sub)}</span></div></div>${closeBtn}</div></div>
@@ -183,6 +184,11 @@ KT.planner = (function () {
     if (pl.moved) { const k = pl.moved; setTimeout(() => { if (pl && pl.moved === k) { pl.moved = null; const tr = box().querySelector('tr.moved'); if (tr) tr.classList.remove('moved'); } }, 1000); }
     U.wireProductPicker($('pl_products'), { get: () => pl.camp.products, set: codes => { pl.camp.products = codes; pl.dirty = true; pl.touched.add('products'); refresh(); },
       locked: code => (pl.campaignId ? R.productDealsInCampaign(state(), pl.campaignId, code).length : 0), canNew: U.can('campaign.edit'), askUsed: true });
+    /* CR-10 §4.8 — what each date range picker shows: the Campaign period in grey, the other Phases underlined in their colours */
+    const marks = () => { const order = sortedKeys(); return pl.rows.map((r, i) => (okRow(r) ? { key: r.key, from: r.start_date, to: r.end_date, color: `var(--ph${(order.indexOf(r.key) % 8) + 1})`, title: rowTitle(r, i) } : null)).filter(Boolean); };
+    const band = () => (R.isISODate(pl.period.start) && R.isISODate(pl.period.end) ? { from: pl.period.start, to: pl.period.end } : null);
+    b.querySelectorAll('.drange[data-range="row"]').forEach(el => { const key = pl.rows[+el.closest('[data-row]').dataset.row].key; el._rangeOpts = () => ({ band: band(), marks: marks().filter(m => m.key !== key) }); });
+    const pe = b.querySelector('.drange[data-range="period"]'); if (pe) pe._rangeOpts = () => ({ marks: marks() });
     refresh();
   }
 
@@ -200,7 +206,7 @@ KT.planner = (function () {
     const shown = Object.assign({}, res, { errs: res.errs.filter(e => show(e.field) || e.field === 'rows' || e === pl.countErr), warns: res.warns.filter(w => w.field !== 'products' || show('products')) });
     $('pl_checks').innerHTML = checksHTML(shown, res.errs.length ? '' : C.common.ok);
     b.querySelectorAll('[data-key]').forEach(el => {
-      const bad = show(el.dataset.key) && res.errs.some(e => e.field === el.dataset.key), w = el.closest('.dfield') || el;
+      const keys = [el.dataset.key, el.dataset.key2].filter(Boolean), bad = keys.some(k => show(k) && res.errs.some(e => e.field === k)), w = el.closest('.dfield') || el;
       w.classList.toggle('invalid', bad); el.classList.toggle('invalid', bad);
     });
     b.querySelector('[data-plsave]').disabled = pl.submitted && res.errs.length > 0;
@@ -276,6 +282,13 @@ KT.planner = (function () {
   function onChange(e) {
     if (!mine()) return;
     const t = e.target;
+    /* CR-10 §4.8 — a range picker applied: both ends at once */
+    if (t.dataset && t.dataset.range === 'period') { pl.period = { start: t.dataset.from, end: t.dataset.to }; pl.touched.add('period'); pl.countErr = null; if (autoSplit()) { splitIntoPeriod(true); sortRows(); } pl.dirty = true; render(); return; }
+    if (t.dataset && t.dataset.range === 'row') {
+      const r = pl.rows[+t.closest('[data-row]').dataset.row]; r.start_date = t.dataset.from; r.end_date = t.dataset.to;
+      pl.touched.add(t.dataset.key); pl.touched.add(t.dataset.key2); if (pl.countErr && pl.countErr.field === 'count') pl.countErr = null;
+      pl.dirty = true; if (sortRows()) pl.moved = r.key; render(); return;
+    }
     if (t.dataset.owntarget != null) { pl.camp.ownTarget = t.checked; box().querySelectorAll('[data-ptc]').forEach(i => { i.disabled = !t.checked; }); }
     if (t.dataset.c === 'cta') pl.camp.cta = t.value;
     if (t.dataset.key) pl.touched.add(t.dataset.key);

@@ -1,5 +1,92 @@
 # CHANGELOG — Charmiss KOL Tracker
 
+## CR-10 · 06/10/2026 — Deals › Performance · Date range picker · Timeline filter · New deal (Single / Bulk shortlist) · Drawer 60% · Samples
+
+Spec: `docs/CR-10.md` (v1.3) · schema_version **9 → 10 → 11** (migration ตอนโหลด · ใช้กับ Backup เก่า · `data/KOL_seed_v2.json` ไม่แก้) · สูตรเงินไม่เปลี่ยน — anchors CR-05 §5.0 (Budget ฿2,748,400 · Committed ฿1,783,579 · Pending ฿98,000 · Paid (est.) ฿774,579) ตรง · Dashboard กับ Performance ใช้ `rules.postMetrics` ตัวเดียว · data model: `docs/DATA_MODEL.md`
+
+**Deals › Performance (R1)** — ไฟล์ใหม่ `src/rules-metrics.js` · `src/screen-perf.js`
+- View tabs `Table · Pipeline · Samples · Performance` · 1 แถว = 1 โพสต์ที่โพสต์แล้ว (`isPosted`: post_date ≤ วันนี้ หรือมีลิงก์) · scope เดียวกับ Table (Campaign · Phase · PIC · Search · Filters ระดับโพสต์)
+- KPI strip ตาม filter: Posted (+ ไม่มีวันที่) · With metrics · Views · Engagement · ER · CPV · CPE · Cost (ต้นทุนต่อโพสต์ = `rules.postShare` · Total Cost รวมทุกโพสต์) · ER / CPV / CPE ถ่วงน้ำหนัก
+- ตาราง: KOL sticky (ชื่อไม่ตัด) · Account · Tier / followers ของบัญชีที่โพสต์ · Platform เป็นไอคอน + tooltip · Link · metrics 5 ช่อง · ER · CPV · Updated / Imported / Stale / No metrics · แถว Total + subtotal ต่อกลุ่ม · Group by (None / Post tier / Platform / Phase / PIC) หุบ/กาง (จำต่อคน) · Columns (จำต่อคน) · คลิกแถว = เปิด deal ที่โพสต์นั้น (ไฮไลต์)
+- Export .xlsx / CSV (`export.js` widget `performance`: Account ถัดจาก KOL · Post link + Post ID ท้าย · ER / CPV เป็นทศนิยม · แถว Total)
+- schema 10: `deal_posts.metrics_source` / `metrics_updated_by` · `lookups.metrics_stale_days` = 14
+
+**Metrics inline · Paste (R2)**
+- แก้ metrics ในตาราง (Enter = ลง · Tab = ขวา · Esc = ยกเลิก) · `parseCount` รับ 12,500 / 12.5K / 1.2M · คำเตือน ER สูงผิดปกติ / Views ลดลง · Undo · event type `metrics` (+ History ใน drawer)
+- **Paste metrics**: วางจากชีท (Tab หรือ comma) จับคู่ด้วยลิงก์ (`normalizePostLink`) → Preview Matched · No change · Not found · Errors · Not your deal → Apply + Undo · Copy template (ลิงก์ของโพสต์ในตาราง)
+- Deal drawer › Posts ใช้ parse / validation ชุดเดียวกัน · Dashboard Engagement อ่านจาก `postMetrics` · Stale ตาม Settings › KOL performance "Metrics stale after (days)" (1–365)
+- สิทธิ์: Admin / KOL Manager ทุกโพสต์ · Staff เฉพาะ deal ที่เป็น PIC (อ่านอย่างเดียว + tooltip) · Viewer / Accounting อ่านอย่างเดียว
+
+**Date range picker · Timeline filter (R3)** — ไฟล์ใหม่ `src/ui-range.js`
+- ช่องเดียว `dd/mm/yyyy – dd/mm/yyyy` · popup 2 เดือน (จันทร์–อาทิตย์) · พิมพ์ได้ · คีย์บอร์ด · Phone = sheet เต็มจอ · `validateRange` (Use dd/mm/yyyy · End date must be on or after start date)
+- ใช้ที่ Phase Planner (คอลัมน์ **Period** + ช่วง Campaign · + Add phase เริ่มวันถัดไป) · Dashboard Custom · Payments › Paid Custom
+- Campaign & Phase › Timeline: filter Campaign หลายตัว (จำต่อคน · chip) · zoom **Fit** = เริ่มเร็วสุด − 7 ถึงจบช้าสุด + 7 (`fitRange`) · แกนจาก `timeAxis`
+
+**New deal · Bulk shortlist (R4)** — ไฟล์ใหม่ `src/rules-bulk.js` · `src/screen-bulk.js`
+- New deal 2 tabs (จำ tab ต่อคน): **Single KOL** — ช่อง KOL พิมพ์ค้นได้ · "+ Create KOL "…"" เปิดฟอร์มสร้าง KOL (prefill ชื่อ / handle · ตรวจซ้ำ Already in KOL Master → Use this KOL / Create anyway) แล้วกลับมาฟอร์มเดิมโดยค่าไม่หาย · error แสดงหลังกด Save หรือแตะช่องนั้นแล้ว · **Bulk shortlist** — dialog กว้าง เลือกหลาย KOL จาก KOL Master (filter · Select page / all matching · Not in this campaign yet) → Preview (Add n · Already in this campaign · Blacklisted · Max 200 per batch) → สร้าง deal Shortlist ทีเดียว + Undo 10 วินาที · `deals.created_batch_id`
+- KOL Master multi-select → Add to campaign เปิด Bulk shortlist · KOL ที่สร้างเองมี `sources: ['manual']`
+- Table bulk: **Move to…** (warning ผ่าน · error ข้าม + ผลลัพธ์ Moved / Blocked) · **Set details** (PIC · Pillar · CTA · Payment term · Phase = เพิ่มโพสต์ Planned ที่บัญชีหลักของ KOL) · Stage popup มี Set details
+- guard Confirm QT: ข้ามเข้าขั้น Confirm QT ต้องมี Payment term (ช่องใน Move dialog) · deal เก่าที่ผ่านไปแล้วได้แค่ info
+
+**Drawer 60% (R5)**
+- `rules.drawerWidth(kind, viewport, menuWidth, saved)`: default 60% ของหน้าจอ (720–1200 · Planner ≥ 880) · เหลือหน้าจอ < 320px หรือกว้างไม่พอ = เต็มพื้นที่เนื้อหา · ลากขอบได้ จำแยกชนิด (`ui.drawerWidth.<kind>`: kol · deal · campaign · planner) · ดับเบิลคลิกขอบ = reset
+- 2 คอลัมน์ตั้งแต่ 720px · Journey แนวนอนเมื่อกว้างพอ (แนวตั้งบน Phone) · Phase Planner เป็น modal · Campaign drawer ไม่ modal
+
+**Samples (R6)** — ไฟล์ใหม่ `src/rules-samples.js` · `src/screen-samples.js`
+- schema 11: `sample_shipments` (หลาย shipment ต่อ deal) · `lookups.sample_settings` (lead days 7 · carriers 9 · tracking link ต่อ carrier) · migration: deal ที่ delivered → shipment Delivered (legacy · ไม่มีวันที่ = "Date not recorded") 206 รายการ · deal ตั้งแต่ Confirm QT ที่ยังไม่ Complete / Cancel → To ship (auto) 8 รายการ
+- `shipBy` = Draft 1 (หรือวันโพสต์) − lead days · override ได้ + Reset to auto · `sampleStatus`: Overdue · Ship this week · To ship · Shipped · Problem · Delivered · Not required · ทุก commit รัน `syncShipments` (Confirm QT → To ship อัตโนมัติ · Cancel → Not required "Deal cancelled" · ship by ตามวันที่ของ deal · `deals.delivered` / `delivery_date` คำนวณจาก shipment — Template view / export เดิมไม่เปลี่ยน)
+- Deal drawer › **Samples** (ต่อจาก Journey · แทนช่อง Product delivered / Delivery date): รายการ shipment · ⋯ Edit · Mark shipped · Mark delivered · Report problem · Set ship-by date · Mark as not required · Delete (manual ที่ยัง To ship) · + Add shipment · Shipping details (Address on file / No address) · Journey มี Sample track ใต้ Payment track
+- Deals › **Samples**: queue cards Overdue · Ship this week · Shipped (in transit) · Delivered · No ship-by date · group by Status / PIC / Phase · Carrier / Tracking แก้ในแถว · bulk Mark shipped (tracking ต่อแถว) · Mark delivered · Set ship-by · Not required · **Export shipping list** (.xlsx / CSV · Recipient / Phone / Address เฉพาะเมื่อ Unlock และมีสิทธิ์ payee.unlock) · KOL sticky
+- Pipeline card ไอคอนกล่องสีตามสถานะ + tooltip "Ship by dd/mm · Overdue" · Table filter Sample status · Dashboard › Operations card **Samples to ship** (Overdue + Ship this week ของ PIC) → Deals › Samples · Due in next 7 days มี "Ship sample"
+- Shipping details (ผู้รับ · เบอร์ · ที่อยู่) เข้ารหัสด้วย Payee vault → `payee_profiles.secure_ship` + flag `shipping_on_file` · กรอกที่ KOL drawer › **Payee & shipping** หรือ Deal drawer › Samples (ไม่ต้อง Unlock · ต้องมี vault) · ดูเต็มเมื่อ Unlock เท่านั้น
+- Settings › **Samples** (Admin / KOL Manager): Lead days 0–60 · Carriers · Tracking link (`https://…{tracking}`) · บันทึกเมื่อค่าถูกต้อง
+- สิทธิ์: Add / แก้ shipment = Admin · KOL Manager · Staff (deal ที่เป็น PIC) · Viewer / Accounting อ่านอย่างเดียว (ไม่มี checkbox / ปุ่มแก้) · Accounting กรอก shipping details ได้
+
+**Tests** — `tests/cr10.spec.js` (R1–R6) · tests ที่ถูกแทนตาม CR-10 แก้ให้ตรง (schema ≥ 9 · drawer 60% · term key `postpaid` · จำนวน collection มี `sample_shipments` 214 · PII test ไม่นับ label ของ shipping details) · รวม **412 ข้อผ่าน**
+
+## CR-09 · 06/10/2026 — Dashboard · Campaign & Phase · Deals · Payments · KOL Master refine · role Accounting
+
+Spec: `docs/CR-09.md` (v1.0) · schema_version **8 → 9** (migration ตอนโหลด · ใช้กับ Backup เก่า) · สูตรเงินไม่เปลี่ยน — anchors CR-05 §5.0 (Budget ฿2,748,400 · Committed ฿1,783,579 · Pending ฿98,000 · Remaining ฿964,821 · Paid (est.) ฿774,579) และ CR-08 §5.0 (To pay 125 งวด · ฿826,950) ตรงทั้งหมด · data model: `docs/DATA_MODEL.md` · Payments: `docs/PAYMENTS.md`
+
+**Dashboard › All campaigns (R1)** — ไฟล์ใหม่ `src/rules-dash.js` · `src/export.js`
+- KPI 5 cards: Campaigns (On going / Complete · Next to end + days left) · Deals (List / In process / Complete) · Committed vs Budget (% used · Remaining · Pending) · Paid (est.) (% of Committed · Outstanding) · KOLs engaged (deals · Avg per deal) — ไม่มี Posts / Views
+- การ์ด **KOL tier mix** ข้าง Activity by campaign: donut + ตาราง Tier · Followers · Deals · Spend · % (Spend / Deals) · นับ deal ตั้งแต่ Confirm QT ไม่ Cancel (ตรงกับ Committed) · Swimlane สูงเต็มแถว
+- แกนเวลาแถวเดียวตามความยาวช่วง (`R.timeAxis`: เดือน · วันจันทร์ · วัน · ข้ามปีแสดง "Jan 27") · Portfolio มี **Days left** (`R.daysLeft`: n days left · Last day · Starts in n days · On hold · —) · เรียงได้ทุกคอลัมน์
+- Export ทุกการ์ด (⤓ Excel / CSV · ตารางเดียวกับ Table view) และ **Export ทั้ง tab** (.xlsx หลาย sheet + บรรทัด Tab / Scope / Exported / Exported by) · ไม่มีข้อมูลส่วนบุคคล
+
+**Dashboard › By campaign · Operations (R2)**
+- Activity by date เปิดเป็น **Daily** เสมอ · Color by `Pillar · KOL Tier` (จำต่อคน) · Phase เป็นแถบเทา + เส้นประแบ่ง Phase (tooltip บอก Phase) · บรรทัดช่วงวันที่ "Day n of N · n days left" · Export ทั้ง tab (Summary · Activity · Phase budget · Allocation · Workload)
+- Operations: **All PICs** (ตัวแรก · default เมื่อไม่ได้เป็น PIC · Back to me) · คอลัมน์ PIC ใน Due in next 7 days · Export ทั้ง tab (Summary · Queue · Active pipeline · Due in next 7 days)
+
+**Campaign & Phase (R3)**
+- Staff แก้ **Products** ของ Campaign ได้ (✎ ที่ section Products · chip "No products" กดได้ · + New product) · section อื่นมีไอคอน 🔒 · บันทึก `campaign_events` type products + "Updated dd/mm/yyyy by X"
+- เอาสินค้าที่ deal ใช้อยู่ออกจาก Campaign → ถาม "n deals use this product…" (warn แทน error) · deal เก็บสินค้าเดิมไว้และแสดง "Product not in campaign"
+- ตาราง Campaign: คอลัมน์ Days left (เรียงได้) · ตัวเลขชิดขวาทุกตาราง (`.tbl .num`) · ⓘ อยู่ซ้ายหัวคอลัมน์ตัวเลข
+- schema 9: `campaign_events` (สร้างถ้าไม่มี) · role `accounting` · user **Earn** (เพิ่มครั้งเดียว ลบแล้วไม่กลับ) · `payment_runs.returned_*`
+
+**Deals (R4)**
+- ชื่อขั้นชุดเดียวทุกที่ (`R.stageKey` / `stageLabel` / `stageOrder` = ชื่อ journey step เช่น "Approve Draft 1") — Table group · cell · Pipeline · Drawer
+- Pipeline 2 แถว: กลุ่ม List / In process / Complete + เส้นแบ่ง · มี Approve Draft 3 · คอลัมน์ว่างที่ไม่บังคับหุบเป็นแถบแคบ · **Cancelled lane** เต็มความกว้าง (ซ่อน / แสดง จำต่อคน) · การ์ด 52px (ยอด หรือ ฿— · tier · ⋯ เมื่อ hover) · สีกลุ่มสถานะ · หัวกลุ่ม/คอลัมน์บอก n · ยอด Committed / Pending (`R.stageMoney`)
+
+**Deal drawer · Stage popup (R5)**
+- Deal drawer **50%** (680–1100px · ลากขอบได้ · จำแยกจาก KOL drawer) · 2 คอลัมน์ (ซ้าย Deal · Costs · Timeline / ขวา Payment · Posts) · ปุ่ม Copy ข้างชื่อ · Days in stage · Payment ในคอลัมน์ขวาเป็นรายการต่องวด (Milestone + สถานะ · Gross · Net · Run / Paid on · Request) และ Gencode ยาวตัดบรรทัด — ไม่มี scroll แนวนอนใน drawer
+- **Stage popup** (⤢ ที่หัวคอลัมน์ Pipeline / หัวกลุ่ม Table): รายการทั้งขั้น · ค้นหา · เรียง · ติ๊กหลายแถว → Move to… (ข้าม deal ที่ต้องกรอก dialog) · Export · เปิด deal แล้ว "← Back to <stage>" กลับมาที่เดิม · Viewer / Accounting ไม่มี checkbox
+
+**Payments › To pay · KOL drawer (R6)**
+- Group by **Amount** แทน Band (Under ฿1,000 · ฿1,000 – ฿9,999 · ฿10,000 and above + No WHT / Separate approval) · หุบ/กาง ทีละกลุ่ม + Expand all / Collapse all (จำต่อคน)
+- ตารางไม่ล้นตั้งแต่ 1280px: KOL sticky · Campaign › Phase 2 บรรทัด (milestone + ! term + due) · คอลัมน์ **Status** เดียว (chip + "Missing n" popover → ไปที่แก้) · ปุ่ม Request เฉพาะคนที่มีสิทธิ์ · ⋯ ต่อแถว · คอลัมน์ PIC เฉพาะ All PICs · ไม่มี checkbox เมื่อไม่มีสิทธิ์
+- KOL drawer default **60%** (720–1200px)
+
+**Payments tabs · role Accounting (R7)**
+- tabs **To pay · Payment runs · Accounting** (ⓘ ข้างชื่อ · History รวมเข้า Accounting › Paid · ลิงก์ `#payments/history` เปิด Accounting)
+- To pay bulk: **Create payment run** (Pay date ศุกร์ถัดไป + Prepared by → เปิด run) · Add to run ▾ · Payments CSV มี tooltip "To send to Accounting, create a payment run"
+- Payment runs: filter สถานะ (ซ่อน Closed) · label **Draft · Returned · With Accounting · Paid · Closed** (`R.runStatusKey` / `runStatusLabel` — ค่าที่เก็บเดิม) · **Submit to Accounting** · run ที่ส่งแล้วอ่านอย่างเดียว (Open in Accounting · Reopen = Admin) · แถบ "Returned by X on dd/mm/yyyy — reason"
+- Accounting: cards To transfer (runs · ฿ net) · WHT certs to send · Paid this month · **Runs to pay** (Open · Export PR · Mark paid ทั้งรอบ/ที่ติ๊ก · **Return to team** (เหตุผลบังคับ · `R.returnRun`) · Close run) · **WHT certificates** (Mark sent · Send to แสดงเมื่อ Unlock · WHT summary) · **Paid** (This month · Mark paid outside app แบบเลือกรายการ)
+- Export PR: ทุกคนที่เห็น run กดได้ (ข้อมูลผู้รับเฉพาะ Unlock) · ชื่อไฟล์ `PR_dd_mm_yy_<run id>.xlsx` · ทุก sheet แถว 1 = "รอบจ่าย: PR-… · วันจ่าย dd/mm/yyyy" · หัวตารางแถว 2 · SUM จากแถว 3
+- role **Accounting** (chip ม่วง): ไม่เป็น PIC · ไม่เห็น Settings / Role Management · หน้าแรก Payments › Accounting · แก้ได้เฉพาะ Payee (Unlock · Replace bank details · Mark as verified) · Mark paid / outside app / Return to team / WHT cert sent / WHT summary / Close run = Admin · Accounting (KOL Manager ไม่ได้แล้ว) · Role Management มีคอลัมน์ Accounting · Deals table ไม่มี checkbox สำหรับ Viewer / Accounting (Export อยู่ใน ⋯)
+
+**Tests** — `tests/cr09.spec.js` (R1–R7) · CR-02/04/05/06/07/08 tests ที่ถูกแทนตาม CR-09 แก้ให้ตรง (users 9 · ชื่อขั้น · roles · Products warn · opsPic `__all` · drawer widths · PR แถวรวม/ชื่อไฟล์) · `node --test` 380/380 · `tests/test.html` 380/380
+
 ## CR-08 · 06/10/2026 — Payments module · Payment line รายงวด · Payment run รายสัปดาห์ (PR) · VAT / WHT · Payee details เข้ารหัส · Export PR (.xlsx) · ใบ 50 ทวิ
 
 Spec: `docs/CR-08.md` (v1.1) · schema_version **7 → 8** (Restore รับ backup v1–v8 · migration ตอนโหลด ไม่สร้าง line) · ตัวเลขเงินเท่ากับ CR-05 §5.0 (Committed ฿1,783,579 · Pending ฿98,000 · Budget ฿2,748,400 · Remaining ฿964,821 · Paid (est.) ฿774,579) · Unpaid 130 · anchors ของ CR-08 §5.0 ตรงทั้งหมด (To pay 125 งวด · ฿826,950 · today = 06/10/2026) · วิธีใช้ / สูตร / ข้อห้าม: `docs/PAYMENTS.md`

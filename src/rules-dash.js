@@ -81,5 +81,27 @@ Object.assign(KT.rules, (function (R, C) {
     return { gran: bars, mode, start, end, ticks };
   }
 
-  return { daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis };
+  /* ===================== CR-10 §4.8 — a date range, picked or typed ===================== */
+  /* start / end as ISO or dd/mm/yyyy (blank = not chosen yet) → {from, to, errs [{field: 'start' | 'end', msg}]} ·
+     a date that cannot be read = "Use dd/mm/yyyy" · an end before the start = "End date must be on or after start date" */
+  function validateRange(start, end) {
+    const errs = [];
+    const read = v => { const t = String(v == null ? '' : v).trim(); if (!t) return ''; if (R.isISODate(t)) return t;
+      const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t); if (!m) return null; const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; return R.isISODate(iso) ? iso : null; };
+    const from = read(start), to = read(end);
+    if (from === null) errs.push({ field: 'start', msg: C.msg.rangeFormat });
+    if (to === null) errs.push({ field: 'end', msg: C.msg.rangeFormat });
+    if (from && to && to < from) errs.push({ field: 'end', msg: C.msg.rangeOrder });
+    return { from: from || '', to: to || '', errs };
+  }
+  /* the days a range covers, both ends counted (null when not a range) */
+  const rangeDays = (from, to) => (R.isISODate(from) && R.isISODate(to) && to >= from ? dayDiff(to, from) + 1 : null);
+  /* CR-10 §4.9 — Timeline "Fit": the earliest start − 7 days … the latest end + 7 days of the Campaigns picked (their Phases) */
+  function fitRange(state, campaignIds) {
+    const set = new Set(campaignIds || []), ds = state.phases.filter(p => set.has(p.campaign_id));
+    const from = ds.map(p => p.start_date).filter(R.isISODate).sort()[0], to = ds.map(p => p.end_date).filter(R.isISODate).sort().pop();
+    return from && to ? { from: addDays(from, -7), to: addDays(to, 7) } : null;
+  }
+
+  return { daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

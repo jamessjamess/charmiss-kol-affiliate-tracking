@@ -42,10 +42,11 @@ Object.assign(KT.rules, (function (R, C) {
     const posted = posts.filter(p => p.post_date);
     const byPlatform = new Map();
     posts.forEach(p => { const k = platformOf(p); const x = byPlatform.get(k) || { platform: k, posted: 0, planned: 0 }; x.planned++; if (p.post_date) x.posted++; byPlatform.set(k, x); });
-    /* engagement over every post that has metrics (posted or not); the caption counts posted posts */
+    /* engagement over every post that has metrics (posted or not); the caption counts posted posts ·
+       CR-10 §4.3: the sums, ER and CPV come from R.postMetrics — the function Deals › Performance uses */
     const num = v => Number(v) || 0, withViews = posts.filter(p => num(p.views) > 0);
-    const sum = k => withViews.reduce((a, p) => a + num(p[k]), 0), views = sum('views');
-    const cost = withViews.reduce((a, p) => a + ((idx.post.get(p.post_id) || {}).share || 0), 0);
+    const E = R.postMetrics(withViews.map(p => ({ post: p, cost: (idx.post.get(p.post_id) || {}).share || 0 })));
+    const sum = k => E[k], views = E.views;
     const complete = count('Complete');
     return {
       deals: { active: active.length, list: count('List'), inprocess: count('Inprocess'), complete, cancelled: deals.length - active.length,
@@ -55,7 +56,7 @@ Object.assign(KT.rules, (function (R, C) {
       posts: { posted: posted.length, planned: posts.length, byPlatform: [...byPlatform.values()].sort((a, b) => b.posted - a.posted || b.planned - a.planned) },
       engagement: views ? {
         views, likes: sum('likes'), comments: sum('comments'), saves: sum('saves'), shares: sum('shares'),
-        er: (sum('likes') + sum('comments') + sum('saves') + sum('shares')) / views, cpv: cost / views,
+        er: E.er, cpv: E.cpv,
         withMetrics: posted.filter(p => num(p.views) > 0).length, posted: posted.length, noDate: withViews.filter(p => !p.post_date).length,
       } : null,
     };

@@ -3,7 +3,8 @@
    a Total row where the widget has one. Nothing comes from the Payee vault. No DOM — the screen downloads. → KT.export
    x (All campaigns) = { state, from, to, today, inclCancel, measure ('posts' | 'spend'), sort {key, dir} }
    x (By campaign)   = { state, campaignId, phaseId, today, gran ('day' | 'week'), measure, colorBy ('pillar' | 'tier') }
-   x (Operations)    = { state, f {pic ('' = all), campaign, tier}, picLabel, today, queue } */
+   x (Operations)    = { state, f {pic ('' = all), campaign, tier}, picLabel, today, queue }
+   x (Performance, CR-10 §4.7) = { state, rows (R.perfRows as on screen: scope · filters · sort), cols (the columns that are on) } */
 KT.export = (function (R, C) {
   'use strict';
   const O = C.overview, MN = C.money;
@@ -151,7 +152,30 @@ KT.export = (function (R, C) {
       rows: rows.map(r => [dmy(r.due), (ctx.kols.get(r.deal.kol_id) || {}).display_name || r.deal.kol_id, whereOf(s, ctx, r.deal), R.stepShort(r.step ? r.step.sub_status : ''), r.deal.pic || '']), total: null };
   }
 
-  const WIDGETS = { summary, activity, tiermix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
+  /* ===================== Deals › Performance (CR-10 §4.7) ===================== */
+  /* the columns that are on (Post → the full link at the end) + Account after KOL + Post link + Post ID · a Total row (ER / CPV / CPE weighted) */
+  function performance(x) {
+    const s = x.state, P = C.perfTab, cols = x.cols.filter(k => k !== 'post'), r4 = v => (v == null ? null : Math.round(v * 10000) / 10000);
+    const phaseOf = k => (!k ? '' : k === R.NEEDS ? C.deal.needsPhase : k === R.UNSCHEDULED ? C.deal.unscheduled : R.phaseName(s, k));
+    const value = (k, r) => {
+      const p = r.post;
+      switch (k) {
+        case 'tier': return r.tier; case 'platform': return r.platform; case 'post_date': return dmy(p.post_date); case 'expected': return dmy(p.expected_post_date);
+        case 'er': return r4(r.er); case 'cost': return r2(r.cost); case 'cpv': return r4(r.cpv); case 'cpe': return r2(r.cpe); case 'vpf': return r2(r.vpf);
+        case 'updated': return r.status === 'none' ? '' : r.status === 'imported' ? P.status.imported : dmy(String(p.metrics_updated_at || '').slice(0, 10));
+        case 'pic': return r.pic; case 'phase': return phaseOf(r.phase); case 'gencode': return p.gencode_code || ''; case 'pillar': return r.deal.pillar || '';
+        case 'ontime': return r.lateDays == null ? '' : r.lateDays ? P.late(r.lateDays) : P.onTime;
+        default: return r[k];
+      }
+    };
+    const header = cols.flatMap(k => (k === 'kol' ? [P.col.kol, P.account] : [P.col[k]])).concat([P.postLink, P.postId]);
+    const rows = x.rows.map(r => cols.flatMap(k => (k === 'kol' ? [(r.kol && r.kol.display_name) || r.deal.kol_id, r.handle ? '@' + r.handle : ''] : [value(k, r)])).concat([r.post.post_link || '', r.post.post_id]));
+    const m = R.perfMetricsOf(x.rows);
+    const tot = k => (['views', 'likes', 'comments', 'shares', 'saves', 'engagement'].includes(k) ? m[k] : k === 'cost' ? r2(m.cost) : k === 'er' ? r4(m.er) : k === 'cpv' ? r4(m.cpv) : k === 'cpe' ? r2(m.cpe) : '');
+    return { key: 'performance', name: P.sheet, header, rows, total: cols.flatMap(k => (k === 'kol' ? [P.total, P.postsN(x.rows.length)] : [tot(k)])).concat(['', '']) };
+  }
+
+  const WIDGETS = { performance, summary, activity, tiermix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
     summary_ops: summaryOps, queue, pipeline, due };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */

@@ -375,7 +375,7 @@ KT.screens.kol = (function () {
     const val = v => R.trim(v) || null;
     const rec = { kol_id: kolId, display_name: R.trim(d.display_name), kol_category: val(d.kol_category), kol_type: val(d.kol_type), gender: d.gender || null,
       pic: d.pic || null, kol_status: d.kol_status || 'Active', status_reason: d.kol_status && d.kol_status !== 'Active' ? val(d.status_reason) : null,
-      contact_channel: d.contact_channel || null, note: val(d.note), sources: isNew ? [T.sourceManual] : (old.sources || []),
+      contact_channel: d.contact_channel || null, note: val(d.note), sources: isNew ? ['manual'] : (old.sources || []),   // CR-10 §3: a KOL made in the app
       default_payment_term: R.isTerm(d.default_payment_term) ? d.default_payment_term : null };
     const termChanged = !isNew && (R.isTerm(old.default_payment_term) ? old.default_payment_term : null) !== rec.default_payment_term;
     if (isNew) s.kol_master.push(Object.assign(rec, { kol_type_legacy: null })); else Object.assign(old, rec);
@@ -505,7 +505,13 @@ KT.screens.kol = (function () {
     });
     chk();
   }
+  /* CR-10 §4.11 — the ticked KOLs go to Bulk shortlist (Campaign · Phase · PIC · Pillar · preview · Undo) */
   function openBulkAdd() {
+    if (!guard('deal.edit')) return;
+    const ids = [...km.selected]; if (!ids.length) return;
+    KT.bulk.open({ kolIds: ids });
+  }
+  function openBulkAddOld() {
     if (!guard('deal.edit')) return;
     const s = state(), ids = [...km.selected];
     if (!ids.length) return;

@@ -46,8 +46,8 @@
     test('TC-07 / TC-08: Group by KOL Tier and Stage (no empty groups)', () => {
       const s = fresh(), ctx = R.dealContext(s);
       assert.deepEqual(R.groupDeals(s, s.deals, 'tier', ctx, TODAY).map(g => [g.key, g.rows.length]), [['Mega', 10], ['Macro', 85], ['Mid-tier', 36], ['Micro', 125], ['Nano', 47], ['Unknown', 2]]);
-      assert.deepEqual(R.groupDeals(s, s.deals, 'stage', ctx, TODAY).map(g => [g.key, g.rows.length]), [['Contacted', 37], ['Brief', 26], ['Draft 1', 6], ['Draft 2', 1], ['Posted', 230], ['Cancelled', 5]]);
-      assert.deepEqual(R.stageOrder(s.lookups).map(x => x.key), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Posted', 'Cancelled']);
+      assert.deepEqual(R.groupDeals(s, s.deals, 'stage', ctx, TODAY).map(g => [g.key, g.rows.length]), [['Contacted', 37], ['Brief', 26], ['Approve Draft 1', 6], ['Approve Draft 2', 1], ['Post', 230], ['Cancelled', 5]]);   // CR-09 §4.9: the journey step names
+      assert.deepEqual(R.stageOrder(s.lookups).map(x => x.key), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Approve Script', 'Approve Draft 1', 'Approve Draft 2', 'Approve Draft 3', 'Post', 'Cancelled']);
       assert.deepEqual(R.groupDeals(s, s.deals, 'none', ctx, TODAY).map(g => g.rows.length), [305]);
       const ph = R.groupDeals(s, s.deals, 'phase', ctx, TODAY);
       assert.equal(ph.reduce((a, g) => a + g.rows.length, 0), 305);
@@ -55,11 +55,11 @@
       const brief = R.groupStats(s, R.groupDeals(s, s.deals, 'stage', ctx, TODAY).find(g => g.key === 'Brief').rows, TODAY, ctx);
       assert.ok(brief.overdue > 0 && brief.shortlist === 0);
     });
-    test('stageKey follows the Stage column: Script · Draft n (without "of m") · Posted · Cancelled', () => {
+    test('stageKey = the journey step name (CR-09 §4.9 replaces Script · Draft n · Posted) · Cancelled', () => {
       const L = SEED.lookups;
-      assert.equal(R.stageKey(L, { status: 'Inprocess', sub_status: 'Approve Script' }), 'Script');
-      assert.equal(R.stageKey(L, { status: 'Inprocess', sub_status: 'Approve Draft 3' }), 'Draft 3');
-      assert.equal(R.stageKey(L, { status: 'Complete', sub_status: 'Post' }), 'Posted');
+      assert.equal(R.stageKey(L, { status: 'Inprocess', sub_status: 'Approve Script' }), 'Approve Script');
+      assert.equal(R.stageKey(L, { status: 'Inprocess', sub_status: 'Approve Draft 3' }), 'Approve Draft 3');
+      assert.equal(R.stageKey(L, { status: 'Complete', sub_status: 'Post' }), 'Post');
       assert.equal(R.stageKey(L, { status: 'Cancel', sub_status: 'Cancel' }), 'Cancelled');
       assert.equal(R.stageKey(L, { status: 'List', sub_status: 'Confirm QT' }), 'Confirm QT');
     });

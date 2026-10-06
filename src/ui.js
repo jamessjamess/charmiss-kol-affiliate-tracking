@@ -36,13 +36,15 @@ KT.ui = (function () {
   const guard = action => { if (can(action)) return true; toast(C.roles.noPermission); return false; };
   /* PIC dropdowns (users ticked "Is PIC", active) — keep the value already chosen */
   const picList = keep => { const l = R.picNames(state()); return keep && !l.includes(keep) ? l.concat([keep]) : l; };
-  const canSeeTab = key => key !== 'roles' || can('roles');
+  const canSeeTab = key => (key === 'roles' ? can('roles') : key === 'settings' ? (actor() || {}).role !== 'accounting' : true);   // CR-09 §4.16
 
   /* every change goes through here: persist, refresh banners, optional toast */
   function commit(msg) {
     /* CR-08 §4.3 — a deal moved to Cancel (Deals · Move · a cancelled campaign): its payment lines not paid become Cancelled ("Deal cancelled") */
     const s = state();
     if (s && (s.payment_lines || []).length) { let e = 0; const evs = R.cancelDealLines(s, { eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
+    /* CR-10 §4.14 — Samples: a deal at Confirm QT gets a To ship · a cancelled deal's To ship → Not required · Ship by follows the deal's dates */
+    if (s && Array.isArray(s.sample_shipments)) { let e = 0; const evs = R.syncShipments(s, { shipmentId: () => store.newId('shipment'), eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
     store.save(); renderBanners(); if (msg) toast(msg);
   }
 
@@ -72,12 +74,11 @@ KT.ui = (function () {
   const stageText = d => (d.status === 'Complete' ? C.stage.posted : d.status === 'Cancel' ? C.stage.cancelled : `${C.status[d.status] || d.status} · ${d.sub_status}`);
   const stageChip = d => `<span class="st ${STATUS_CLS[d.status] || ''}" title="${esc(stepTitle(d.sub_status))}">${esc(stageText(d))}</span>`;
   /* Stage column (CR-02 §4.5): List → grey chip · In process → dots + Brief / Script / Draft n of m · Complete → dots + Posted · Cancel → red chip */
-  function stageLabel(d) {
-    if (d.status === 'Complete') return C.stage.posted;
-    if (d.status === 'Cancel') return C.stage.cancelled;
-    const st = R.stepOf(state().lookups, d.sub_status);
-    if (d.status === 'Inprocess' && st) { if (R.isScriptStep(st)) return C.stage.script; const n = R.draftNo(st); if (n) return C.stage.draftOf(n, R.planOf(d).drafts); }
-    return d.sub_status || '';
+  /* CR-09 §4.9: the journey step's own name everywhere · "(1 of 2)" in grey when the deal plans more than one draft */
+  const stageLabel = d => R.stageLabel(state().lookups, d);
+  function stageOfPlan(d) {
+    const st = R.stageOf(state().lookups, d), n = st && d.status === 'Inprocess' ? R.draftNo(st) : 0, m = R.planOf(d).drafts;
+    return n && m > 1 ? C.stage.ofPlan(n, m) : '';
   }
   /* tooltip (CR-07 §4.9): the same data as the Journey timeline, one line per step — date · ⏱ days · late / waiting / overdue */
   function planTip(d, logs) {
@@ -91,7 +92,8 @@ KT.ui = (function () {
   function stageCell(d, logs) {
     const dots = R.stageDots(state().lookups, d), cls = STATUS_CLS[d.status] || '', tip = esc(planTip(d, logs));
     if (!dots.length) return `<span class="st ${cls}" title="${tip}">${esc(stageLabel(d))}</span>`;
-    return `<span class="stage ${cls}" title="${tip}"><span class="dots">${dots.map(x => `<i class="${x.state}"></i>`).join('')}</span><span class="lbl">${esc(stageLabel(d))}</span></span>`;
+    const of = stageOfPlan(d);
+    return `<span class="stage ${cls}" title="${tip}"><span class="dots">${dots.map(x => `<i class="${x.state}"></i>`).join('')}</span><span class="lbl">${esc(stageLabel(d))}${of ? ` <span class="muted">${esc(of)}</span>` : ''}</span></span>`;
   }
   /* Phase / Campaign status chip (CR-02 §4.8): On going blue · Not started grey outline · Complete pale green */
   const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel' };
@@ -158,10 +160,12 @@ KT.ui = (function () {
   };
 
   /* ===================== small helpers ===================== */
-  function toast(msg) { const t = $('toast'); t.classList.remove('act'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
+  /* CR-10 §4.10: a toast over an open dialog lives inside it (dialogs sit on top of the page) — always in the frame, bottom centre */
+  const toastHost = t => { const d = [$('drp'), $('dlg')].find(x => x && x.open), host = d || document.body; if (t.parentNode !== host) host.appendChild(t); };
+  function toast(msg) { const t = $('toast'); toastHost(t); t.classList.remove('act'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
   /* a toast with one action button (e.g. Undo), open for `ms` */
   function toastAction(msg, label, fn, ms = 5000) {
-    const t = $('toast'); clearTimeout(t._h);
+    const t = $('toast'); clearTimeout(t._h); toastHost(t);
     t.innerHTML = `<span>${esc(msg)}</span><button type="button" class="tact">${esc(label)}</button>`;
     t.classList.add('show', 'act');
     const hide = () => t.classList.remove('show', 'act');
@@ -438,7 +442,7 @@ KT.ui = (function () {
   /* ===================== dialog ===================== */
   const dlg = $('dlg');
   /* wide: true = up to 1100px · 'mid' = up to 820px (CR-07: Add to campaign with its Price reference) */
-  function openDialog(html, wide) { dlg.innerHTML = html; dlg.classList.toggle('wide', wide === true); dlg.classList.toggle('mid', wide === 'mid'); if (!dlg.open) dlg.showModal(); }
+  function openDialog(html, wide) { dlg.innerHTML = html; dlg.classList.toggle('wide', wide === true); dlg.classList.toggle('mid', wide === 'mid'); dlg.classList.toggle('xl', wide === 'xl'); if (!dlg.open) dlg.showModal(); }
   function closeDialog() { if (dlg.open) dlg.close(); }
   function confirmDialog(title, body, okLabel, danger) {
     return new Promise(resolve => {
@@ -454,20 +458,22 @@ KT.ui = (function () {
   /* ===================== side drawer (one at a time) ===================== */
   /* owner: {isDirty(): bool, onClose(): void} — the screen that filled #drawer_content */
   const drawer = { owner: null };
-  /* CR-07 §4.7 — owner.kind 'kol': half the screen, resizable from its left edge, and the page beside it stays usable (not modal) ·
-     every other drawer keeps its own width (Deal 560px · Planner wide) */
-  const KDW_KEY = 'ui.kolDrawerWidth';
-  const isKol = () => !!(drawer.owner && drawer.owner.kind === 'kol');
+  /* CR-10 §4.13 — owner.kind 'deal' · 'kol' · 'campaign' · 'planner': 60% wide (R.drawerWidth), resizable from the left edge, each kind remembers its own
+     width (ui.drawerWidth.<kind>; the CR-07 / CR-09 keys are read once) · the page beside stays usable, except under the Phase Planner (it holds a plan) */
+  const WIDE = { kol: { legacy: 'ui.kolDrawerWidth' }, deal: { legacy: 'ui.dealDrawerWidth' }, campaign: {}, planner: { modal: true } };
+  const wideOf = () => { const k = drawer.owner && drawer.owner.kind; return k && WIDE[k] ? Object.assign({ kind: k, key: 'ui.drawerWidth.' + k, width: (v, m, s) => R.drawerWidth(k, v, m, s) }, WIDE[k]) : null; };
+  const isKol = () => !!wideOf();
   const RESIZE_HANDLE = () => `<div class="dr-resize" data-dr-resize title="${esc(C.common.resizeDrawer)}" aria-hidden="true"></div>`;
-  const savedKolWidth = () => { const v = +pref.get(KDW_KEY, ''); return v > 0 ? v : null; };
+  const savedWideWidth = () => { const W = wideOf(), v = W ? +pref.get(W.key, '') || (W.legacy ? +pref.get(W.legacy, '') : 0) : 0; return v > 0 ? v : null; };
   function sizeDrawer(width) {
-    const el = $('drawer_content'), kol = isKol();
-    $('drawer').classList.toggle('nonmodal', kol); el.classList.toggle('kol', kol); el.setAttribute('aria-modal', String(!kol));
-    document.body.classList.toggle('drawer-open', !!drawer.owner && !kol);
-    if (!kol) { el.style.width = ''; el.classList.remove('two'); return; }
+    const el = $('drawer_content'), W = wideOf(), wide = !!W, kind = drawer.owner && drawer.owner.kind;
+    const modal = !wide || !!W.modal;
+    $('drawer').classList.toggle('nonmodal', !modal); el.classList.toggle('wide', wide); el.classList.toggle('kol', kind === 'kol'); el.classList.toggle('dealw', kind === 'deal'); el.setAttribute('aria-modal', String(modal));
+    document.body.classList.toggle('drawer-open', !!drawer.owner && modal);
+    if (!wide) { el.style.width = ''; el.classList.remove('two'); return; }
     const vw = window.innerWidth, cw = Math.round(document.querySelector('.app-main').getBoundingClientRect().width) || vw;
-    const w = width || R.kolDrawerWidth(vw, vw - cw, savedKolWidth());
-    el.style.width = w + 'px'; el.classList.toggle('two', w >= 680);
+    const w = width || W.width(vw, vw - cw, savedWideWidth());
+    el.style.width = w + 'px'; el.classList.toggle('two', w >= 720);   // two columns from 720px (CR-10 §4.13)
   }
   function openDrawer(owner, html) {
     drawer.owner = owner;
@@ -497,11 +503,11 @@ KT.ui = (function () {
     e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add('on');
     const vw = window.innerWidth, cw = Math.round(document.querySelector('.app-main').getBoundingClientRect().width) || vw;
     let w = null;
-    const move = ev => { w = R.kolDrawerWidth(vw, vw - cw, Math.round(vw - ev.clientX)); sizeDrawer(w); };
-    const up = () => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); h.classList.remove('on'); if (w) pref.set(KDW_KEY, String(w)); };
+    const W = wideOf(), move = ev => { w = W.width(vw, vw - cw, Math.round(vw - ev.clientX)); sizeDrawer(w); };
+    const up = () => { h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); h.classList.remove('on'); if (w) pref.set(W.key, String(w)); };
     h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
   });
-  $('drawer').addEventListener('dblclick', e => { if (e.target.closest('[data-dr-resize]') && isKol()) { pref.set(KDW_KEY, ''); sizeDrawer(); } });
+  $('drawer').addEventListener('dblclick', e => { if (e.target.closest('[data-dr-resize]') && isKol()) { const W = wideOf(); pref.set(W.key, ''); if (W.legacy) pref.set(W.legacy, ''); sizeDrawer(); } });   // = 60% again
   document.addEventListener('kt:contentresize', () => { if (isKol()) sizeDrawer(); });
 
   /* ===================== CR-07 §4.9 — the Journey timeline + payment track ===================== */
@@ -544,8 +550,8 @@ KT.ui = (function () {
         `<span class="muted">${x.done ? esc(x.date ? dm(x.date) : '✓') : '—'}</span>${x.when ? `<span class="pt-when">${esc(JR[x.when])}</span>` : ''}</li>`).join('') +
       `</ol><b class="pt-st ${PAY_CLS[p.state] || ''}">${esc(C.payState[p.state])}</b></div>`;
   }
-  /* across when the section is wide enough for the steps (76px each), else down (no sideways scroll) */
-  function fitJourney(root) { (root || document).querySelectorAll('.jt').forEach(el => { el.classList.remove('vert'); el.classList.toggle('vert', el.clientWidth < (+el.dataset.n || 1) * 76); }); }
+  /* across when the section is wide enough for the steps (64px each — CR-10 §4.13: a 60% drawer is always across, even Script + 3 drafts), else down */
+  function fitJourney(root) { (root || document).querySelectorAll('.jt').forEach(el => { el.classList.remove('vert'); el.classList.toggle('vert', el.clientWidth < (+el.dataset.n || 1) * 64); }); }
   document.addEventListener('kt:contentresize', () => fitJourney(document));
   window.addEventListener('resize', () => fitJourney(document));
 

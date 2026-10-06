@@ -74,6 +74,7 @@ Object.assign(KT.rules, (function (R) {
     const M = KT.content.msg, errs = [], n = v => Number(v);
     if (isBlank(d.ontime_grace_days) || !Number.isInteger(n(d.ontime_grace_days)) || n(d.ontime_grace_days) < 0 || n(d.ontime_grace_days) > 30) errs.push({ field: 'ontime_grace_days', msg: M.perfGrace });
     if (isBlank(d.reliability_min_posts) || !Number.isInteger(n(d.reliability_min_posts)) || n(d.reliability_min_posts) < 1 || n(d.reliability_min_posts) > 20) errs.push({ field: 'reliability_min_posts', msg: M.perfMinPosts });
+    if (d.metrics_stale_days !== undefined && (isBlank(d.metrics_stale_days) || !Number.isInteger(n(d.metrics_stale_days)) || n(d.metrics_stale_days) < 1 || n(d.metrics_stale_days) > 365)) errs.push({ field: 'metrics_stale_days', msg: M.perfStale });   // CR-10
     return { errs, warns: [], infos: [] };
   }
 

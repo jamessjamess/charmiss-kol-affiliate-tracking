@@ -306,6 +306,12 @@ KT.rules = (function (C) {
       if (deal.is_legacy) infos.push(issue('pillar', M.pillarNotSetInfo));
       else errs.push(issue('pillar', M.movePillarRequired, 'pillar'));
     }
+    /* CR-10 §4.12 — from Confirm QT on a deal needs a payment term (the Move dialog has a field for it · imported deals are only reminded) */
+    const fromSub = from && isCancelStep(from) ? stepBeforeCancel(state, deal) : deal.sub_status;   // leaving Cancel: where it was before
+    if (!isTerm(termOf(deal)) && !isTerm(opts.paymentTerm) && fromSub && pillarStepReached(state.lookups, toSub) && !pillarStepReached(state.lookups, fromSub)) {   // crossing into Confirm QT
+      if (deal.is_legacy) infos.push(issue('payment_term', M.termNotSetInfo));
+      else errs.push(issue('payment_term', M.moveTermRequired, 'term'));
+    }
     return { errs, warns, infos };
   }
 
@@ -342,12 +348,17 @@ KT.rules = (function (C) {
       quote.gencode_period = isBlank(deal.gencode_period) ? null : Number(deal.gencode_period);
     }
     /* a pillar picked in the Move dialog is saved with the move (and logged) */
-    let pillarEvent = null;
+    let pillarEvent = null, termEv = null;
     if (isBlank(deal.pillar) && !isBlank(opts.pillar)) {
       d.pillar = opts.pillar;
       pillarEvent = fieldChange(deal, 'pillar', opts.pillar, { eventId: (ctx.eventId || 0) + (event ? 1 : 0), now: ctx.now, user: ctx.user }).event;
     }
-    return { deal: d, log, quote, event, events: [event, pillarEvent].filter(Boolean) };
+    /* CR-10 §4.12 — a payment term picked in the Move dialog is saved with the move (and logged) */
+    if (!isTerm(termOf(deal)) && isTerm(opts.paymentTerm)) {
+      d.payment_term = opts.paymentTerm;
+      termEv = termEvent(deal, opts.paymentTerm, { eventId: (ctx.eventId || 0) + (event ? 1 : 0) + (pillarEvent ? 1 : 0), now: ctx.now, user: ctx.user });
+    }
+    return { deal: d, log, quote, event, events: [event, pillarEvent, termEv].filter(Boolean) };
   }
 
   /* ---------- changing the content plan from the drawer (CR-02 §4.2) ---------- */

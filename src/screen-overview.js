@@ -65,9 +65,7 @@ KT.screens.overview = (function () {
       (A.preset === 'custom' ? `<span class="fchip">${esc(`${R.dmy(from)} – ${R.dmy(to)}`)}<button type="button" data-clearcustom aria-label="${esc(C.deal.remove)}">×</button></span>` : `<span class="muted small">${esc(`${R.dmy(from)} – ${R.dmy(to)}`)}</span>`) +
       `<label class="tick small"><input type="checkbox" id="ov_inclCancel"${A.inclCancel ? ' checked' : ''}> ${esc(C.campaign.includeCancelled)}</label>` +
       `<span class="spacer"></span><button type="button" class="btn small ov-export" data-export="all" title="${esc(O.exportTip)}">${ICON.download}<span>${esc(O.exportTab)}</span></button>` +
-      `<div class="popover cpop${A.custom ? '' : ' hidden'}" id="ov_customPop"><div class="fields">${'<div class="field"><label>' + esc(O.from) + '</label>' + dateHTML('id="ov_cfrom"', A.custom ? A.custom.from : from, { label: O.from }) + '</div>'}` +
-      `${'<div class="field"><label>' + esc(O.to) + '</label>' + dateHTML('id="ov_cto"', A.custom ? A.custom.to : to, { label: O.to }) + '</div>'}</div>` +
-      `<div class="checks" id="ov_cchk"></div><div class="btns"><button type="button" class="btn small" data-ccancel>${esc(C.common.cancel)}</button><button type="button" class="btn small primary" data-capply>${esc(O.apply)}</button></div></div>`;
+      `<span class="hidden">${U.rangeHTML('id="ov_crange"', from, to, { label: O.presets.custom })}</span>`;   // CR-10 §4.8: Custom opens the range picker — nothing changes until Apply
     const k = R.portfolioKpis(s, from, to, td(), A.inclCancel);
     $('ov_body').innerHTML = `<div class="kpis k5" id="ov_kpis">${kpiCards(k)}</div><div class="ov-r2">${swimCard()}${tierCard()}</div>` +
       `<div class="card ov-full"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>`;
@@ -567,7 +565,9 @@ KT.screens.overview = (function () {
     const payCards = [['missing', 'missing_docs', O.payDocsMissing], ['ready', 'ready', O.payReady]].map(([q, st, label]) => [q, pq.filter(x => x.status === st).length, label]).filter(c => c[1])
       .map(([q, n, label]) => `<button type="button" class="qcard pay" data-gopay="${q}"><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(label)} →</span></button>`).join('');
     const cards = keys.map(k => `<button type="button" class="qcard${k === ov.ops.queue ? ' on' : ''}" data-queue="${k}" aria-pressed="${k === ov.ops.queue}"><span class="n">${R.fmtNum(Q[k].length)}</span><span class="t">${esc(O.queues[k])}</span></button>`).join('');
-    $('ov_body').innerHTML = `<div class="qcards">${cards || `<div class="allclear">✓ ${esc(O.allClear)}</div>`}${payCards}</div>` +
+    /* CR-10 §4.14 — samples of this PIC to ship (Overdue + Ship this week) */
+    const toShip = R.samplesToShip(s, f, td()), smCard = toShip.length ? `<button type="button" class="qcard pay" data-gosamples="${esc(toShip[0].deal.campaign_id)}"><span class="n">${R.fmtNum(toShip.length)}</span><span class="t">${esc(C.samples.toShipCard)} →</span></button>` : '';
+    $('ov_body').innerHTML = `<div class="qcards">${cards || `<div class="allclear">✓ ${esc(O.allClear)}</div>`}${payCards}${smCard}</div>` +
       (ov.ops.queue ? `<div class="card" style="margin:16px 0"><div class="card-head"><h3>${esc(O.queues[ov.ops.queue])} <span class="muted">${R.fmtNum(Q[ov.ops.queue].length)}</span></h3>` +
         `<div class="btns ov-ctl">${dlMenu('queue')}</div><div class="btns hidden" id="ov_qbulk"><b id="ov_qselN"></b>${can('deal.edit') ? `<button type="button" class="btn small" data-qbulk="pic">${esc(C.deal.reassign)}</button><button type="button" class="btn small" data-qbulk="pillar">${esc(C.deal.setPillar)}</button>` : ''}<button type="button" class="btn small ghost" data-qclear>${esc(C.deal.clear)}</button></div></div><div id="ov_qtable"></div></div>` : '') +
       `<div class="ov-half"><div class="card"><div class="card-head"><h3>${esc(O.pipelineTitle)}</h3></div><div class="hbars" id="ov_pipe"></div><div class="foot-note" id="ov_pipeFoot"></div></div>` +
@@ -610,13 +610,13 @@ KT.screens.overview = (function () {
   }
   /* CR-07 §4.3 — Due in next 7 days: date (Today / Tomorrow / dd/mm) · KOL · Campaign › Phase · the step due · Open */
   function renderDue(s, f, ctx) {
-    const t = td(), rows = R.upcomingDues(s, f, t, 7, ctx);
+    const t = td(), rows = R.upcomingDues(s, f, t, 7, ctx).concat(R.sampleDues(s, f, t, 7)).sort((a, b) => a.due.localeCompare(b.due) || a.deal.deal_id.localeCompare(b.deal.deal_id));   // + Ship sample (CR-10 §4.14)
     const when = d => (d === t ? O.dueToday : d === R.addDays(t, 1) ? O.dueTomorrow : dm(d));
     const where = d => { const p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), c = ctx.campaigns.get(d.campaign_id) || {}; return `${c.campaign_name || ''}${p ? ` › ${R.phaseName(s, p.phase_id)}` : ''}`; };
     const allPics = !f.pic;   // All PICs: who each deal belongs to (CR-09 §4.6)
     $('ov_due').innerHTML = !rows.length ? `<div class="muted">${esc(O.dueNone)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm duet"><thead><tr><th>${esc(O.colDue)}</th><th>${esc(O.colKol)}</th><th>${esc(O.colCampaignPhase)}</th><th>${esc(O.colStep)}</th>${allPics ? `<th>${esc(O.picLabel)}</th>` : ''}<th></th></tr></thead><tbody>` +
       rows.map(r => { const d = r.deal, k = ctx.kols.get(d.kol_id) || {};
-        return `<tr><td class="nowrap${r.due === t ? ' warn' : ''}">${esc(when(r.due))}</td><td><b>${esc(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td class="nowrap">${esc(R.stepShort(r.step ? r.step.sub_status : ''))}</td>${allPics ? `<td>${esc(d.pic || O.noPic)}</td>` : ''}` +
+        return `<tr><td class="nowrap${r.due === t ? ' warn' : ''}">${esc(when(r.due))}</td><td><b>${esc(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td class="nowrap">${esc(r.sample ? C.samples.shipSample : R.stepShort(r.step ? r.step.sub_status : ''))}</td>${allPics ? `<td>${esc(d.pic || O.noPic)}</td>` : ''}` +
           `<td><button type="button" class="btn small" data-open="${esc(d.deal_id)}">${esc(O.open)}</button></td></tr>`; }).join('') + `</tbody></table></div>`;
   }
 
@@ -625,7 +625,7 @@ KT.screens.overview = (function () {
     const ex = e.target.closest('[data-export]'); if (ex) { exportTab(ex.dataset.export); return; }
     const p = e.target.closest('[data-preset]');
     if (p) {
-      if (p.dataset.preset === 'custom') { const [a, z] = allRange(); ov.all.custom = { from: a, to: z }; renderAll(); const c = $('ov_customPop'); if (c) c.querySelector('.dtext').focus(); return; }
+      if (p.dataset.preset === 'custom') { const [a, z] = allRange(); U.openRange($('ov_crange'), { from: a, to: z, anchor: p }); return; }
       Object.assign(ov.all, { preset: p.dataset.preset, from: '', to: '', custom: null }); savePreset(); renderAll(); return;
     }
     if (e.target.closest('[data-backme]')) { choosePic(R.picName(U.me())); return; }
@@ -645,7 +645,7 @@ KT.screens.overview = (function () {
     else if (t.id === 'ov_opic') choosePic(t.value);
     else if (t.id === 'ov_otier') { ov.ops.tier = t.value; ov.ops.limit = 50; renderOps(); }
     else if (t.id === 'ov_inclCancel') { ov.all.inclCancel = t.checked; renderAll(); }
-    else if (t.id === 'ov_cfrom' || t.id === 'ov_cto') { if (ov.all.custom) ov.all.custom[t.id === 'ov_cfrom' ? 'from' : 'to'] = t.value; }   // nothing changes until Apply
+    else if (t.id === 'ov_crange' && R.isISODate(t.dataset.from) && R.isISODate(t.dataset.to)) { Object.assign(ov.all, { preset: 'custom', from: t.dataset.from, to: t.dataset.to, custom: null }); savePreset(); renderAll(); }
   }
   function onBodyClick(e) {
     const D2 = KT.screens.deals;
@@ -662,6 +662,7 @@ KT.screens.overview = (function () {
     const gd = e.target.closest('[data-godeals]'); if (gd) { go('deals', { filter: { campaign: ov.camp.campaign, phaseSel: gd.dataset.godeals } }); return; }
     /* Operations */
     const ap = e.target.closest('[data-addprod]'); if (ap) { go('campaign', { planCampaign: ap.dataset.addprod }); return; }
+    const gsm = e.target.closest('[data-gosamples]'); if (gsm) { const f = opsFilter(); go('deals', { samples: { campaign: f.campaign || gsm.dataset.gosamples, pic: f.pic || 'all', sstatus: 'toShip' } }); return; }
     const gpy = e.target.closest('[data-gopay]'); if (gpy) { const f = opsFilter(); go('payments', { tab: 'topay', pic: f.pic, campaign: f.campaign || '', queue: gpy.dataset.gopay }); return; }
     const q = e.target.closest('[data-queue]'); if (q) { ov.ops.queue = q.dataset.queue; ov.ops.limit = 50; ov.ops.selected.clear(); renderOps(); return; }
     if (e.target.id === 'ov_qall') { const on = e.target.checked; document.querySelectorAll('#ov_qtable [data-qsel]').forEach(c => { c.checked = on; on ? ov.ops.selected.add(c.dataset.qsel) : ov.ops.selected.delete(c.dataset.qsel); }); qBulk(); return; }

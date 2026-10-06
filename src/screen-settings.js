@@ -5,7 +5,7 @@ KT.screens.settings = (function () {
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['targets', K.navTargets], ['products', K.navProducts], ['perf', K.navPerf], ['payments', K.navPayments], ['data', K.navData]];
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['targets', K.navTargets], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['data', K.navData]];
   const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
@@ -35,6 +35,7 @@ KT.screens.settings = (function () {
       $('set_body').addEventListener('input', e => {
         if (e.target.matches('[data-psearch]')) { st.pq = e.target.value; $('pr_body').innerHTML = productRowsHTML(); }
         if (e.target.dataset.pf2 && can('settings.lists')) { st.perf[e.target.dataset.pf2] = e.target.value; perfCheck(); }
+        if (st.smp && can('settings.lists') && (e.target.dataset.ss || e.target.dataset.sst)) { if (e.target.dataset.ss) st.smp[e.target.dataset.ss] = e.target.value; else st.smp.tracking_url[e.target.dataset.sst] = e.target.value; samplesCheck(); }
       });
       sec.dataset.built = '1';
     }
@@ -43,8 +44,9 @@ KT.screens.settings = (function () {
       `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'data'));
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'targets' ? targetsHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'targets' ? targetsHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : listHTML(st.section);
     if (st.section === 'perf') perfCheck();
+    if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
     if (st.section === 'targets') targetsCheck();
     /* CR-04 §4.4 — Lists and Pillar targets are read-only for everyone but an admin */
@@ -58,7 +60,7 @@ KT.screens.settings = (function () {
   /* CR-05 §4.1: Tier rules — admin · the other Lists, Pillar targets and Products (CR-06) — admin and KOL Manager */
   const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : 'settings.lists');
   const navBtn = ([k, l]) => `<button type="button" data-sec="${k}" class="${k === st.section ? 'on' : ''}">${esc(l)}</button>`;
-  function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; render(); }
+  function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; st.smp = null; render(); }
 
   /* ===================== Data ===================== */
   function dataHTML() {
@@ -148,18 +150,41 @@ KT.screens.settings = (function () {
   /* ===================== KOL performance (CR-06 §4.4): grace days · minimum posts — saved as soon as both are valid ===================== */
   function perfHTML() {
     const L = state().lookups, PF = C.perf;
-    if (!st.perf) st.perf = { ontime_grace_days: String(R.perfSettings(L).grace), reliability_min_posts: String(R.perfSettings(L).minPosts) };
+    if (!st.perf) st.perf = { ontime_grace_days: String(R.perfSettings(L).grace), reliability_min_posts: String(R.perfSettings(L).minPosts), metrics_stale_days: String(R.metricsStaleDays(L)) };
     const inp = (k, label, hint) => `<div class="field"><label for="pf_${k}">${esc(label)}</label><input type="number" min="0" step="1" inputmode="numeric" id="pf_${k}" data-pf2="${k}" value="${esc(st.perf[k])}"><div class="hint">${esc(hint)}</div></div>`;
     return `<div class="card"><div class="card-head"><h3>${esc(K.navPerf)}</h3></div><p class="hint" style="margin-top:0">${esc(PF.info.d(R.perfSettings(L).grace, R.perfSettings(L).minPosts))}</p>
-      <div class="fields">${inp('ontime_grace_days', PF.grace, PF.graceHint)}${inp('reliability_min_posts', PF.minPosts, PF.minPostsHint)}</div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+      <div class="fields">${inp('ontime_grace_days', PF.grace, PF.graceHint)}${inp('reliability_min_posts', PF.minPosts, PF.minPostsHint)}${inp('metrics_stale_days', PF.staleDays, PF.staleHint)}</div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
   function perfCheck() {
     const res = R.validatePerfSettings(st.perf);
     $('ls_checks').innerHTML = checksHTML(res, '');
     $('set_body').querySelectorAll('[data-pf2]').forEach(i => i.classList.toggle('invalid', res.errs.some(e => e.field === i.dataset.pf2)));
     if (!res.errs.length && can('settings.lists')) {
-      const L = state().lookups, g = Number(st.perf.ontime_grace_days), m = Number(st.perf.reliability_min_posts);
-      if (L.ontime_grace_days !== g || L.reliability_min_posts !== m) { L.ontime_grace_days = g; L.reliability_min_posts = m; commit(C.perf.saved); }
+      const L = state().lookups, g = Number(st.perf.ontime_grace_days), m = Number(st.perf.reliability_min_posts), sd = Number(st.perf.metrics_stale_days);
+      if (L.ontime_grace_days !== g || L.reliability_min_posts !== m || L.metrics_stale_days !== sd) { L.ontime_grace_days = g; L.reliability_min_posts = m; L.metrics_stale_days = sd; commit(C.perf.saved); }
+    }
+    return res;
+  }
+
+  /* ===================== Samples (CR-10 §4.14): lead days · carriers · a tracking link per carrier — saved as soon as valid ===================== */
+  function samplesHTML() {
+    const L = state().lookups, S = R.sampleSettings(L), T = C.samples.settings, ro = can('settings.lists') ? '' : ' disabled';
+    if (!st.smp) st.smp = { lead_days: String(S.lead_days), carriers: S.carriers.join('\n'), tracking_url: Object.assign({}, S.tracking_url) };
+    const carriers = st.smp.carriers.split('\n').map(x => R.trim(x)).filter(Boolean);
+    return `<div class="card"><div class="card-head"><h3>${esc(T.nav)}</h3></div><div class="fields">
+        <div class="field"><label for="ss_lead">${esc(T.lead)}</label><input type="number" min="0" max="60" step="1" inputmode="numeric" id="ss_lead" data-ss="lead_days" value="${esc(st.smp.lead_days)}"${ro}><div class="hint">${esc(T.leadHint)}</div></div>
+        <div class="field wide"><label for="ss_car">${esc(T.carriers)}</label><textarea id="ss_car" data-ss="carriers" rows="${Math.min(12, Math.max(6, carriers.length + 1))}"${ro}>${esc(st.smp.carriers)}</textarea><div class="hint">${esc(T.carriersHint)}</div></div>
+        <div class="field wide"><label>${esc(T.tracking)}</label><div class="ss-trk">${carriers.map(c => `<label class="sm-trkrow"><span>${esc(c)}</span><input data-sst="${esc(c)}" value="${esc(st.smp.tracking_url[c] || '')}" placeholder="https://…{tracking}" autocomplete="off"${ro}></label>`).join('')}</div><div class="hint">${esc(T.trackingHint)}</div></div>
+      </div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+  }
+  function samplesCheck() {
+    const carriers = st.smp.carriers.split('\n').map(x => R.trim(x)).filter(Boolean), tracking = {};
+    carriers.forEach(c => { if (R.trim(st.smp.tracking_url[c])) tracking[c] = R.trim(st.smp.tracking_url[c]); });
+    const res = R.validateSampleSettings({ lead_days: st.smp.lead_days, tracking_url: tracking });
+    $('ls_checks').innerHTML = checksHTML(res, '');
+    if (!res.errs.length && can('settings.lists') && carriers.length) {
+      const L = state().lookups, next = { lead_days: Number(st.smp.lead_days), carriers, tracking_url: tracking };
+      if (JSON.stringify(L.sample_settings || {}) !== JSON.stringify(next)) { L.sample_settings = next; commit(C.samples.settings.saved); }
     }
     return res;
   }
@@ -369,6 +394,7 @@ KT.screens.settings = (function () {
     if (t.dataset.ktf && t.closest('[data-kt]')) { kolTypeChange(t); return; }
     if (t.dataset.ps) { st.pay[t.dataset.ps] = t.value; payCheck(); return; }
     if (t.dataset.pf2) { st.perf[t.dataset.pf2] = t.value; perfCheck(); return; }
+    if (t.dataset.ss === 'carriers' && st.smp) { st.smp.carriers = t.value; samplesCheck(); render(); return; }   // the tracking fields follow the list
     const row = t.closest('[data-step]');
     if (row && t.dataset.s) {
       const step = L.journey_steps.find(j => j.sub_status === row.dataset.step);

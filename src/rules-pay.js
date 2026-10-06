@@ -43,6 +43,9 @@ Object.assign(KT.rules, (function (R, C) {
     const wht = gross >= S.wht_threshold ? round2(gross * r) : 0;
     return { gross, vat, wht, wht_rate: rate, net: round2(gross + vat - wht) };
   }
+  /* CR-09 §4.14 — the amount range words: Under ฿1,000 · ฿1,000 – ฿9,999 · ฿10,000 and above (from the settings' limits) */
+  const amountLabels = settings => { const b = (settings || PAYMENT_SETTINGS_DEFAULT).bands, f = n => '฿' + R.fmtNum(n);
+    return [C.pay.amountUnder(f(b[0])), `${f(b[0])} – ${f(b[1] - 1)}`, C.pay.amountFrom(f(b[1]))]; };
   /* the band of an amount: 0 = under 1,000 · 1 = 1,000–9,999 · 2 = 10,000 and above */
   const bandOf = (gross, settings) => { const b = (settings || PAYMENT_SETTINGS_DEFAULT).bands; return gross < b[0] ? 0 : gross < b[1] ? 1 : 2; };
 
@@ -133,7 +136,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* Staff edit the payee of a KOL they are PIC of, or a payee they created · Admin / KOL Manager any */
   function canEditPayee(state, user, payee, kol) {
     if (!R.can(user, 'payee.edit')) return false;
-    if (user.role === 'admin' || user.role === 'kol_manager') return true;
+    if (user.role === 'admin' || user.role === 'kol_manager' || user.role === 'accounting') return true;   // CR-09 §4.16: the accounts team keeps payee details up to date
     if (!payee && !kol) return true;   // a new payee outside KOL Master (Affiliate / Other) — it becomes theirs
     const k = kol || (payee && payee.kol_id ? R.kolById(state, payee.kol_id) : null), me = R.picName(user);
     return !!((k && me && k.pic === me) || (payee && payee.created_by && payee.created_by === user.user_id));
@@ -293,7 +296,17 @@ Object.assign(KT.rules, (function (R, C) {
     let n = 2; while (ids.has(`${base}-${n}`)) n++;
     return `${base}-${n}`;
   }
-  const newRun = (state, o) => ({ run_id: runIdFor(state, o.pay_date), pay_date: o.pay_date, prepared_by: o.user || null, status: 'draft', submitted_at: null, note: null, created_at: o.now || null });
+  const newRun = (state, o) => ({ run_id: runIdFor(state, o.pay_date), pay_date: o.pay_date, prepared_by: o.preparedBy || o.user || null, status: 'draft', submitted_at: null, note: null, created_at: o.now || null });
+  /* CR-09 §3 — what a run is called on screen: Draft · Returned (a draft Accounting sent back) · With Accounting (submitted) · Paid · Closed */
+  const runStatusKey = run => (run.status === 'draft' ? (run.returned_at ? 'returned' : 'draft') : run.status === 'submitted' ? 'with_accounting' : run.status);
+  const runStatusLabel = run => C.pay.runStatus[runStatusKey(run)] || run.status;
+  /* Return to team (Accounting, a reason): the run is a Draft again, marked Returned · its submitted lines go back into the draft run */
+  function returnRun(state, run, reason, ctx) {
+    const events = [];
+    runLines(state, run.run_id).filter(l => l.status === 'submitted').forEach(l => { events.push(payEvent(l, 'submitted', 'in_run', ctx, trim(reason))); l.status = 'in_run'; });
+    Object.assign(run, { status: 'draft', returned_reason: trim(reason), returned_at: ctx.now, returned_by: ctx.user || null });
+    return events;
+  }
   const runLines = (state, runId) => (state.payment_lines || []).filter(l => l.run_id === runId);
   /* Gross · VAT · WHT · Net of lines (cancelled ones left out) · WHT borne by company = what net-basis lines were grossed up by */
   function runTotals(lines) {
@@ -356,7 +369,7 @@ Object.assign(KT.rules, (function (R, C) {
   function submitRun(state, run, today, ctx) {
     if (runChecks(state, run, today).errs.length) return null;
     const events = [];
-    Object.assign(run, { status: 'submitted', submitted_at: ctx.now });
+    Object.assign(run, { status: 'submitted', returned_reason: null, returned_at: null, returned_by: null, submitted_at: ctx.now });
     runLines(state, run.run_id).filter(l => l.status !== 'cancelled').forEach(l => {
       const p = payeeOfLine(state, l);
       events.push(payEvent(l, l.status, 'submitted', ctx, run.run_id));
@@ -482,15 +495,16 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ===================== Export PR (§4.7) ===================== */
   /* a file name without personal data: PR_09_10_26.xlsx */
-  const prFileName = payDate => `PR_${payDate.slice(8, 10)}_${payDate.slice(5, 7)}_${payDate.slice(2, 4)}.xlsx`;
+  /* CR-09 §4.15.1 — PR_09_10_26_PR-2026-10-09.xlsx (the pay date, then the run) */
+  const prFileName = (payDate, runId) => `PR_${payDate.slice(8, 10)}_${payDate.slice(5, 7)}_${payDate.slice(2, 4)}${runId ? '_' + runId : ''}.xlsx`;
   const PR_TYPE = { deal: 'KOL', legacy: 'KOL', affiliate: 'AFF', other: 'Other' };
   /* run → the sheets of the PR (one per band that has lines + Summary) · details: Map payee_id → decrypted bank details (only while unlocked), or null */
   function prSheets(state, run, details) {
     const P = C.pay, S = paySettings(state.lookups), ddmmyy = `${run.pay_date.slice(8, 10)}${run.pay_date.slice(5, 7)}${run.pay_date.slice(2, 4)}`;
-    const lines = runLines(state, run.run_id).filter(l => l.status !== 'cancelled'), sheets = [], bandRows = [];
+    const lines = runLines(state, run.run_id).filter(l => l.status !== 'cancelled'), sheets = [], bandRows = [], runLine = P.prRunLine(run.run_id, R.dmy(run.pay_date));
     [0, 1, 2].forEach(b => {
       const list = lines.filter(l => bandOf(l.gross, S) === b); if (!list.length) return;
-      const rows = [P.prCols.map(h => ({ v: h, bold: true }))];
+      const rows = [[{ v: runLine, bold: true }], P.prCols.map(h => ({ v: h, bold: true }))];
       list.forEach((l, i) => {
         const p = payeeOfLine(state, l), rec = details && p ? details.get(p.payee_id) || null : null, deal = dealOf(state, l.deal_id);
         const posts = deal ? R.postsOf(state, deal.deal_id).map(x => x.post_link).filter(Boolean) : [];
@@ -501,24 +515,25 @@ Object.assign(KT.rules, (function (R, C) {
           rec ? rec.bank_name || '' : '', rec ? rec.account_no || '' : '', { v: l.gross, money: true }, { v: l.vat, money: true }, { v: l.wht, money: true }, `${l.wht_rate}%`,
           { v: l.net, money: true }, link, pic || '', { v: !!l.printed, t: 'b' }, (p && p.payee_id) || '', l.line_id]);
       });
-      const last = rows.length;   // header is row 1, lines 2 … last
-      const sum = col => ({ v: `SUM(${col}2:${col}${last})`, t: 'f', bold: true, money: true });
+      const last = rows.length;   // the run line is row 1, the header row 2, lines 3 … last
+      const sum = col => ({ v: `SUM(${col}3:${col}${last})`, t: 'f', bold: true, money: true });
       const total = new Array(P.prCols.length).fill(''); total[1] = { v: P.prTotal, bold: true }; total[11] = sum('L'); total[12] = sum('M'); total[13] = sum('N'); total[15] = sum('P');
       rows.push(total);
-      sheets.push({ name: `${P.prSheet[b]} ${ddmmyy}`, rows, freeze: 1, widths: [6, 22, 20, 7, 24, 34, 14, 26, 10, 18, 18, 14, 12, 12, 9, 16, 40, 10, 10, 11, 12] });
-      const t = runTotals(list); bandRows.push([P.bands[b], t.n, { v: t.gross, money: true }, { v: t.vat, money: true }, { v: t.wht, money: true }, { v: t.net, money: true }]);
+      sheets.push({ name: `${P.prSheet[b]} ${ddmmyy}`, rows, freeze: 2, widths: [6, 22, 20, 7, 24, 34, 14, 26, 10, 18, 18, 14, 12, 12, 9, 16, 40, 10, 10, 11, 12] });
+      const t = runTotals(list); bandRows.push([amountLabels(S)[b], t.n, { v: t.gross, money: true }, { v: t.vat, money: true }, { v: t.wht, money: true }, { v: t.net, money: true }]);
     });
     const t = runTotals(lines);
-    const summary = [[{ v: P.prSummary.title, bold: true }], [P.prSummary.run, run.run_id], [P.prSummary.payDate, R.dmy(run.pay_date)], [P.prSummary.preparedBy, R.changedByName(state, run.prepared_by)], [],
+    const summary = [[{ v: runLine, bold: true }], [{ v: P.prSummary.title, bold: true }], [P.prSummary.run, run.run_id], [P.prSummary.payDate, R.dmy(run.pay_date)], [P.prSummary.preparedBy, R.changedByName(state, run.prepared_by)], [],
       P.prSummary.head.map(h => ({ v: h, bold: true }))].concat(bandRows, [[{ v: P.prTotal, bold: true }, t.n, { v: t.gross, money: true, bold: true }, { v: t.vat, money: true, bold: true }, { v: t.wht, money: true, bold: true }, { v: t.net, money: true, bold: true }],
       [P.prSummary.borne, '', { v: t.borne, money: true }]], details ? [] : [[], [{ v: P.prSummary.noPayee, bold: true }]]);
     sheets.push({ name: 'Summary', rows: summary, widths: [26, 22, 16, 14, 14, 18] });
     return sheets;
   }
-  /* Reset vault (§4.4): every encrypted record goes (bank name, last 4 digits and documents stay) — they all need bank details again */
+  /* Reset vault (§4.4): every encrypted record goes (bank name, last 4 digits and documents stay) — they all need bank details again ·
+     CR-10 §4.14: the encrypted shipping details too (No address again) */
   function resetVault(state) {
     let n = 0;
-    (state.payee_profiles || []).forEach(p => { if (p.secure) { p.secure = null; n++; } p.needs_verification = false; });
+    (state.payee_profiles || []).forEach(p => { if (p.secure) { p.secure = null; n++; } p.needs_verification = false; if (p.secure_ship || p.shipping_on_file) { p.secure_ship = null; p.shipping_on_file = false; } });
     state.lookups.payee_vault = null;
     return n;
   }
@@ -538,5 +553,5 @@ Object.assign(KT.rules, (function (R, C) {
     payeeHasPaid, canEditPayee, PAYEE_CSV_COLS, normHandle, planPayeeImport, scrubSensitive,
     LINE_STATUSES, payeeOfLine, postEvidence, docsRequired, lineStatus, taxOf, expectedDue, payItem, payQueue, payCards, canRequest, newLine, validateRequest, dealPayItems,
     RUN_STATUSES, nextRunDate, runIdFor, newRun, runLines, runTotals, runChecks, addToRun, removeFromRun, submitRun, syncDealPayment, syncDeals, markPaid, undoPaid, reopenRun, editLineAmount,
-    prFileName, prSheets, resetVault, paidLines, whtNotSent, markWhtSent, whtSummary, WHT_SUMMARY_COLS, validateManual, newManualLine, markPaidOutside, cancelLines, cancelDealLines };
+    amountLabels, runStatusKey, runStatusLabel, returnRun, prFileName, prSheets, resetVault, paidLines, whtNotSent, markWhtSent, whtSummary, WHT_SUMMARY_COLS, validateManual, newManualLine, markPaidOutside, cancelLines, cancelDealLines };
 })(KT.rules, KT.content));
