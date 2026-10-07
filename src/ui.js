@@ -106,15 +106,26 @@ KT.ui = (function () {
   }
   function payCell(d, td) {
     const term = R.termOf(d), st = R.paymentState(d, td);
+    /* CR-11 §4.6 — a closed deal from the old files with no term: "—", not "Not set" */
+    if (!term && R.isImportedClosed(d)) return `<span class="pay muted" title="${esc(C.golive.imported)}">${esc(C.common.none)}</span>`;
     const tip = payTicks(d).map(x => `${x.label}: ${x.on ? R.dmy(x.date) || '✓' : '—'}`).join('\n') || C.payState[st];
     return `<span class="pay" title="${esc(tip)}"><span class="t">${esc(C.termShort[term || 'none'])}</span>${st === 'free' ? '' : ` · <b class="${PAY_CLS[st]}">${esc(C.payState[st])}</b>`}</span>`;
   }
+  /* CR-11 §4.13 #4 — a KOL name / @handle may break only after _ . - (and at spaces), never inside a word: "thapear.<wbr>thapear" */
+  const nameHTML = n => esc(n == null ? '' : n).replace(/([._-])(?=[^._\-\s])/g, '$1<wbr>');
   /* ⓘ (CR-05 §4.6): a button that opens a small popover — heading, what the number means and how it is worked out.
      info(body, heading) · or info(C.money.committed) for the money words of §4.5 ({h, d, f}) */
   const info = (body, heading) => {
     const o = typeof body === 'object' && body ? body : { h: heading || '', d: body || '' };
     return `<button type="button" class="info" data-info-h="${esc(o.h || '')}" data-info-d="${esc(o.d || '')}" data-info-f="${esc(o.f || '')}" aria-label="${esc(o.h || C.common.about)}" aria-expanded="false">ⓘ</button>`;
   };
+  /* CR-11 §4.13 #2 — ⓘ only where the number is worked out (Committed · Pending · Paid · Remaining · ER · CPV · CPE · Days left, or a formula given) ·
+     any other label carries its explanation as the tooltip of its text */
+  const FORMULA_WORDS = ['Committed', 'Pending', 'Paid', 'Remaining', 'ER', 'CPV', 'CPE', 'Days left'];
+  const infoObj = (body, heading) => (typeof body === 'object' && body ? body : { h: heading || '', d: body || '' });
+  const isFormulaInfo = o => !!o.f || FORMULA_WORDS.some(w => String(o.h || '') === w || String(o.h || '').startsWith(w + ' '));
+  const tipText = o => [o.d, o.f].filter(Boolean).join(' — ');
+  const labelInfo = (label, body, heading) => { const o = infoObj(body, heading || label); return isFormulaInfo(o) ? `${esc(label)} ${info(o)}` : `<span class="tiph" title="${esc(tipText(o))}">${esc(label)}</span>`; };
   let infoBtn = null;
   function closeInfo(focusBack) { const p = $('infoPop'); if (p) p.remove(); if (infoBtn) { infoBtn.setAttribute('aria-expanded', 'false'); if (focusBack) infoBtn.focus(); } infoBtn = null; }
   function openInfo(btn) {
@@ -155,13 +166,16 @@ KT.ui = (function () {
       payments: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6.5h12a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 2 15V5a1.5 1.5 0 0 1 1.5-1.5H14v3"/><path d="M17 10h-3a1.5 1.5 0 0 0 0 3h3"/></svg>',
       kol: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8" cy="7" r="3"/><path d="M2.5 16.5c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M13 4.2a3 3 0 0 1 0 5.6M15.2 12.4c1.2.7 2 2 2.3 4.1"/></svg>',
       settings: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h8M15 5.5h2M3 10h3M10 10h7M3 14.5h9M16 14.5h1"/><circle cx="13" cy="5.5" r="2"/><circle cx="8" cy="10" r="2"/><circle cx="14" cy="14.5" r="2"/></svg>',
+      shipments: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6.5 10 3l7 3.5v7.2L10 17l-7-3.3z"/><path d="M3 6.5 10 10l7-3.5M10 10v7M6.5 4.8l7 3.4"/></svg>',   // CR-11 §4.10
       roles: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.6 6.6-6 8-3.4-1.4-6-4-6-8V5z"/><path d="m7.5 10 1.8 1.8 3.5-3.5"/></svg>',
     },
   };
 
   /* ===================== small helpers ===================== */
   /* CR-10 §4.10: a toast over an open dialog lives inside it (dialogs sit on top of the page) — always in the frame, bottom centre */
-  const toastHost = t => { const d = [$('drp'), $('dlg')].find(x => x && x.open), host = d || document.body; if (t.parentNode !== host) host.appendChild(t); };
+  const toastHost = t => { const d = [$('drp'), $('dlg'), $('cmodal')].find(x => x && x.open), host = d || document.body; if (t.parentNode !== host) host.appendChild(t); };
+  /* a dialog about to be redrawn or closed gives the toast back to the page first (else innerHTML would take it away) */
+  const rescueToast = box => { const t = $('toast'); if (t && box && box.contains(t)) document.body.appendChild(t); };
   function toast(msg) { const t = $('toast'); toastHost(t); t.classList.remove('act'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
   /* a toast with one action button (e.g. Undo), open for `ms` */
   function toastAction(msg, label, fn, ms = 5000) {
@@ -344,6 +358,8 @@ KT.ui = (function () {
   function reliabilityChip(p, short) {
     const PF = C.perf, b = PF.badge[p.badge], pct = p.rate == null ? null : Math.round(p.rate * 1000) / 10;
     const tip = p.measured ? PF.postsOf(p.onTime, p.measured) : PF.noData;
+    /* CR-11 §4.6 — not enough data is not a warning: a faint "—" that says what it needs */
+    if (p.badge === 'none') return `<span class="rel rel-none faint" title="${esc(C.kol.perfNeeds(R.perfSettings(state().lookups).minPosts))}${p.measured ? ` · ${esc(tip)}` : ''}">${esc(C.common.none)}</span>`;
     return `<span class="rel rel-${p.badge}" title="${esc(tip)}">${esc(p.badge === 'none' || short || pct == null ? b : PF.badgeLine(b, pct))}</span>`;
   }
 
@@ -406,31 +422,104 @@ KT.ui = (function () {
     });
     return { redraw };
   }
-  /* "+ New product": TR code + name (+ variant) → into the catalog now · then(code) */
-  function openNewProduct(text, then) {
+  /* "+ New product" (CR-11 §4.3: modal M · a panel in place when another modal is open): TR code + name (+ variant) → into the catalog now ·
+     then(code) · o.created(code) = after a stand-alone create (Settings › Products lights the row up) */
+  function openNewProduct(text, then, o = {}) {
     if (!can('products.edit') && !can('campaign.edit') && !can('campaign.products')) { toast(C.roles.noPermission); return; }
-    const P = C.products, t = R.trim(text), d = { tr_code: /\s/.test(t) ? '' : t, product_name: /\s/.test(t) ? t : '', variant: '' }, touched = new Set();
-    openDialog(`<div class="dlg-h">${esc(P.newTitle)}</div><div class="dlg-b"><div class="fields">` +
+    const P = C.products, t = R.trim(text || ''), d = { tr_code: /\s/.test(t) ? '' : t, product_name: /\s/.test(t) ? t : '', variant: '' }, touched = new Set();
+    const inPanel = cm.open && !!cmo;
+    const body = `<div class="fields">` +
       field('np_code', P.colCode, `<input id="f_np_code" data-np="tr_code" data-key="tr_code" value="${esc(d.tr_code)}" placeholder="${esc(P.codePh)}" autocomplete="off">`, { req: 1 }) +
       field('np_variant', P.colVariant, `<input id="f_np_variant" data-np="variant" value="" placeholder="${esc(P.variantPh)}" autocomplete="off">`) +
-      field('np_name', P.colName, `<input id="f_np_name" data-np="product_name" data-key="product_name" value="${esc(d.product_name)}" placeholder="${esc(P.namePh)}" autocomplete="off">`, { req: 1, wide: 1 }) +
-      `</div><div class="checks" id="np_checks" style="margin-top:8px"></div></div><div class="dlg-f"><button type="button" class="btn" id="np_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="np_ok">${esc(P.add.replace(/^\+\s*/, ''))}</button></div>`);
+      field('np_name', P.colName, `<input id="f_np_name" data-np="product_name" data-key="product_name" value="${esc(d.product_name)}" placeholder="${esc(P.namePh)}" autocomplete="off">`, { req: 1, wide: 1 }) + `</div>`;
+    const left = `<div class="checks" id="np_checks"></div>`, buttons = cmButtons(P.createProduct, 'np_ok', { back: inPanel });
+    const owner = inPanel ? cmo : null;
+    if (inPanel) modalPanel({ title: P.newTitle, body, left, buttons });
+    else createModal({ size: 'M', title: P.newTitle, body, foot: [left, buttons], focus: d.tr_code ? '#f_np_name' : '#f_np_code' });
     const chk = all => {
       const res = R.validateProduct(state(), d, true), errs = res.errs.filter(e => all || touched.has(e.field));
       $('np_checks').innerHTML = checksHTML({ errs, warns: [], infos: [] }, '');
-      dlg.querySelectorAll('[data-key]').forEach(el => el.classList.toggle('invalid', errs.some(e => e.field === el.dataset.key)));
+      cm.querySelectorAll('[data-np][data-key]').forEach(el => el.classList.toggle('invalid', errs.some(e => e.field === el.dataset.key)));
       return res;
     };
-    dlg.querySelectorAll('[data-np]').forEach(el => {
+    cm.querySelectorAll('[data-np]').forEach(el => {
       el.addEventListener('input', () => { d[el.dataset.np] = el.value; chk(false); });
       el.addEventListener('change', () => { touched.add(el.dataset.np); chk(false); });
     });
-    $('np_cancel').addEventListener('click', closeDialog);
     $('np_ok').addEventListener('click', () => {
       if (chk(true).errs.length) return;
-      const p = R.newProduct(d); state().products.push(p); commit(P.added(p.tr_code)); closeDialog(); then(p.tr_code);
+      const p = R.newProduct(d); state().products.push(p); commit();
+      if (inPanel) { if (then) then(p.tr_code); if (owner && owner.redraw && cmo === owner) owner.redraw(); toast(P.added(p.tr_code)); return; }
+      closeModal(); if (then) then(p.tr_code);
+      if (o.created) o.created(p.tr_code); else toast(P.added(p.tr_code));
     });
-    (d.tr_code ? $('f_np_name') : $('f_np_code')).focus();
+  }
+  /* ===================== CR-11 §4.3 — create forms used by more than one modal ===================== */
+  /* Create KOL (New deal › Create KOL · KOL Master › + New KOL): name · platform + handle · followers · link · type · category · gender ·
+     contact · PIC · default term · c = { draft, touched, submitted, anyway } (R.createKolDraft) · the buttons are data-act ckCreate / ckUse */
+  function kolCreateHTML(x) {
+    const L = state().lookups, CK = C.bulk.ck;
+    const inp = (k, type) => `<input${type ? ` type="${type}"` : ''} id="f_ck_${k}" data-ck="${k}" data-key="ck_${k}" value="${esc(x[k] == null ? '' : x[k])}" autocomplete="off"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''}>`;
+    const sel = (k, items, ph) => `<select id="f_ck_${k}" data-ck="${k}" data-key="ck_${k}">${optionsHTML(items, x[k], ph)}</select>`;
+    const types = (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label }));
+    return `<div id="ck_dup"></div><div class="fields">
+        ${field('ck_display_name', CK.name, inp('display_name'), { req: 1, wide: 1 })}
+        ${field('ck_platform', CK.platform, sel('platform', (L.platform_list || []).map(v => ({ value: v, label: v })), CK.choose))}${field('ck_handle', CK.handle, inp('handle'), { hint: esc(CK.handleHint) })}
+        ${field('ck_followers', CK.followers, inp('followers', 'number'))}${field('ck_profile_link', CK.profileLink, inp('profile_link', 'url'))}
+        ${field('ck_kol_type', CK.type, sel('kol_type', types, CK.notSet))}${field('ck_kol_category', CK.category, inp('kol_category'))}
+        ${field('ck_gender', CK.gender, sel('gender', R.GENDERS.map(v => ({ value: v, label: v })), CK.notSet))}${field('ck_contact_channel', CK.contact, sel('contact_channel', R.CONTACT_CHANNELS.map(v => ({ value: v, label: v })), CK.notSet))}
+        ${field('ck_pic', CK.pic, sel('pic', picList(x.pic).map(v => ({ value: v, label: v })), CK.choose), { req: 1 })}
+        ${field('ck_default_payment_term', CK.term, sel('default_payment_term', R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), C.term.none), { hint: esc(o_termHint(x)) })}
+      </div>`;
+  }
+  const o_termHint = x => (x && x._forDeal === false ? '' : C.bulk.ck.termHint);
+  /* the checks (shown after Create, or a field left) · a KOL with that name / handle already: "Use this KOL" or tick Create anyway → {res, dup} */
+  function kolCreateCheck(root, c) {
+    const s = state(), res = R.validateCreateKol(s, c.draft), dup = R.findDuplicateKol(s, c.draft.display_name, c.draft.handle), CK = C.bulk.ck;
+    $('ck_dup').innerHTML = dup ? `<div class="ck-dup"><span>${esc(CK.already(dup.kol.display_name, dup.handle))}</span><button type="button" class="btn small" data-act="ckUse" data-kolid="${esc(dup.kol.kol_id)}">${esc(CK.useThis)}</button>` +
+      `<label class="tick small"><input type="checkbox" data-ckanyway${c.anyway ? ' checked' : ''}> ${esc(CK.createAnyway)}</label></div>` : '';
+    const show = res.errs.filter(e => c.submitted || c.touched.has(e.field));
+    $('ck_checks').innerHTML = checksHTML({ errs: show, warns: [], infos: [] }, '');
+    root.querySelectorAll('[data-ck]').forEach(el => el.classList.toggle('invalid', show.some(e => e.field === el.dataset.key)));
+    const btn = root.querySelector('[data-act="ckCreate"]'); if (btn) btn.disabled = (c.submitted && res.errs.length > 0) || (!!dup && !c.anyway);
+    return { res, dup };
+  }
+  /* after(): something changed (the caller marks itself dirty and runs the check) */
+  function wireKolCreate(root, c, after) {
+    root.querySelectorAll('[data-ck]').forEach(el => {
+      const h = () => { c.draft[el.dataset.ck] = el.value; after(); };
+      el.addEventListener('input', h); el.addEventListener('change', () => { c.touched.add(el.dataset.key); h(); }); el.addEventListener('blur', () => { c.touched.add(el.dataset.key); after(); });
+    });
+    root._ck = { c, after };
+    if (!root.dataset.ckWired) { root.dataset.ckWired = '1'; root.addEventListener('change', e => { if (e.target.matches('[data-ckanyway]') && root._ck) { root._ck.c.anyway = e.target.checked; root._ck.after(); } }); }
+  }
+  /* Add account (New deal panel · KOL drawer › + Add account): platform · handle · followers · profile link — the KOL Master checks (R.validateAddAccount) */
+  function accountFieldsHTML(x) {
+    const s = state(), CK = C.bulk.ck;
+    const inp = (f, type) => `<input${type ? ` type="${type}"` : ''} id="f_aa_${f}" data-aa="${f}" data-key="aa_${f}" value="${esc(x[f])}" autocomplete="off"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''}>`;
+    return `<div class="fields">${field('aa_platform', CK.platform, `<select id="f_aa_platform" data-aa="platform" data-key="aa_platform">${optionsHTML((s.lookups.platform_list || []).map(v => ({ value: v, label: v })), x.platform, CK.choose)}</select>`, { req: 1 })}` +
+      `${field('aa_handle', CK.handle, inp('handle'), { req: 1, hint: esc(CK.handleHint) })}${field('aa_followers', CK.followers, inp('followers', 'number'), { req: 1 })}${field('aa_profile_link', CK.profileLink, inp('profile_link', 'url'), { req: 1 })}</div>`;
+  }
+  /* a = { draft, touched, submitted } → res (shown in #aa_checks) */
+  function accountCheck(root, kolId, a) {
+    const res = R.validateAddAccount(state(), kolId, a.draft), show = res.errs.filter(e => a.submitted || a.touched.has(e.field));
+    $('aa_checks').innerHTML = checksHTML({ errs: show, warns: res.warns, infos: [] }, '');
+    root.querySelectorAll('[data-aa]').forEach(el => el.classList.toggle('invalid', show.some(e => e.field === el.dataset.key)));
+    return res;
+  }
+  function wireAccount(root, a, after) {
+    root.querySelectorAll('[data-aa]').forEach(el => {
+      const h = () => {
+        a.draft[el.dataset.aa] = el.value;
+        if (el.dataset.aa === 'profile_link') {   // a profile link fills the handle / platform while they are empty (as in KOL Master)
+          const hh = R.handleFromLink(el.value), pp = R.platformFromLink(el.value), hi = root.querySelector('[data-aa="handle"]'), pi = root.querySelector('[data-aa="platform"]');
+          if (hh && R.isBlank(a.draft.handle)) { a.draft.handle = hh; if (hi) hi.value = hh; }
+          if (pp && !a.draft.platform && (state().lookups.platform_list || []).includes(pp)) { a.draft.platform = pp; if (pi) pi.value = pp; }
+        }
+        after();
+      };
+      el.addEventListener('input', h); el.addEventListener('change', () => { a.touched.add(el.dataset.key); h(); }); el.addEventListener('blur', () => { a.touched.add(el.dataset.key); after(); });
+    });
   }
   /* a CSV / text file as text: UTF-8, else Thai Windows (Excel without UTF-8) */
   async function readText(file) {
@@ -442,18 +531,121 @@ KT.ui = (function () {
   /* ===================== dialog ===================== */
   const dlg = $('dlg');
   /* wide: true = up to 1100px · 'mid' = up to 820px (CR-07: Add to campaign with its Price reference) */
-  function openDialog(html, wide) { dlg.innerHTML = html; dlg.classList.toggle('wide', wide === true); dlg.classList.toggle('mid', wide === 'mid'); dlg.classList.toggle('xl', wide === 'xl'); if (!dlg.open) dlg.showModal(); }
+  function openDialog(html, wide) { rescueToast(dlg); dlg.innerHTML = html; dlg.classList.toggle('wide', wide === true); dlg.classList.toggle('mid', wide === 'mid'); dlg.classList.toggle('xl', wide === 'xl'); if (!dlg.open) dlg.showModal(); }
   function closeDialog() { if (dlg.open) dlg.close(); }
-  function confirmDialog(title, body, okLabel, danger) {
+  function confirmDialog(title, body, okLabel, danger, noLabel) {
     return new Promise(resolve => {
       openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b">${esc(body)}</div>
-        <div class="dlg-f"><button type="button" class="btn" data-r="0">${esc(C.common.cancel)}</button><button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-r="1">${esc(okLabel)}</button></div>`);
+        <div class="dlg-f"><button type="button" class="btn" data-r="0">${esc(noLabel || C.common.cancel)}</button><button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-r="1">${esc(okLabel)}</button></div>`);
       const done = v => { dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); };
       const onClose = () => done(false);
       dlg.addEventListener('close', onClose);
       dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r === '1')));
     });
   }
+
+  /* ===================== CR-11 §4.1–4.2 — the create modal: every "new" thing opens in the middle of the screen ===================== */
+  /* (a drawer stays for viewing / editing what exists · a short question is a confirm dialog) · one at a time, its own <dialog> so
+     "Discard changes?" can sit on top of it · o = { size 'S' | 'M' | 'L', title | tabs [{key, label}] + tab, sub, onTab(key), onClick(e),
+     isDirty(), onClose(), opener } → { root, body(), setBody(html, keepScroll, cls), setSub(text), setFoot(leftHTML, buttonsHTML), setTab(key),
+     requestClose(), close(), focusFirst() } · data-cmclose (✕ · Cancel) / Esc / the backdrop ask first when something was typed ·
+     Ctrl / ⌘ + Enter = the primary button · Tab stays inside · focus goes back to the button that opened it */
+  const cm = $('cmodal');
+  let cmo = null, cmAsking = false;
+  const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  const focusables = el => [...el.querySelectorAll(FOCUSABLE)].filter(x => x.getClientRects().length > 0);
+  const cmHead = o => (o.tabs ? `<div class="stabs cm-tabs" role="tablist">${o.tabs.map(t => `<button type="button" role="tab" id="cm_tab_${esc(t.key)}" data-cmtab="${esc(t.key)}" aria-selected="${t.key === o.tab}"${t.key === o.tab ? ' class="on"' : ''}>${esc(t.label)}</button>`).join('')}</div>`
+    : `<h2 class="cm-title" id="cm_title">${esc(o.title || '')}</h2>`);
+  /* the standard footer: Cancel (or Back inside a panel) · extra buttons · the primary button (id) */
+  const cmButtons = (ok, id, o = {}) => `<button type="button" class="btn"${o.back ? ' data-cmback' : ' data-cmclose'}>${esc(o.cancel || (o.back ? C.common.back : C.common.cancel))}</button>${o.extra || ''}` +
+    `<button type="button" class="btn ${o.danger ? 'danger' : 'primary'}" id="${id}"${o.attrs || ''}>${esc(ok)}</button>`;
+  /* §4.1 — making something else on the way (a product while planning) replaces the modal's content: "← Back" and its own footer ·
+     o = { title, sub, body, left, buttons, back() (draws the modal's own content again — the owner's o.redraw by default) } */
+  function modalPanel(o) {
+    if (!cm.open || !cmo) return false;
+    const h = cmHandle();
+    h.setBody(`<button type="button" class="link nd-back" data-cmback>← ${esc(o.backLabel || C.common.back)}</button><h3 class="nd-ph">${esc(o.title)}</h3>${o.sub ? `<p class="muted small nd-psub">${esc(o.sub)}</p>` : ''}${o.body}`);
+    h.setFoot(o.left || '', o.buttons || '');
+    cmo.back = o.back || cmo.redraw || null;
+    setTimeout(focusFirstInModal, 0);
+    return true;
+  }
+  function cmHandle() {
+    return {
+      get root() { return $('cm_root'); }, body: () => $('cm_body'),
+      setBody(html, keepScroll, cls) { const b = $('cm_body'); if (!b) return; const top = b.scrollTop; rescueToast(b); b.className = 'cm-b' + (cls ? ' ' + cls : ''); b.innerHTML = html; b.scrollTop = keepScroll ? top : 0; },
+      setSub(t) { const el = $('cm_sub'); if (!el) return; el.textContent = t || ''; el.classList.toggle('hidden', !t); },
+      setFoot(left, buttons) { if (!$('cm_fl')) return; $('cm_fl').innerHTML = left || ''; $('cm_btns').innerHTML = buttons || ''; },
+      setTab(key) { if (!cmo) return; cmo.tab = key; cm.querySelectorAll('[data-cmtab]').forEach(b => { const on = b.dataset.cmtab === key; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); }); cm.setAttribute('aria-labelledby', 'cm_tab_' + key); },
+      requestClose: requestCloseModal, close: closeModal, focusFirst: focusFirstInModal,
+    };
+  }
+  function createModal(o) {
+    if (cm.open) closeModal();
+    cmo = Object.assign({ size: 'M' }, o); cmo.opener = o.opener || document.activeElement;
+    rescueToast(cm);
+    cm.className = 'cmodal cm-' + String(cmo.size).toLowerCase();
+    cm.innerHTML = `<div class="cm-root" id="cm_root"><div class="cm-h">${cmHead(cmo)}<button type="button" class="icon-btn cm-x" data-cmclose aria-label="${esc(C.common.close)}" title="${esc(C.common.close)}">${ICON.close}</button></div>` +
+      `<div class="cm-sub hidden" id="cm_sub"></div><div class="cm-b" id="cm_body"></div><div class="cm-f"><div class="cm-fl" id="cm_fl"></div><div class="btns" id="cm_btns"></div></div></div>`;
+    cm.setAttribute('aria-modal', 'true'); cm.setAttribute('aria-labelledby', cmo.tabs ? 'cm_tab_' + cmo.tab : 'cm_title');
+    const h = cmHandle();
+    if (cmo.sub) h.setSub(cmo.sub);
+    if (cmo.body != null) h.setBody(cmo.body);
+    if (cmo.foot) h.setFoot(cmo.foot[0], cmo.foot[1]);
+    /* a modal without its own isDirty: anything typed after it opened counts */
+    cmo.typed = false; cmo.ready = false;
+    const mark = () => { if (cmo && cmo.ready) cmo.typed = true; };
+    $('cm_root').addEventListener('input', mark); $('cm_root').addEventListener('change', mark);
+    $('cm_root').addEventListener('click', e => {
+      if (e.target.closest('[data-cmclose]')) { requestCloseModal(); return; }
+      if (e.target.closest('[data-cmback]')) { const back = cmo && cmo.back; if (cmo) cmo.back = null; if (back) back(); return; }
+      const t = e.target.closest('[data-cmtab]'); if (t) { if (cmo && t.dataset.cmtab !== cmo.tab) { h.setTab(t.dataset.cmtab); if (cmo.onTab) cmo.onTab(t.dataset.cmtab); } return; }
+      if (cmo && cmo.onClick) cmo.onClick(e);
+    });
+    document.body.classList.add('cm-open');   // the page behind does not scroll
+    cm.showModal();
+    setTimeout(() => { if (cmo) cmo.ready = true; focusFirstInModal(); }, 0);   // after the caller has drawn the body
+    return h;
+  }
+  /* the field to fill first: o.focus (a selector, or a function giving one) · else the first field of the body that does not open a list
+     on focus (a combobox would pop its list open) · else the primary button */
+  function focusFirstInModal() {
+    if (!cm.open) return;
+    const want = cmo && cmo.focus && (typeof cmo.focus === 'function' ? cmo.focus() : cmo.focus), w = want && cm.querySelector(want);
+    if (w && w.getClientRects().length && !w.disabled) { w.focus(); return; }
+    const b = $('cm_body'), f = b && focusables(b).find(x => x.matches('input:not([type="checkbox"]):not([type="radio"]):not(.combo-in),select:not(.combo-src),textarea'));
+    const p = [...cm.querySelectorAll('#cm_btns .btn.primary')].filter(x => !x.disabled).pop();
+    (f || p || cm.querySelector('[data-cmclose]')).focus();
+  }
+  async function requestCloseModal() {
+    if (!cm.open || cmAsking) return false;
+    if (cmo && (cmo.isDirty ? cmo.isDirty() : cmo.typed)) {
+      cmAsking = true; const ok = await confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true, C.common.keepEditing); cmAsking = false;
+      if (!ok) { focusFirstInModal(); return false; }
+    }
+    closeModal(); return true;
+  }
+  /* closes without asking (after Create, or after Discard) */
+  function closeModal() {
+    const o = cmo; cmo = null;
+    rescueToast(cm);
+    if (cm.open) cm.close();
+    cm.innerHTML = ''; cm.className = 'cmodal'; document.body.classList.remove('cm-open');
+    if (o && o.onClose) o.onClose();
+    if (o && o.opener && o.opener.isConnected && typeof o.opener.focus === 'function') o.opener.focus();
+  }
+  cm.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); requestCloseModal(); return; }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { const p = [...cm.querySelectorAll('#cm_btns .btn.primary')].filter(x => !x.disabled).pop(); if (p) { e.preventDefault(); p.click(); } return; }
+    if (e.key !== 'Tab' || !$('cm_root')) return;
+    const f = focusables($('cm_root')); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1], a = document.activeElement;
+    if (e.shiftKey && (a === first || !cm.contains(a))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (a === last || !cm.contains(a))) { e.preventDefault(); first.focus(); }
+  });
+  cm.addEventListener('cancel', e => { e.preventDefault(); requestCloseModal(); });
+  /* the backdrop is the dialog itself outside its box */
+  cm.addEventListener('click', e => { if (e.target !== cm) return; const r = cm.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) requestCloseModal(); });
 
   /* ===================== side drawer (one at a time) ===================== */
   /* owner: {isDirty(): bool, onClose(): void} — the screen that filled #drawer_content */
@@ -584,11 +776,11 @@ KT.ui = (function () {
     const val = (c, k) => (!c ? `<span class="muted">—</span>` : k === 'total' ? `<b>${R.baht(c.total)}</b>` : c.values[k] ? R.fmtNum(c.values[k]) : `<span class="muted">0</span>`);
     const latestSub = ref.latest ? [ref.latest.source, ref.latest.date ? R.dmy(ref.latest.date) : PR.dateNotRecorded].filter(Boolean).join(' · ') : PR.noRate;
     const avgSub = (ref.average ? PR.deals(ref.average.n) : PR.noPaid) + (ref.freeExcluded ? ` · ${PR.freeExcluded(ref.freeExcluded)}` : '');
-    const head = (key, c, label, sub, extra) => `<th><div class="pref-h"><span>${esc(label)}${extra || ''}</span>` +
+    const head = (key, c, label, sub, extra) => `<th><div class="pref-h"><span${extra ? ` class="tiph" title="${esc(extra)}"` : ''}>${esc(label)}</span>` +   // CR-11 §4.13 #2: the explanation on hover
       `<button type="button" class="btn small" data-useref="${key}"${c ? '' : ' data-empty'}${!c || o.free ? ' disabled' : ''} title="${esc(PR.useTip(label))}">${esc(PR.use)}</button></div>` +
       `<div class="pref-sub">${esc(sub)}</div>${key === 'latest' && ref.note ? `<div class="pref-sub">${esc(PR.note(ref.note))}</div>` : ''}</th>`;
     return `<div class="pref${o.free ? ' off' : ''}" data-pref="${esc(kolId)}" data-ex="${esc(o.excludeDealId || '')}"${o.free ? ` title="${esc(PR.freeTip)}"` : ''}><div class="pref-t">${esc(PR.title)}</div>` +
-      `<table class="pref-tbl"><thead><tr><th></th>${head('latest', ref.latest, PR.latest, latestSub)}${head('average', ref.average, PR.average, avgSub, ' ' + info(PR.info))}</tr></thead><tbody>` +
+      `<table class="pref-tbl"><thead><tr><th></th>${head('latest', ref.latest, PR.latest, latestSub)}${head('average', ref.average, PR.average, avgSub, tipText(PR.info))}</tr></thead><tbody>` +
       rows.map(k => `<tr${k === 'total' ? ' class="tot"' : ''}><th scope="row">${esc(PR.rows[k])}</th><td class="num">${val(ref.latest, k)}</td><td class="num">${val(ref.average, k)}</td></tr>`).join('') +
       `</tbody></table><div class="pref-ask hidden" role="alert"></div></div>`;
   }
@@ -646,7 +838,7 @@ KT.ui = (function () {
     closeDrawer(); return true;
   }
   $('drawer').addEventListener('click', e => { if (e.target.closest('[data-dr-close]')) requestCloseDrawer(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawer.owner && !dlg.open) requestCloseDrawer(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawer.owner && !dlg.open && !cm.open) requestCloseDrawer(); });
   /* the hash remembers the page and the open record (#deals/D000044) without adding history entries ·
      screens pass their key ('kol/K0011'); the hash shows the route ('kols/K0011') */
   const toRoute = h => { const [k, ...rest] = String(h || '').split('/'), t = C.tabs.find(x => x.key === k); return [t ? t.route : k].concat(rest).join('/'); };
@@ -756,10 +948,11 @@ KT.ui = (function () {
   const api = {
     C, R, S, $, esc, today, store, state, pref, commit, toast, me, userId, filterChips, noMatchHTML, sizeDrawer, priceRefHTML, priceRefFree, priceRefSummary, costInput, journeyHTML, payTrackHTML, fitJourney, copyText, copyBtnHTML, actor, viewingAs, roleOverride, can, guard, picList, canSeeTab, toastAction, download, downloadCSV, checksHTML, kv, field, range, stChip, stageChip, stageText,
     stageLabel, stageCell, planTip, PAY_CLS, payTicks, payCell, STATUS_CLS, PHASE_CLS, phaseChip,
-    shortNum, bahtShort, dm, initials, info, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
+    shortNum, bahtShort, dm, initials, nameHTML, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
     dateHTML, setDate, setDateDisabled, parseDmy,
     enhanceCombo, enhanceCombos, phaseOptionHTML, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
-    dlg, openDialog, closeDialog, confirmDialog, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
+    kolCreateHTML, kolCreateCheck, wireKolCreate, accountFieldsHTML, accountCheck, wireAccount,
+    dlg, openDialog, closeDialog, confirmDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
     renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams,
     currentTab: () => null,          // set by app.js
     refresh: () => {},               // set by app.js: re-render the current tab

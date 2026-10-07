@@ -107,7 +107,7 @@
   describe('seed acceptance', () => {
     test('TC-01: collection counts after first load', () => {
       const st = S.createStore({ seed: SEED, storage: fakeStorage() });
-      assert.deepEqual(st.counts(), { campaigns: 4, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214 }, 'CR-04 … CR-10: users, campaign_events, products, payments and sample shipments come with the migrations');
+      assert.deepEqual(st.counts(), { campaigns: 4, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214, pick_lists: 0 }, 'CR-04 … CR-10: users, campaign_events, products, payments and sample shipments come with the migrations');
     });
     test('TC-02: committed per Phase (not counting Cancel) — by post since CR-03', () => {
       const s = fresh();
@@ -720,8 +720,8 @@
       const walk = o => { if (typeof o === 'string') texts.push(o); else if (typeof o === 'function') texts.push(String(o)); else if (o && typeof o === 'object') Object.values(o).forEach(walk); };
       /* CR-08: the only exceptions are the labels of the encrypted Payee bank details, the PR column headers Accounting uses and the export dialog
          that names them — the values are never stored in plain text */
-      /* CR-10 §4.14: the labels of the encrypted shipping details (recipient · phone · address) too */
-      walk(Object.assign({}, C, { payee: Object.assign({}, C.payee, { bank: {} }), pay: Object.assign({}, C.pay, { prCols: [], exportLocked: '' }), samples: {} }));
+      /* CR-10 §4.14: the labels of the encrypted shipping details (recipient · phone · address) too · CR-11 §4.10: and Shipments saying whether one is on file */
+      walk(Object.assign({}, C, { payee: Object.assign({}, C.payee, { bank: {} }), pay: Object.assign({}, C.pay, { prCols: [], exportLocked: '' }), samples: {}, ship: {} }));
       assert.equal(texts.some(x => PII.test(x)), false);
     });
   });

@@ -6,7 +6,7 @@
 KT.screens.campaign = (function () {
   'use strict';
   const U = KT.ui;
-  const { C, R, $, esc, today, store, state, commit, toast, checksHTML, kv, field, range, dm, stChip, phaseChip, info, ICON, dateHTML, confirmDialog, openDialog, closeDialog, openDrawer, fillDrawer, setHash, go, can, guard, userId, optionsHTML, activeList } = U;
+  const { C, R, $, esc, today, store, state, commit, toast, toastAction, checksHTML, kv, field, range, dm, stChip, phaseChip, info, ICON, dateHTML, confirmDialog, openDialog, closeDialog, openDrawer, fillDrawer, setHash, go, can, guard, userId, optionsHTML, activeList } = U;
   const K = C.campaign;
   const cp = { mode: 'none', kind: null, id: null, draft: null, touched: new Set(), dirty: false, collapsed: new Set(),
     year: null, status: '', q: '', view: U.pref.get('cpview', 'table') === 'timeline' ? 'timeline' : 'table', zoom: 'month', includeCancelled: false, sortDays: null, prodEdit: null,
@@ -60,10 +60,11 @@ KT.screens.campaign = (function () {
       <div id="cp_body"></div>`;
     $('cp_newMenu').addEventListener('click', e => {
       const b = e.target.closest('[data-new]'); if (!b) return; b.closest('details').open = false;
-      if (b.dataset.new === 'campaign') KT.planner.open({});
-      else if (cp.kind === 'campaign' && cp.id) KT.planner.open({ campaignId: cp.id, addRow: true });
-      else if (cp.kind === 'phase' && cp.id) KT.planner.open({ campaignId: phaseById(cp.id).campaign_id, addRow: true });
-      else chooseCampaign();
+      const opener = b.closest('details').querySelector('summary');
+      if (b.dataset.new === 'campaign') KT.planner.open({ opener });
+      else if (cp.kind === 'campaign' && cp.id) KT.planner.open({ campaignId: cp.id, addRow: true, opener });
+      else if (cp.kind === 'phase' && cp.id) KT.planner.open({ campaignId: phaseById(cp.id).campaign_id, addRow: true, opener });
+      else chooseCampaign(opener);
     });
     $('cp_view').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) { cp.view = b.dataset.view; U.pref.set('cpview', cp.view); renderTable(); } });
     $('cp_year').addEventListener('change', e => { cp.year = e.target.value; renderTable(); });
@@ -217,7 +218,8 @@ KT.screens.campaign = (function () {
     });
     const t = R.moneyTotal(tot);
     /* a number column: ⓘ on the left so the label ends on the same right edge as its numbers (CR-09 §4.8) */
-    const th = (l, cls, i) => `<th${cls ? ` class="${cls}"` : ''}>${i && cls === 'num' ? info(i) + ' ' : ''}${esc(l)}${i && cls !== 'num' ? ' ' + info(i) : ''}</th>`;
+    const th = (l, cls, i) => (i && !U.isFormulaInfo(i) ? `<th${cls ? ` class="${cls}"` : ''} title="${esc(U.tipText(i))}"><span class="tiph">${esc(l)}</span></th>`   // CR-11 §4.13 #2
+      : `<th${cls ? ` class="${cls}"` : ''}>${i && cls === 'num' ? info(i) + ' ' : ''}${esc(l)}${i && cls !== 'num' ? ' ' + info(i) : ''}</th>`);
     const sd = cp.sortDays, daysTh = `<th class="num"${sd ? ` aria-sort="${sd === 'desc' ? 'descending' : 'ascending'}"` : ''}>${info({ h: C.overview.colDaysLeft, d: C.overview.daysLeftTip })} <button type="button" class="thsort" data-sortdays title="${esc(C.overview.sortBy(C.overview.colDaysLeft))}">${esc(C.overview.colDaysLeft)}${sd ? `<span class="ar">${sd === 'desc' ? '▼' : '▲'}</span>` : ''}</button></th>`;
     $('cp_body').innerHTML = `<div class="tablewrap"><table class="tbl cp-table" id="cp_tbl"><thead><tr>${th(K.colName, 'nmh')}${th(K.colStatus)}${th(K.colPeriod)}${daysTh}${th(MN.budget.h, 'num', MN.budget)}` +
       `${th(MN.committed.h, 'num', MN.committed)}${th(MN.used.h, '', MN.used)}${th(MN.remaining.h, 'num', MN.remaining)}${th(MN.pending.h, 'num', MN.pending)}${th(K.colDeals, 'num')}</tr></thead>` +
@@ -270,10 +272,26 @@ KT.screens.campaign = (function () {
         `<td class="gn">${r.kind === 'campaign' ? `<div class="nmw"><button type="button" class="chevbtn${cp.collapsed.has(r.id) ? '' : ' open'}" data-toggle="${esc(r.id)}" aria-label="${esc(cp.collapsed.has(r.id) ? K.expand : K.collapse)}">${ICON.chevron}</button><b>${esc(r.name)}</b></div>` : `<span class="pn">${esc(r.name)}</span>`}</td>` +
         `<td class="gs">${r.kind === 'phase' && (r.campStatus === 'on_hold' || r.campStatus === 'cancelled') ? chip(r.campStatus, true) : chip(r.status)}</td>` +
         `<td class="gtl"><div class="gt-row">${grid.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${hatch(r)}</div></td></tr>`).join('') +
-      `</tbody></table></div>`;
+      `</tbody></table></div>` + legendHTML(rows, showToday, hatch);
     const pane = $('cp_tl'), head = pane.querySelector('th.gtl');
     pane.dataset.today = showToday ? String(head.offsetLeft + head.offsetWidth * pct(td) / 100) : '';
     if (showToday) scrollToToday(false);
+  }
+  /* CR-11 §4.13 #5 — under the timeline: every colour / line that is on it now, in words */
+  function legendHTML(rows, today, hatch) {
+    const L = K.legend, shown = rows.filter(r => r.start && r.end), ph = shown.filter(r => r.kind === 'phase'), has = f => shown.some(f), live = r => !['on_hold', 'cancelled'].includes(r.campStatus);
+    const items = [
+      has(r => r.kind === 'campaign') && ['campaign', L.campaign],
+      ph.some(r => r.status === 'ongoing' && live(r)) && ['ongoing', L.ongoing],
+      ph.some(r => r.status === 'not_started' && live(r)) && ['not_started', L.planned],
+      ph.some(r => r.status === 'complete' && live(r)) && ['complete', L.complete],
+      has(r => r.campStatus === 'on_hold') && ['hold', L.hold],
+      has(r => r.campStatus === 'cancelled') && ['cancelled', L.cancelled],
+      ph.some(r => r.over) && ['over', L.over],
+      ph.some(r => hatch(r)) && ['hatch', L.overlap],
+      today && ['today', L.today],
+    ].filter(Boolean);
+    return items.length ? `<div class="gt-legend" aria-label="${esc(L.title)}">${items.map(([k, l]) => `<span class="gl-i"><i class="gl-${k}"></i>${esc(l)}</span>`).join('')}</div>` : '';
   }
   function scrollToToday(smooth) {
     const pane = $('cp_tl'); if (!pane || !pane.dataset.today) return;
@@ -298,6 +316,11 @@ KT.screens.campaign = (function () {
     else return;
     if (U.drawerOwner() === owner) fillDrawer(html); else openDrawer(owner, html);
     $('drawer_content').onclick = panelClick;
+    /* CR-11 §4.11 — the Phase's default pillar, set right here (Admin · KOL Manager) */
+    $('drawer_content').onchange = e => { const t = e.target.closest('[data-defpillar]'); if (!t || !guard('campaign.edit')) return; const p = phaseById(cp.id); if (!p) return;
+      const s = state(), from = p.default_pillar || null; p.default_pillar = t.value || null;
+      s.campaign_events.push({ event_id: store.newCampaignEventId(), campaign_id: p.campaign_id, type: 'default_pillar', from: { phase_id: p.phase_id, default_pillar: from }, to: { phase_id: p.phase_id, default_pillar: p.default_pillar }, changed_at: new Date().toISOString(), changed_by: userId(), note: null });
+      commit(C.fill.pillarSaved(p.default_pillar || C.fill.none, R.phaseName(s, p.phase_id))); renderPanel(); };
     if (editing()) wireForm();
     if (cp.prodEdit && cp.mode === 'view' && cp.kind === 'campaign') wireProducts();
     markSelected();
@@ -315,13 +338,39 @@ KT.screens.campaign = (function () {
       <div class="dr-body">
         ${c.status_override ? `<section class="sec"><div class="check ${c.status_override === 'cancelled' ? 'err' : 'warn'}">! <span>${esc(K.statusLine(C.phaseStatus[c.status_override], c.status_reason || '', c.status_changed_at ? R.dmy(R.dateOfTimestamp(c.status_changed_at)) : ''))}</span></div></section>` : ''}
         ${sec(K.secDetails, kv(K.fNote, c.note) + kv(K.colPeriod, x.start ? range(x.start, x.end) : '') + kv(K.colBudget, x.budget == null ? '' : R.baht(x.budget)) +
-          kv(K.fCta, c.cta) + kv(K.allocated, x.allocated == null ? '' : R.baht(x.allocated)) + kv(K.colShortlist, R.baht(x.shortlist)) + kv(K.pillarTarget, targetText(c)) +
+          kv(K.fCta, c.cta) + kv(C.fill.defaultTerm, R.isTerm(c.default_payment_term) ? C.term[c.default_payment_term] : '') + applyTermBtn(c) +
+          kv(K.allocated, x.allocated == null ? '' : R.baht(x.allocated)) + kv(K.colShortlist, R.baht(x.shortlist)) + kv(K.pillarTarget, targetText(c)) +
           kv(K.colCommitted, R.baht(x.committed), x.budget != null && x.committed > x.budget ? 'over' : '') + kv(K.colPaid, R.baht(x.paid)) + kv(K.colDeals, R.fmtNum(x.activeDeals)), lockedTag())}
         ${sec(K.secPhases(phases.length), phases.length ? phases.map(p => { const y = R.phaseSummary(s, p.phase_id);
           return `<div class="kv"><span><button type="button" class="link" data-phase="${esc(p.phase_id)}">${esc(R.phaseName(s, p.phase_id))}</button></span><b>${usageHTML(y.budget, y.committed)}</b></div>`; }).join('')
           : `<div class="hint">${esc(K.noPhase)}</div>`, lockedTag())}
         ${productsSec(s, c)}
       </div>`;
+  }
+  /* CR-11 §4.11 — Apply the Campaign's default term to its open deals without one · the Phase's default pillar to its deals without one */
+  function applyTermBtn(c) {
+    if (!can('campaign.edit') || !R.isTerm(c.default_payment_term)) return '';
+    const n = R.openDealsWithoutTerm(state(), c.campaign_id).length;
+    return n ? `<div class="fill-apply"><button type="button" class="btn small" data-act="applyTerm">${esc(C.fill.applyTerm(n))}</button></div>` : '';
+  }
+  function defaultPillarHTML(p) {
+    const s = state(), v = p.default_pillar || '', n = v ? R.dealsWithoutPillar(s, p.phase_id).length : 0;
+    if (!can('campaign.edit')) return kv(C.fill.defaultPillar, v);
+    return `<div class="kv"><span>${esc(C.fill.defaultPillar)}</span><b><select data-defpillar aria-label="${esc(C.fill.defaultPillar)}">${optionsHTML(activeList('pillar_list', v || null), v, C.fill.none)}</select></b></div>` +
+      `<div class="hint">${esc(C.fill.defaultPillarHint)}</div>` + (n ? `<div class="fill-apply"><button type="button" class="btn small" data-act="applyPillar">${esc(C.fill.applyPillar(n))}</button></div>` : '');
+  }
+  /* deals → one event a deal (a field) · Undo puts back what each had */
+  async function applyDefault(field, deals, value, title, body, done) {
+    if (!deals.length || !(await confirmDialog(title, body, C.fill.apply))) return;
+    const s = state(), before = new Map(deals.map(d => [d.deal_id, d[field] || null]));
+    const r = R.fieldChanges(deals, field, value, { eventId: store.newEventId(), now: new Date(), user: userId(), note: C.fill.note });
+    const put = list => { const at = new Map(state().deals.map((x, i) => [x.deal_id, i])); list.deals.forEach(x => { state().deals[at.get(x.deal_id)] = x; }); list.events.forEach(e => state().deal_events.push(e)); };
+    put(r); commit(); renderPanel();
+    toastAction(done(r.deals.length), C.deal.undo, () => {
+      const now = r.deals.map(d => state().deals.find(x => x.deal_id === d.deal_id)).filter(Boolean);
+      put(R.fieldChanges(now, field, d => before.get(d.deal_id), { eventId: store.newEventId(), now: new Date(), user: userId(), note: 'undo' }));
+      commit(C.fill.undone); if (U.drawerOwner() === owner) renderPanel();
+    }, 10000);
   }
   /* a section Staff cannot change (CR-09 §4.7): a lock that says who can */
   const lockedTag = () => (can('campaign.edit') || !can('campaign.products') ? '' : `<span class="seclock" title="${esc(K.onlyAdminKm)}" aria-label="${esc(K.onlyAdminKm)}">${ICON.lock}</span>`);
@@ -379,7 +428,7 @@ KT.screens.campaign = (function () {
           <button type="button" class="mi danger" data-act="delete"${canDel ? '' : ` disabled title="${esc(K.cannotDeletePhase(x.posts))}"`}>${esc(K.deletePhase)}</button></div></details>${closeBtn}</div>
         ${can('campaign.edit') ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="plan">${esc(C.planner.planPhases)}</button>${canDel ? '' : `<span class="muted small">${esc(K.cannotDeletePhase(x.posts))}</span>`}</div>` : ''}</div>
       <div class="dr-body">
-        ${sec(K.secDetails, kv(K.fCampaign, c.campaign_name || '') + kv(K.colPeriod, `${range(p.start_date, p.end_date)} (${C.common.days(R.dayDiff(p.end_date, p.start_date) + 1)})`))}
+        ${sec(K.secDetails, kv(K.fCampaign, c.campaign_name || '') + kv(K.colPeriod, `${range(p.start_date, p.end_date)} (${C.common.days(R.dayDiff(p.end_date, p.start_date) + 1)})`) + defaultPillarHTML(p))}
         ${sec(K.secBudget, budget)}
         ${sec(K.secDeals, `<div class="chips">${['List', 'Inprocess', 'Complete', 'Cancel'].map(k => stChip(k, x.counts[k] || 0)).join('')}</div>`)}
       </div>`;
@@ -389,22 +438,21 @@ KT.screens.campaign = (function () {
   const pctText = (amount, campaignBudget) => { const pct = R.pctOfBudget(amount, campaignBudget); return pct == null ? R.baht(amount) : K.pctAndAmount(fmtPct(pct), R.baht(amount)); };
   /* ---------- edit (a Campaign's details; Phases are edited in the Phase Planner) ---------- */
   /* "+ New phase" with no Campaign open: pick one, then its Planner opens with an empty row */
-  function chooseCampaign() {
+  function chooseCampaign(opener) {
     if (!guard('campaign.edit')) return;
     let id = '';
-    openDialog(`<div class="dlg-h">${esc(C.planner.chooseTitle)}</div><div class="dlg-b"><div class="field"><label for="pc_camp">${esc(K.fCampaign)}</label><select id="pc_camp" data-combo="campaign">${U.campaignOptionsHTML('', K.chooseCampaign)}</select></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="pc_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="pc_ok" disabled>${esc(C.planner.next)}</button></div>`);
-    U.enhanceCombos($('dlg'));
+    U.createModal({ size: 'S', title: C.planner.chooseTitle, sub: C.planner.chooseSub, opener, focus: '#pc_camp',
+      body: `<div class="field"><label for="pc_camp">${esc(K.fCampaign)} <span class="req">*</span></label><select id="pc_camp">${U.campaignOptionsHTML('', K.chooseCampaign)}</select></div>`,
+      foot: ['', U.cmButtons(C.planner.next, 'pc_ok', { attrs: ' disabled' })] });
     $('pc_camp').addEventListener('change', e => { id = e.target.value; $('pc_ok').disabled = !id; });
-    $('pc_cancel').addEventListener('click', closeDialog);
-    $('pc_ok').addEventListener('click', () => { if (!id) return; closeDialog(); KT.planner.open({ campaignId: id, addRow: true }); });
+    $('pc_ok').addEventListener('click', () => { if (id) KT.planner.open({ campaignId: id, addRow: true, opener }); });
   }
   function startEdit() {
     if (cp.kind !== 'campaign') { const p = phaseById(cp.id); if (p) KT.planner.open({ campaignId: p.campaign_id, focusPhase: p.phase_id }); return; }
     const rec = campById(cp.id); if (!rec || !guard('campaign.edit')) return;
     const draft = Object.assign({}, rec);
     draft.budget_kol = rec.budget_kol == null ? '' : String(rec.budget_kol);
-    if (cp.kind === 'campaign') draft.cta = rec.cta || '';
+    if (cp.kind === 'campaign') { draft.cta = rec.cta || ''; draft.default_payment_term = R.isTerm(rec.default_payment_term) ? rec.default_payment_term : ''; }
     if (cp.kind === 'campaign') { const t = R.pillarTargetOf(state(), rec.campaign_id); draft.ownTarget = !!rec.pillar_target; draft.target = Object.fromEntries(R.PILLARS.map(p => [R.PILLAR_KEY[p], String(t[R.PILLAR_KEY[p]])])); }
     draft.products = R.campaignProductCodes(state(), rec.campaign_id);
     Object.assign(cp, { mode: 'edit', draft, dirty: false, submitted: false }); cp.touched.clear();
@@ -428,6 +476,7 @@ KT.screens.campaign = (function () {
         ${field('note', K.fNote, `<input id="f_note" data-f="note" value="${esc(d.note || '')}" autocomplete="off">`)}
         ${field('budget_kol', K.fCampaignBudget, `<input type="number" min="0" step="1" inputmode="numeric" id="f_budget_kol" data-f="budget_kol" value="${esc(d.budget_kol)}">`, { hint: esc(K.campaignBudgetHint) })}
         ${field('cta', K.fCta, `<select id="f_cta" data-f="cta">${optionsHTML(activeList('cta_list', d.cta), d.cta || '', C.common.none)}</select>`, { hint: esc(K.ctaHint) })}
+        ${isNew ? '' : field('default_payment_term', C.fill.defaultTerm, `<select id="f_default_payment_term" data-f="default_payment_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), d.default_payment_term || '', C.fill.none)}</select>`, { hint: esc(C.fill.defaultTermHint) })}
         ${field('products', C.planner.fProducts, U.productPickerHTML('cp_products', d.products || [], lockedOf, true), { hint: esc(C.planner.productsHint) })}</div>`)}
         ${isNew ? '' : sec(K.pillarTarget, `<label class="tick"><input type="checkbox" data-owntarget${d.ownTarget ? ' checked' : ''}> ${esc(K.ownTarget)}</label>
           <div class="fields three" style="margin-top:8px">${R.PILLARS.map(p => `<div class="field"><label>${esc(p)} (%)</label><input type="number" min="0" max="100" step="1" inputmode="numeric" data-ptc="${R.PILLAR_KEY[p]}" value="${esc(d.target[R.PILLAR_KEY[p]])}"${d.ownTarget ? '' : ' disabled'}></div>`).join('')}</div>`)}</div>${foot()}`;
@@ -475,6 +524,7 @@ KT.screens.campaign = (function () {
     if (res.errs.length) { cp.submitted = true; res.errs.forEach(x => cp.touched.add(x.field)); check(); return; }
     const d = cp.draft, budget = R.isBlank(d.budget_kol) ? null : Number(d.budget_kol);
     const rec = { campaign_id: d.campaign_id, campaign_name: R.trim(d.campaign_name), note: R.trim(d.note), budget_kol: budget, cta: d.cta || null,
+      default_payment_term: R.isTerm(d.default_payment_term) ? d.default_payment_term : null,   // CR-11 §4.11
       pillar_target: d.ownTarget ? Object.fromEntries(Object.entries(d.target).map(([k, v]) => [k, Number(v)])) : null };
     const old = campById(rec.campaign_id), was = old.budget_kol, phases = s.phases.filter(p => p.campaign_id === rec.campaign_id && !R.isBlank(p.budget_kol));
     if (was !== budget && !R.isBlank(was) && Number(was) > 0 && budget != null && phases.length) {
@@ -520,6 +570,10 @@ KT.screens.campaign = (function () {
     else if (act === 'cancel') cancelEdit();
     else if (act === 'save') save();
     else if (act === 'addPhase') KT.planner.open({ campaignId: cp.id, addRow: true });
+    else if (act === 'applyTerm') { const c = campById(cp.id), list = R.openDealsWithoutTerm(state(), c.campaign_id), t = C.term[c.default_payment_term];
+      applyDefault('payment_term', list, c.default_payment_term, C.fill.applyTermTitle(list.length), C.fill.applyTermBody(t, list.length), n => C.fill.termApplied(n, t)); }
+    else if (act === 'applyPillar') { const p = phaseById(cp.id), list = R.dealsWithoutPillar(state(), p.phase_id);
+      applyDefault('pillar', list, p.default_pillar, C.fill.applyPillarTitle(list.length), C.fill.applyPillarBody(p.default_pillar, R.phaseName(state(), p.phase_id), list.length), n => C.fill.pillarApplied(n, p.default_pillar)); }
     else if (act === 'hold' || act === 'cancelCampaign') openStatus(act === 'hold' ? 'on_hold' : 'cancelled');
     else if (act === 'resume') setStatus(null, '');
     else if (act === 'plan') KT.planner.open({ campaignId: cp.kind === 'campaign' ? cp.id : phaseById(cp.id).campaign_id, focusPhase: cp.kind === 'phase' ? cp.id : null });
@@ -557,14 +611,19 @@ KT.screens.campaign = (function () {
     commit(to ? K.statusSaved(c.campaign_name, C.phaseStatus[to]) : K.resumed(c.campaign_name));
     renderTable(); renderPanel();
   }
-  /* after the Planner saved: the table again, that Campaign open and lit up */
+  /* after the Planner saved: the table again, that Campaign lit up · the drawer it was opened from shows the new plan (CR-11 §4.1) */
   function afterPlan(id) {
-    Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null }); cp.collapsed.delete(id);
+    const open = cp.mode === 'view' && (cp.id === id || (cp.kind === 'phase' && phaseById(cp.id) && phaseById(cp.id).campaign_id === id));
+    if (cp.kind === 'phase' && !phaseById(cp.id)) Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null });   // that Phase went
+    else if (!open) Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null });
+    cp.collapsed.delete(id);
     if (U.currentTab() !== 'campaign') return;
-    renderTable();
+    renderTable(); if (cp.mode === 'view') renderPanel();
     const tr = document.querySelector(`#cp_tbl tr[data-kind="campaign"][data-id="${CSS.escape(id)}"]`);
     if (tr) { tr.classList.add('flash'); tr.scrollIntoView({ block: 'nearest' }); setTimeout(() => tr.classList.remove('flash'), 2400); }
   }
   function reset() { Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null, prodEdit: null }); cp.touched.clear(); }
-  return { render, reset, afterPlan };
+  /* "Campaign created · Open" */
+  function openCampaign(id) { if (U.currentTab() !== 'campaign') { U.go('campaign'); setTimeout(() => select('campaign', id), 0); return; } select('campaign', id); }
+  return { render, reset, afterPlan, openCampaign };
 })();

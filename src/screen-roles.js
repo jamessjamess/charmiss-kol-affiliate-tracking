@@ -29,8 +29,9 @@ KT.screens.roles = (function () {
       <p class="rm-note">${esc(K.disclaimer)}</p>
       <div id="rm_body"></div>
       <div class="card" style="margin-top:16px"><div class="card-head"><h3>${esc(K.permTitle)}</h3></div><div id="rm_perm"></div></div>`;
-    $('rm_new').addEventListener('click', startNew);
+    $('rm_new').addEventListener('click', e => startNew(e.currentTarget));   // CR-11 §4.3: a create modal (M)
     $('rm_body').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr) select(tr.dataset.id); });
+    $('rm_perm').addEventListener('click', e => { const b = e.target.closest('[data-permfold]'); if (!b) return; const set = permFolded(), k = b.dataset.permfold; set.has(k) ? set.delete(k) : set.add(k); U.pref.set(permKey(), JSON.stringify([...set])); renderTable(); });
     $('rm_body').addEventListener('keydown', e => { if (e.key !== 'Enter') return; const tr = e.target.closest('tr[data-id]'); if (tr) select(tr.dataset.id); });
     sec.dataset.built = '1';
   }
@@ -52,11 +53,17 @@ KT.screens.roles = (function () {
           `<td>${esc(u.email || '')}</td><td>${roleChip(u.role)}</td><td>${pn ? `☑ ${esc(pn)}` : `<span class="muted">—</span>`}</td><td>${statusChip(u)}</td>` +
           `<td class="num">${pn ? R.fmtNum(R.dealsAsPic(s, pn)) : ''}</td><td>${esc(lastText(s, u)) || `<span class="muted">${esc(K.never)}</span>`}</td></tr>`; }).join('') +
       `</tbody></table></div>`;
-    $('rm_perm').innerHTML = `<div class="tablewrap"><table class="tbl perm-tbl"><thead><tr><th>${esc(K.permAction)}</th>${R.ROLES.map(r => `<th class="c">${esc(K.role[r])}</th>`).join('')}</tr></thead><tbody>` +
-      R.PERMISSIONS.map(p => `<tr><td>${esc(K.perm[p.key])}</td>${R.ROLES.map(r => `<td class="c">${p[r] ? '✓' : '<span class="muted">—</span>'}</td>`).join('')}</tr>`).join('') + `</tbody></table></div>`;
+    /* CR-11 §4.13 #8 — grouped by part of the app, each group folds (remembered per person) · the header row stays on top */
+    const shut = permFolded();
+    $('rm_perm').innerHTML = `<div class="tablewrap perm-wrap"><table class="tbl perm-tbl"><thead><tr><th>${esc(K.permAction)}</th>${R.ROLES.map(r => `<th class="c">${esc(K.role[r])}</th>`).join('')}</tr></thead>` +
+      R.permGroups().map(g => { const open = !shut.has(g.module);
+        return `<tbody><tr class="ghead"><td colspan="${R.ROLES.length + 1}"><button type="button" class="gh" data-permfold="${g.module}" aria-expanded="${open}"><span class="chev${open ? ' open' : ''}">${ICON.chevron}</span><b class="gname">${esc(K.modules[g.module])}</b><span class="muted">${R.fmtNum(g.rows.length)}</span></button></td></tr>` +
+          (open ? g.rows.map(p => `<tr><td>${esc(K.perm[p.key])}</td>${R.ROLES.map(r => `<td class="c">${p[r] ? '✓' : '<span class="muted">—</span>'}</td>`).join('')}</tr>`).join('') : '') + `</tbody>`; }).join('') + `</table></div>`;
     document.querySelectorAll('#rm_body tr[data-id]').forEach(tr => tr.classList.toggle('selected', rm.mode !== 'none' && tr.dataset.id === rm.id));
   }
 
+  const permKey = () => 'permfold_' + (U.userId() || '');
+  const permFolded = () => { try { return new Set(JSON.parse(U.pref.get(permKey(), '[]'))); } catch (e) { return new Set(); } };
   /* ===================== drawer ===================== */
   const owner = {
     isDirty: () => editing() && rm.dirty,
@@ -83,52 +90,63 @@ KT.screens.roles = (function () {
       <div class="dr-body">${sec(K.secDetails, kv(K.fName, u.display_name) + kv(K.fEmail, u.email) + kv(K.fRole, K.role[u.role]) + kv(K.fPicName, pn || '') +
         kv(K.colDeals, pn ? R.fmtNum(R.dealsAsPic(s, pn)) : '') + kv(K.colLast, lastText(s, u)))}</div>`;
   }
-  function startNew() {
+  /* + Add user: the user form in a create modal (M) · User created · Open (its drawer) */
+  function startNew(opener) {
     if (!guard('roles')) return;
     if (editing()) { toast(C.common.blockWhileEditing); renderPanel(); return; }
+    if (U.drawerOwner() === owner) U.closeDrawer();
     Object.assign(rm, { mode: 'new', id: null, dirty: false, draft: { user_id: null, display_name: '', email: '', role: 'staff', is_pic: false, pic_name: '', active: true } });
-    rm.touched.clear(); renderPanel();
+    rm.touched.clear();
+    U.createModal({ size: 'M', title: K.newTitle, opener, isDirty: () => rm.mode === 'new' && rm.dirty, focus: '#f_display_name', onClick: panelClick,
+      onClose: () => { if (rm.mode === 'new') { Object.assign(rm, { mode: 'none', id: null, draft: null }); rm.touched.clear(); } },
+      body: fieldsHTML(rm.draft), foot: [`<div class="checks" id="rm_checks"></div>`, U.cmButtons(K.addOk, 'rm_ok', { attrs: ' data-act="save"' })] });
+    wireForm(); check();
   }
+  const box = () => (rm.mode === 'new' ? $('cm_root') : $('drawer_content'));
   function startEdit() {
     const u = userById(rm.id); if (!u || !guard('roles')) return;
     Object.assign(rm, { mode: 'edit', dirty: false, draft: Object.assign({}, u, { email: u.email || '', pic_name: u.pic_name || '' }) });
     rm.touched.clear(); renderPanel();
   }
   function formHTML() {
-    const d = rm.draft, isNew = rm.mode === 'new';
-    return `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(isNew ? K.newTitle : K.editTitle(d.display_name || d.user_id))}</h2>${isNew ? '' : `<div class="dr-sub"><span>${esc(d.user_id)}</span></div>`}</div>${closeBtn}</div></div>
-      <div class="dr-body">${sec(K.secDetails, `<div class="fields">
+    const d = rm.draft;
+    return `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(K.editTitle(d.display_name || d.user_id))}</h2><div class="dr-sub"><span>${esc(d.user_id)}</span></div></div>${closeBtn}</div></div>
+      <div class="dr-body">${sec(K.secDetails, fieldsHTML(d))}</div>
+      <div class="dr-foot"><div class="checks" id="rm_checks"></div>
+        <div class="btns"><button type="button" class="btn" data-act="cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-act="save">${esc(C.common.save)}</button></div></div>`;
+  }
+  function fieldsHTML(d) {
+    return `<div class="fields">
         ${field('display_name', K.fName, `<input id="f_display_name" data-f="display_name" value="${esc(d.display_name)}" autocomplete="off">`, { req: 1, wide: 1 })}
         ${field('email', K.fEmail, `<input type="email" id="f_email" data-f="email" value="${esc(d.email)}" placeholder="${esc(K.emailPh)}" autocomplete="off">`, { wide: 1 })}
         ${field('role', K.fRole, `<select id="f_role" data-f="role">${optionsHTML(R.ROLES.map(r => ({ value: r, label: K.role[r] })), d.role)}</select>`, { req: 1 })}
         <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" data-b="active"${d.active !== false ? ' checked' : ''}> ${esc(K.fActive)}</label><div class="hint">${esc(K.fActiveHint)}</div></div>
         <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" data-b="is_pic"${d.is_pic ? ' checked' : ''}> ${esc(K.fIsPic)}</label><div class="hint">${esc(K.fIsPicHint)}</div></div>
         ${field('pic_name', K.fPicName, `<input id="f_pic_name" data-f="pic_name" value="${esc(d.pic_name)}" placeholder="${esc(d.display_name)}" autocomplete="off"${d.is_pic ? '' : ' disabled'}>`, { hint: esc(K.fPicNameHint) })}
-      </div>`)}</div>
-      <div class="dr-foot"><div class="checks" id="rm_checks"></div>
-        <div class="btns"><button type="button" class="btn" data-act="cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-act="save">${esc(C.common.save)}</button></div></div>`;
+      </div>`;
   }
   function wireForm() {
-    const box = $('drawer_content'), d = rm.draft;
-    box.querySelectorAll('[data-f]').forEach(el => {
+    const d = rm.draft;
+    box().querySelectorAll('[data-f]').forEach(el => {
       const f = el.dataset.f, h = () => { d[f] = el.value; rm.dirty = true; if (f === 'display_name') { const pn = $('f_pic_name'); if (pn) pn.placeholder = el.value; } check(); };
       el.addEventListener('input', h);
       el.addEventListener('change', () => { h(); rm.touched.add(f); check(); });
       el.addEventListener('blur', () => { rm.touched.add(f); check(); });
     });
-    box.querySelectorAll('[data-b]').forEach(el => el.addEventListener('change', () => {
+    box().querySelectorAll('[data-b]').forEach(el => el.addEventListener('change', () => {
       d[el.dataset.b] = el.checked; rm.dirty = true;
       if (el.dataset.b === 'is_pic') $('f_pic_name').disabled = !el.checked;
       check();
     }));
   }
   function check() {
-    const box = $('drawer_content'), res = R.validateUser(state(), rm.draft);
+    if (!rm.draft || !box()) return { errs: [], warns: [], infos: [] };
+    const res = R.validateUser(state(), rm.draft);
     /* the warning about open deals carries "Reassign PIC…" */
     $('rm_checks').innerHTML = checksHTML(res, C.common.ok) +
       res.warns.filter(w => w.kind === 'reassign').map(w => `<div class="btns" style="margin:4px 0 0 18px"><button type="button" class="btn small" data-act="reassign" data-pic="${esc(w.pic)}">${esc(K.reassign)}</button></div>`).join('');
-    box.querySelectorAll('[data-f]').forEach(el => el.classList.toggle('invalid', rm.touched.has(el.dataset.f) && res.errs.some(e => e.field === el.dataset.f)));
-    box.querySelector('[data-act="save"]').disabled = res.errs.length > 0;
+    box().querySelectorAll('[data-f]').forEach(el => el.classList.toggle('invalid', rm.touched.has(el.dataset.f) && res.errs.some(e => e.field === el.dataset.f)));
+    box().querySelector('[data-act="save"]').disabled = res.errs.length > 0;
     return res;
   }
   async function save() {
@@ -136,7 +154,15 @@ KT.screens.roles = (function () {
     const s = state(), d = rm.draft, res = R.validateUser(s, d);
     if (res.errs.length) { res.errs.forEach(x => rm.touched.add(x.field)); check(); return; }
     let id = d.user_id;
-    if (rm.mode === 'new') { id = store.newId('user'); s.users.push(R.userFromDraft(d, id)); }
+    if (rm.mode === 'new') {
+      id = store.newId('user'); s.users.push(R.userFromDraft(d, id));
+      U.closeModal();   // (closing it moves the focus: the form's own handlers still see the draft)
+      Object.assign(rm, { mode: 'none', id: null, draft: null }); rm.touched.clear();
+      commit(); U.renderNav(); renderTable();
+      setTimeout(() => { const tr = document.querySelector(`#rm_body tr[data-id="${CSS.escape(id)}"]`); if (tr) { tr.classList.add('flash'); tr.scrollIntoView({ block: 'nearest' }); setTimeout(() => tr.classList.remove('flash'), 5000); } }, 50);
+      U.toastAction(C.common.created(K.thing), C.common.open, () => select(id), 8000);
+      return;
+    }
     else {
       const old = userById(id), rec = R.userFromDraft(d, id), from = R.picName(old), to = R.picName(rec);
       /* a new PIC name: the deals and KOLs that use the old one follow (asked first, with the counts) */

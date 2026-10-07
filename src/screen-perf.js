@@ -45,10 +45,10 @@ KT.perf = (function () {
   function cellHTML(k, r, s) {
     const p = r.post;
     switch (k) {
-      case 'kol': return `<td class="pf-kol stk"><span class="kname"><b>${esc(kolName(r))}</b>${U.copyBtnHTML(kolName(r))}</span>${r.handle ? `<span class="pf-h">@${esc(r.handle)}</span>` : ''}</td>`;
+      case 'kol': return `<td class="pf-kol stk"><span class="kname"><b>${U.nameHTML(kolName(r))}</b>${U.copyBtnHTML(kolName(r))}</span>${r.handle ? `<span class="pf-h">@${esc(r.handle)}</span>` : ''}</td>`;
       case 'tier': return `<td><span class="chip">${esc(r.tier)}</span></td>`;
       case 'platform': return `<td class="c">${pfIcon(r.platform, 'posted', r.platform)}</td>`;
-      case 'post': return `<td>${p.post_link ? `<a class="pf-open" href="${esc(p.post_link)}" target="_blank" rel="noopener" title="${esc(P.openTip)}">${esc(P.open)} ↗</a>`
+      case 'post': return `<td>${r.dup ? `<span class="chip warn-chip pf-dup" title="${esc(r.dup.first ? P.dupFirstTip(r.dup.n) : P.dupTip(r.dup.n))}">${esc(P.dupLink)}</span> ` : ''}${p.post_link ? `<a class="pf-open" href="${esc(p.post_link)}" target="_blank" rel="noopener" title="${esc(P.openTip)}">${esc(P.open)} ↗</a>`
         : `<button type="button" class="chip pf-nolink" data-pfnolink title="${esc(P.noLinkTip)}">${esc(P.noLink)}</button>`}</td>`;
       case 'post_date': case 'expected': { const d = k === 'post_date' ? p.post_date : p.expected_post_date; return `<td class="nowrap">${d ? esc(R.dmy(d)) : DASH}</td>`; }
       case 'views': case 'likes': case 'comments': case 'shares': case 'saves': {
@@ -61,18 +61,25 @@ KT.perf = (function () {
       case 'cpe': return `<td class="num">${thb(r.cpe, 2)}</td>`;
       case 'followers': case 'engagement': return `<td class="num">${num(r[k])}</td>`;
       case 'vpf': return `<td class="num">${r.vpf == null ? DASH : r.vpf.toFixed(1) + '×'}</td>`;
-      case 'updated': {
-        const d = R.dmy(String(p.metrics_updated_at || '').slice(0, 10)), who = p.metrics_updated_by ? R.changedByName(s, p.metrics_updated_by) : '';
-        if (r.status === 'none') return `<td>${DASH}</td>`;
-        if (r.status === 'imported') return `<td><span class="muted" title="${esc(P.importedTip)}">${esc(P.status.imported)}</span></td>`;
-        return `<td class="nowrap"><span class="${r.status === 'stale' ? 'pf-stale' : ''}" title="${esc(r.status === 'stale' ? P.staleTip(d, R.metricsStaleDays(s.lookups)) : P.updatedTip(d, who))}">${esc(d)}</span></td>`;
-      }
+      case 'updated': return `<td class="nowrap">${statusHTML(r, s)}</td>`;
       case 'pic': return `<td>${r.pic ? esc(r.pic) : DASH}</td>`;
       case 'phase': return `<td>${r.phase ? esc(groupLabel(s, 'phase', r.phase)) : DASH}</td>`;
       case 'gencode': return `<td>${p.gencode_code ? `<span title="${esc(P.gencodeTip(R.dmy(R.gencodeEndDate(r.deal))))}">${esc(P.gencodeYes)}</span>` : DASH}</td>`;
       case 'pillar': return `<td>${r.deal.pillar ? esc(r.deal.pillar) : DASH}</td>`;
       case 'ontime': return `<td class="nowrap">${r.lateDays == null ? DASH : r.lateDays ? `<span class="pf-late">${esc(P.late(r.lateDays))}</span>` : esc(P.onTime)}</td>`;
       default: return '<td></td>';
+    }
+  }
+  /* CR-11 §4.12 — the metrics status: Due (amber) · Waiting "D+7 on dd/mm" · Collected (the day saved) · Not posted · Not tracked · Imported (grey) */
+  function statusHTML(r, s) {
+    const p = r.post, i = r.minfo || {}, d = R.dmy(String(p.metrics_updated_at || '').slice(0, 10)), who = p.metrics_updated_by ? R.changedByName(s, p.metrics_updated_by) : '', dm = x => R.dmy(x).slice(0, 5);
+    switch (r.status) {
+      case 'due': return `<span class="chip pf-due" title="${esc(P.dueTip(i.checkpoint, R.dmy(i.checkpointDate), d))}">${esc(P.status.due)}</span>`;
+      case 'waiting': return `<span class="muted small" title="${esc(P.status.waiting)}">${esc(P.waitingL(i.next, dm(i.nextDate)))}</span>`;
+      case 'collected': return `<span class="pf-col" title="${esc(P.collectedTip(d, who, i.checkpoint))}">${esc(d || P.status.collected)}</span>`;
+      case 'not_tracked': return `<span class="muted" title="${esc(P.notTrackedTip(R.dmy(R.addDays(R.goLiveDate(s.lookups), -30))))}">${esc(P.status.not_tracked)}</span>`;
+      case 'imported': return `<span class="muted" title="${esc(P.importedTip)}">${esc(P.status.imported)}</span>`;
+      default: return `<span class="muted" title="${esc(P.notPostedTip)}">${esc(P.status.not_posted)}</span>`;
     }
   }
   /* the Total row (and one under each group): sums · ER / CPV / CPE weighted (§4.3), not the mean of the rows */
@@ -97,15 +104,18 @@ KT.perf = (function () {
     const rows = R.filterPerfRows(all, o.f), m = R.perfMetricsOf(rows);
     const sorted = R.sortPerfRows(rows, pv.sort.key, pv.sort.dir, s.lookups.tier_rules);
     pv.sorted = sorted; pv.all = all; pv.byKey = new Map(all.map(r => [r.key, r]));
-    const card = (key, value, sub, extra) => `<div class="pf-k${extra ? ' ' + extra : ''}"${key === 'withMetrics' && m.posted > m.withMetrics ? ` role="button" tabindex="0" data-pfkpi="none" title="${esc(P.showNoMetrics)}"` : ''}>` +
-      `<span class="l">${esc(P.kpi[key].h)} ${U.info(P.kpi[key])}</span><span class="v">${value}</span><span class="s">${sub || '&nbsp;'}</span></div>`;
+    const dueN = rows.filter(r => r.status === 'due').length, ntN = rows.filter(r => r.status === 'not_tracked').length;
+    const card = (key, value, sub, extra) => `<div class="pf-k${extra ? ' ' + extra : ''}"${key === 'withMetrics' && dueN ? ` role="button" tabindex="0" data-pfkpi="due" title="${esc(P.showNoMetrics)}"` : ''}>` +
+      `<span class="l">${U.labelInfo(P.kpi[key].h, P.kpi[key])}</span><span class="v">${value}</span><span class="s">${sub || '&nbsp;'}</span></div>`;
     const kpis = `<div class="pf-kpis">` +
       card('posted', R.fmtNum(m.posted), m.noDate ? esc(P.noDate(m.noDate)) : '') +
-      card('withMetrics', R.fmtNum(m.withMetrics), m.posted ? esc(P.pctPosted(Math.round(m.withMetrics / m.posted * 100))) : '', m.posted > m.withMetrics ? 'click' : '') +
+      card('withMetrics', R.fmtNum(m.withMetrics), m.posted ? esc(P.pctPosted(Math.round(m.withMetrics / m.posted * 100))) : '', dueN ? 'click' : '') +
       card('views', `<span title="${esc(R.fmtNum(m.views))}">${esc(U.shortNum(m.views))}</span>`) +
       card('engagement', `<span title="${esc(R.fmtNum(m.engagement))}">${esc(U.shortNum(m.engagement))}</span>`) +
       card('er', esc(pctText(m.er)), m.withViews ? esc(P.onViews(m.withViews)) : '') +
-      card('cpv', esc(thbText(m.cpv, 3)), m.withViews ? esc(P.costOn(R.baht(m.costViews))) : '') + `</div>`;
+      card('cpv', esc(thbText(m.cpv, 3)), m.withViews ? esc(P.costOn(R.baht(m.costViews))) : '') + `</div>` +
+      /* CR-11 §4.6: the posts nobody collects (before go-live − 30 days, no numbers) — a small line, the formulas do not change */
+      (ntN ? `<div class="pf-nt muted small">${esc(P.notTrackedLine(R.dmy(R.addDays(R.goLiveDate(s.lookups), -30)), R.fmtNum(ntN)))}</div>` : '');
     const colMenu = `<details class="menu pf-colmenu"><summary class="btn small">${esc(P.columns)}</summary><div class="menu-list right pf-cols">` +
       COLS.filter(k => k !== 'kol').map(k => `<label class="tick"><input type="checkbox" data-pfcol="${k}"${cols.includes(k) ? ' checked' : ''}> ${esc(P.col[k])}</label>`).join('') +
       `<button type="button" class="mi" data-pfcolreset>${esc(P.defaultCols)}</button></div></details>`;
@@ -134,7 +144,7 @@ KT.perf = (function () {
     const o = pv.o; if (!o) return false;
     if (e.target.closest('.pf-in')) return true;
     const ed = e.target.closest('[data-mcell][data-edit]'); if (ed) { startEdit(ed); return true; }
-    if (e.target.closest('[data-pfpaste]')) { openPaste(); return true; }
+    if (e.target.closest('[data-pfpaste]')) { openPaste(e.target.closest('[data-pfpaste]')); return true; }
     if (e.target.closest('a') || e.target.closest('[data-copyname]') || e.target.closest('.info')) return true;
     if (e.target.closest('details.menu > summary') || e.target.closest('.pf-cols label')) return true;
     const k = e.target.closest('[data-pfkpi]'); if (k) { o.setFilter('mstatus', k.dataset.pfkpi); return true; }
@@ -222,19 +232,19 @@ KT.perf = (function () {
   }
 
   /* ---------- §4.6 Paste metrics ---------- */
-  function openPaste() {
+  /* CR-11 §4.3 — the create modal (L): paste · preview · Apply */
+  function openPaste(opener) {
     if (!U.guard('deal.edit')) return;
     pv.paste = { text: '', plan: null };
-    openDialog(`<div class="dlg-h">${esc(P.pasteMetrics)}</div><div class="dlg-b"><p class="hint" style="margin-top:0">${esc(P.paste.help)}</p>
+    U.createModal({ size: 'L', title: P.pasteMetrics, opener, focus: '#pf_paste', isDirty: () => !!R.trim(pv.paste && pv.paste.text),
+      body: `<p class="hint" style="margin-top:0">${esc(P.paste.help)}</p>
       <div class="pf-pastebar"><button type="button" class="btn small" id="pf_copytpl">${esc(P.paste.copyTemplate)}</button><span class="muted small">${esc(P.paste.copyTip(new Set(pv.all.filter(r => r.post.post_link).map(r => r.post.post_link)).size))}</span></div>
-      <textarea id="pf_paste" rows="6" spellcheck="false" placeholder="${esc(P.paste.placeholder)}"></textarea><div id="pf_prev"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="pf_pcancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="pf_apply" disabled>${esc(P.paste.apply(0))}</button></div>`, 'xl');
+      <textarea id="pf_paste" rows="6" spellcheck="false" placeholder="${esc(P.paste.placeholder)}"></textarea><div id="pf_prev"></div>`,
+      foot: ['', U.cmButtons(P.paste.apply(0), 'pf_apply', { attrs: ' disabled' })] });
     let t;
     $('pf_paste').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { pv.paste.text = e.target.value; drawPreview(); }, 120); });
     $('pf_copytpl').addEventListener('click', () => U.copyText(R.pasteTemplate(pv.all)).then(ok => toast(ok ? P.paste.copied : C.copy.failed)));
-    $('pf_pcancel').addEventListener('click', closeDialog);
     $('pf_apply').addEventListener('click', applyPaste);
-    $('pf_paste').focus();
   }
   function drawPreview() {
     const plan = R.planPaste(pv.paste.text, pv.all, U.actor()), c = plan.counts;
@@ -255,7 +265,7 @@ KT.perf = (function () {
   function applyPaste() {
     const plan = pv.paste && pv.paste.plan; if (!plan || !U.guard('deal.edit')) return;
     const list = plan.lines.filter(x => x.status === 'matched').map(x => ({ post: x.row.post, values: x.values }));
-    closeDialog();
+    U.closeModal();
     if (list.length) saveValues(list, 'paste', P.paste.done(list.length));
   }
 

@@ -34,6 +34,10 @@ Object.assign(KT.rules, (function (R, C) {
   const stepDealUse = (state, sub) => state.deals.filter(d => d.sub_status === sub).length;
   /* Post (Complete) and Cancel hold the journey together: they cannot be switched off or deleted */
   const stepLocked = step => step.status === 'Complete' || step.status === 'Cancel';
+  /* CR-11 §4.13 #6 — the steps the stage rules name (Confirm QT: pillar / term / shipment · Brief · Draft 1 · Post: posts · Cancel): 🔒 in Settings ·
+     the label can change, they cannot be deleted or turned off */
+  const CORE_STEPS = ['Contacted', 'Confirm QT', 'Brief', 'Approve Draft 1', 'Post', 'Cancel'];
+  const isCoreStep = step => !!step && CORE_STEPS.includes(step.sub_status);
   function validateTiers(tiers) {
     const errs = [];
     if (!tiers.length) errs.push(issue('tier', M.tierNone));
@@ -354,7 +358,7 @@ Object.assign(KT.rules, (function (R, C) {
     if (kol && kol.kol_status && kol.kol_status !== 'Active' && (!stored || stored.kol_id !== d.kol_id)) warns.push(issue('kol_id', M.addKolStatus(kol.display_name, kol.kol_status)));
     if (isUnpaid(d)) infos.push(issue('paid_full', M.completeUnpaid));
     /* CR-03 §4.6 — a reminder for deals at / after Confirm QT without a pillar (the error is on Move stage) */
-    if (d.status !== 'Cancel' && isBlank(d.pillar) && step && R.pillarStepReached(L, d.sub_status)) infos.push(issue('pillar', M.pillarNotSetInfo));
+    if (d.status !== 'Cancel' && isBlank(d.pillar) && step && R.pillarStepReached(L, d.sub_status) && !R.isImportedClosed(d)) infos.push(issue('pillar', M.pillarNotSetInfo));   // CR-11 §4.6
     return { errs, warns, infos, strict };
   }
   /* warnings shown in the ⚠ column: everything except the Phase budget (that one lives on the Phase) */
@@ -408,6 +412,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (f.pic && (f.pic === '__none' ? !isBlank(d.pic) : d.pic !== f.pic)) return false;
       if (f.pillar && (f.pillar === '__none' ? !isBlank(d.pillar) : d.pillar !== f.pillar)) return false;
       if (f.cta && (f.cta === '__none' ? !isBlank(d.cta) : d.cta !== f.cta)) return false;
+      if (f.noImported && R.isImported(d)) return false;   // CR-11 §4.6: Include imported off
       if (f.tiers && f.tiers.length && !f.tiers.includes((ctx.tiers.get(d.deal_id) || {}).tier || UNKNOWN_TIER)) return false;
       if (f.payment && R.paymentProgress(d) !== f.payment) return false;
       if (f.overdue && !R.isOverdue(state, d, today)) return false;
@@ -652,7 +657,7 @@ Object.assign(KT.rules, (function (R, C) {
     if (f.pic && f.pic !== 'all') out.push('pic');
     if (trim(f.q)) out.push('q');
     if (f.tiers && f.tiers.length) out.push('tiers');
-    ['sub', 'pillar', 'cta', 'term', 'payState', 'open', 'noDate', 'outside', 'reason'].forEach(k => { if (f[k]) out.push(k); });
+    ['sub', 'pillar', 'cta', 'term', 'payState', 'open', 'noDate', 'outside', 'reason', 'noImported'].forEach(k => { if (f[k]) out.push(k); });
     return out;
   }
   /* all of them back to empty at once — the Campaign stays · PIC = All PICs */
@@ -691,7 +696,7 @@ Object.assign(KT.rules, (function (R, C) {
     UNKNOWN_TIER, dealTier, tierOrder, tierRange, stageKey, stageOrder, stageOf, stageName, stageLabel, stageMoney, groupDeals, groupStats,
     DEAL_SECTIONS, POST_EDIT_FIELDS, AUTO_FIELDS, paymentRecorded, fieldEditable, sectionEditable, diffFields, diffPosts, editEvent, pillarCleared,
     campaignCta, ctaDiffers, dealsWithCta, termSource, termDiffers,
-    MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, validateTiers,
+    MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, CORE_STEPS, isCoreStep, validateTiers,
     dealContext, postsOfCtx, postPlatform, PAY_FLAGS, togglePayment, isUnpaid, validateDeal, rowWarnings,
     PAY_TABS, PAY_GROUPS, payTabOf, outstandingOf, paymentsView, payGroupOf, payGroupTotals, payFlags,
     dropPlan, DEAL_TABS, NEEDS_REASONS, needsReasons, dealTabOf, dealTabs, inDealTab, defaultDealsCampaign,

@@ -1,4 +1,4 @@
-/* screen-planner.js — Phase Planner (CR-05 §4.4): a Campaign and all its Phases in one wide drawer — the Campaign fields,
+/* screen-planner.js — Phase Planner (CR-05 §4.4 · CR-11 §4.5: the create modal L — Campaign on the left, Phases on the right): the Campaign fields,
    an editable Phase table (% | ฿ for the whole table), the budget bar, a timeline preview and, when editing, what happens
    to the posts. Everything is saved together (an error anywhere saves nothing). Opened from Campaign & Phase. → KT.planner
    CR-06: a Phase is "Phase {n}" by its start date (+ an optional Label) · the Campaign's products (a new Campaign needs one) ·
@@ -6,35 +6,30 @@
 KT.planner = (function () {
   'use strict';
   const U = KT.ui;
-  const { C, R, $, esc, today, store, state, commit, toast, checksHTML, field, dm, optionsHTML, activeList, dateHTML, ICON, openDrawer, fillDrawer, confirmDialog, guard, userId, setHash } = U;
+  const { C, R, $, esc, today, store, state, commit, toast, toastAction, checksHTML, field, dm, optionsHTML, activeList, dateHTML, ICON, confirmDialog, guard, userId, setHash } = U;
   const K = C.planner, CK = C.campaign;
   let pl = null, seq = 0;
   const round2 = n => Math.round(n * 100) / 100;
   const num = v => (R.isBlank(v) || isNaN(v) ? null : Number(v));
-  const box = () => $('drawer_content');
-  const mine = () => !!pl && U.drawerOwner() === owner;
-  const owner = {
-    kind: 'planner',   // CR-10 §4.13: 60%, at least 880px
-    isDirty: () => !!(pl && pl.dirty),
-    onClose: () => { detach(); pl = null; if (U.currentTab() === 'campaign') setHash('campaign'); },
-    /* leaving the page keeps the plan; Campaign & Phase shows it again */
-    onSuspend: () => detach(),
-  };
-  function detach() { const b = box(); b.classList.remove('wide'); b.oninput = null; b.onchange = null; b.onfocusin = null; }
+  /* CR-11 §4.5 — the modal (L): New campaign · New phase · Plan phases · one at a time, the page behind waits */
+  const box = () => $('cm_root');
+  const mine = () => !!pl && !!pl.m && !!box();
 
   /* ===================== open ===================== */
-  /* o: {campaignId (none = a new Campaign), addRow, focusPhase} */
+  /* o: {campaignId (none = a new Campaign), addRow, focusPhase, opener} */
   function open(o = {}) {
     if (!guard('campaign.edit')) return;
+    if (U.modalOpen()) U.closeModal();
     const s = state(), c = o.campaignId ? s.campaigns.find(x => x.campaign_id === o.campaignId) : null;
     const t = R.pillarTargetOf(s, c ? c.campaign_id : null);
     const phases = c ? R.sortPhases(s.phases.filter(p => p.campaign_id === c.campaign_id)) : [];
     pl = {
       mode: c ? 'edit' : 'new', campaignId: c ? c.campaign_id : null,
       camp: { campaign_name: c ? c.campaign_name : '', cta: c ? c.cta || '' : '', budget_kol: c && c.budget_kol != null ? String(c.budget_kol) : '',
+        default_payment_term: c && R.isTerm(c.default_payment_term) ? c.default_payment_term : '',   // CR-11 §4.11
         ownTarget: !!(c && c.pillar_target), target: Object.fromEntries(R.PILLARS.map(p => [R.PILLAR_KEY[p], String(t[R.PILLAR_KEY[p]])])),
         products: c ? R.campaignProductCodes(s, c.campaign_id) : [] },
-      rows: phases.map(p => ({ key: 'k' + (++seq), phase_id: p.phase_id, label: p.label || '', start_date: p.start_date || '', end_date: p.end_date || '', amount: p.budget_kol == null ? '' : String(p.budget_kol), pct: '' })),
+      rows: phases.map(p => ({ key: 'k' + (++seq), phase_id: p.phase_id, label: p.label || '', start_date: p.start_date || '', end_date: p.end_date || '', amount: p.budget_kol == null ? '' : String(p.budget_kol), pct: '', default_pillar: p.default_pillar || '' })),
       unit: c && !num(c.budget_kol) ? 'amount' : 'pct', deleted: [], touched: new Set(), submitted: false, dirty: false, focusRow: null,
       /* the period only helps plan (not saved): an existing Campaign starts with its Phases' dates; typing it makes the count re-split the dates */
       period: { start: phases.map(p => p.start_date).filter(Boolean).sort()[0] || '', end: phases.map(p => p.end_date).filter(Boolean).sort().pop() || '' },
@@ -42,9 +37,16 @@ KT.planner = (function () {
     };
     if (!pl.rows.length || o.addRow) addRow(false);
     fromAmounts();
+    const me = pl, fi = o.focusPhase ? pl.rows.findIndex(r => r.phase_id === o.focusPhase) : -1, last = pl.rows.length - 1;
+    /* the first thing to fill: a new Campaign's name · New phase: the new row's period (its picker opens on the day after the last Phase) · a Phase: its row */
+    const focusSel = me.mode === 'new' && !o.addRow ? '[data-c="campaign_name"]' : o.addRow ? `[data-row="${last}"] .drange-t` : fi >= 0 ? `[data-row="${fi}"] [data-k="label"]` : null;
+    me.m = U.createModal({ size: 'L', title: c ? K.title(c.campaign_name) : K.newTitle, sub: K.sub, opener: o.opener, focus: () => focusSel,
+      isDirty: () => !!me.dirty, onClick, redraw: () => { if (pl === me) render(); },
+      onClose: () => { if (pl === me) pl = null; if (U.currentTab() === 'campaign') setHash('campaign'); } });
+    box().addEventListener('input', onInput); box().addEventListener('change', onChange);
+    box().addEventListener('focusin', e => { const r = e.target.closest('[data-row]'); if (r && pl) pl.focusRow = +r.dataset.row; });
     render();
-    if (o.focusPhase) { const i = pl.rows.findIndex(r => r.phase_id === o.focusPhase); focusRow(i); }
-    else if (o.addRow || pl.mode === 'new') focusRow(pl.mode === 'new' && !o.addRow ? -1 : pl.rows.length - 1);
+    if (o.addRow && pl.mode === 'edit') setTimeout(() => { const r = pl && pl.rows[last], el = r && box() && box().querySelector(`[data-row="${last}"] .drange`); if (el && r.start_date) U.openRange(el, { from: r.start_date, to: '' }); }, 40);
   }
   const isOpen = () => !!pl;
   function reopen() { if (pl) render(); }
@@ -112,7 +114,7 @@ KT.planner = (function () {
     /* CR-10 §4.8: + Add phase opens the new row's picker on the day after the last Phase, waiting for the end */
     if (rerender) { render(); const r = pl.rows[pl.rows.length - 1], el = box().querySelector(`[data-row="${pl.rows.length - 1}"] .drange`); if (el && r.start_date) U.openRange(el, { from: r.start_date, to: '' }); else focusRow(pl.rows.length - 1); }
   }
-  const planRows = () => pl.rows.map(r => ({ key: r.key, phase_id: r.phase_id, label: r.label, start_date: r.start_date, end_date: r.end_date, budget_kol: r.amount, budget_pct: pl.unit === 'pct' ? r.pct : '' }));
+  const planRows = () => pl.rows.map(r => ({ key: r.key, phase_id: r.phase_id, label: r.label, start_date: r.start_date, end_date: r.end_date, budget_kol: r.amount, budget_pct: pl.unit === 'pct' ? r.pct : '', default_pillar: r.default_pillar || '' }));
   const campDraft = () => ({ campaign_id: pl.campaignId, campaign_name: pl.camp.campaign_name, budget_kol: pl.camp.budget_kol });
   function validate() {
     const res = R.validatePhasePlan(state(), campDraft(), planRows(), pl.deleted, { pctUsed: pl.unit === 'pct' && pl.rows.some(r => !R.isBlank(r.pct)) });
@@ -127,7 +129,6 @@ KT.planner = (function () {
   const rowTitle = (r, i) => { const seqs = R.planSeqs(planRows()); return R.phaseTitle(seqs[i], r.label); };
 
   /* ===================== draw ===================== */
-  const closeBtn = `<button type="button" class="icon-btn" data-dr-close aria-label="${esc(C.common.close)}" title="${esc(C.common.close)}">${ICON.close}</button>`;
   const sec = (title, body, extra, id) => `<section class="sec"${id ? ` id="${id}"` : ''}><div class="sec-h"><span>${esc(title)}</span>${extra || ''}</div>${body}</section>`;
   function rowHTML(r, i) {
     const s = state(), canDel = !r.phase_id || R.canDeletePhase(s, r.phase_id), inp = pl.unit === 'pct' ? 'pct' : 'amount';
@@ -137,6 +138,7 @@ KT.planner = (function () {
       <td class="num" data-days></td>
       <td><input type="number" min="0" step="${inp === 'pct' ? '0.01' : '1'}" inputmode="decimal" data-k="${inp}" data-key="row${i}_budget" value="${esc(r[inp])}" aria-label="${esc(inp === 'pct' ? K.colBudgetPct : K.colBudgetAmt)}"></td>
       <td class="num" data-other></td>
+      <td><select data-k="default_pillar" data-key="row${i}_pillar" aria-label="${esc(`${rowNames()[i]} · ${C.fill.defaultPillar}`)}">${optionsHTML(activeList('pillar_list', r.default_pillar || null), r.default_pillar || '', C.fill.none)}</select></td>
       <td><details class="menu"><summary class="icon-btn" aria-label="${esc(C.app.more)}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">
         <button type="button" class="mi" data-dup="${i}">${esc(K.dup)}</button>
         <button type="button" class="mi danger" data-del="${i}"${canDel ? '' : ` disabled aria-disabled="true" title="${esc(K.hasPosts)}"`}>${esc(K.del)}${canDel ? '' : ` <span class="muted small">· ${esc(K.hasPosts)}</span>`}</button></div></details></td></tr>`;
@@ -146,6 +148,7 @@ KT.planner = (function () {
     const campaign = `<div class="fields">
         ${field('campaign_name', CK.fName, `<input id="f_campaign_name" data-c="campaign_name" data-key="campaign_name" value="${esc(c.campaign_name)}" placeholder="${esc(CK.namePh)}" autocomplete="off">`, { req: 1, wide: 1 })}
         ${field('cta', CK.fCta, `<select id="f_cta" data-c="cta">${optionsHTML(activeList('cta_list', c.cta), c.cta || '', C.common.none)}</select>`)}
+        ${field('default_payment_term', C.fill.defaultTerm, `<select id="f_default_payment_term" data-c="default_payment_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), c.default_payment_term || '', C.fill.none)}</select>`, { hint: esc(C.fill.defaultTermHint) })}
         ${field('budget_kol', CK.fCampaignBudget, `<input type="number" min="0" step="1" inputmode="numeric" id="f_budget_kol" data-c="budget_kol" data-key="budget_kol" value="${esc(c.budget_kol)}">`)}
         ${field('products', K.fProducts, U.productPickerHTML('pl_products', c.products, code => (pl.campaignId ? R.productDealsInCampaign(state(), pl.campaignId, code).length : 0)), { req: isNew, wide: 1, hint: esc(K.productsHint) })}
         <div class="field wide"><label class="tick"><input type="checkbox" data-owntarget${c.ownTarget ? ' checked' : ''}> ${esc(CK.ownTarget)}</label>
@@ -162,25 +165,19 @@ KT.planner = (function () {
         `<div class="seg" role="group" aria-label="${esc(K.unit)}"><button type="button" data-unit="pct" class="${pct ? 'on' : ''}">%</button><button type="button" data-unit="amount" class="${pct ? '' : 'on'}">฿</button></div>` +
         `<button type="button" class="btn small" data-fill title="${esc(K.fillTip)}">${esc(K.fill)}</button></div>`;
     const table = plan + `<div class="tablewrap"><table class="tbl pl-tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colLabel)}</th><th>${esc(K.colPeriod)}</th><th class="num">${esc(K.colDays)}</th>` +
-      `<th>${esc(pct ? K.colBudgetPct : K.colBudgetAmt)}</th><th class="num">${esc(pct ? K.colAmount : K.colPct)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody></table></div>` +
+      `<th>${esc(pct ? K.colBudgetPct : K.colBudgetAmt)}</th><th class="num">${esc(pct ? K.colAmount : K.colPct)}</th><th title="${esc(C.fill.defaultPillarHint)}">${esc(C.fill.defaultPillar)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody></table></div>` +
       `<div class="btns" style="margin-top:8px"><button type="button" class="btn small" data-add>${esc(K.add)}</button></div><div class="pl-bar" id="pl_bar"></div>`;
-    return `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(isNew ? K.newTitle : K.title(pl.camp.campaign_name))}</h2><div class="dr-sub"><span>${esc(K.sub)}</span></div></div>${closeBtn}</div></div>
-      <div class="dr-body">
-        ${sec(K.secCampaign, campaign)}
-        ${sec(K.secPhases, table)}
-        ${sec(K.secTimeline, `<div id="pl_tl"></div>`)}
-        ${isNew ? '' : sec(K.secImpact, `<div id="pl_impact"></div>`, '', 'pl_impactSec')}
-      </div>
-      <div class="dr-foot"><div class="checks" id="pl_checks"></div><div class="btns"><button type="button" class="btn" data-plcancel>${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-plsave>${esc(C.common.save)}</button></div></div>`;
+    return { body: `<div class="pl-grid"><div class="pl-l">${sec(K.secCampaign, campaign)}</div><div class="pl-r">${sec(K.secPhases, table)}${sec(K.secTimeline, `<div id="pl_tl"></div>`)}` +
+        `${isNew ? '' : sec(K.secImpact, `<div id="pl_impact"></div>`, '', 'pl_impactSec')}</div></div>`,
+      left: `<div class="checks" id="pl_checks"></div>`,
+      buttons: `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-plsave>${esc(isNew ? K.createCampaign : K.savePhases)}</button>` };
   }
   function render() {
-    const h = html();
-    if (U.drawerOwner() === owner) fillDrawer(h); else openDrawer(owner, h);
+    if (!mine()) return;
+    const v = html();
+    pl.m.setBody(v.body, true); pl.m.setFoot(v.left, v.buttons);
     const b = box();
-    b.classList.add('wide');
     setHash(pl.campaignId ? 'campaign/' + pl.campaignId : 'campaign');
-    b.onclick = onClick; b.oninput = onInput; b.onchange = onChange;
-    b.onfocusin = e => { const r = e.target.closest('[data-row]'); if (r) pl.focusRow = +r.dataset.row; };
     if (pl.moved) { const k = pl.moved; setTimeout(() => { if (pl && pl.moved === k) { pl.moved = null; const tr = box().querySelector('tr.moved'); if (tr) tr.classList.remove('moved'); } }, 1000); }
     U.wireProductPicker($('pl_products'), { get: () => pl.camp.products, set: codes => { pl.camp.products = codes; pl.dirty = true; pl.touched.add('products'); refresh(); },
       locked: code => (pl.campaignId ? R.productDealsInCampaign(state(), pl.campaignId, code).length : 0), canNew: U.can('campaign.edit'), askUsed: true });
@@ -194,7 +191,7 @@ KT.planner = (function () {
 
   /* ===================== live parts (typing never loses focus) ===================== */
   function refresh() {
-    if (!mine()) return;
+    if (!mine() || !$('pl_checks')) return;   // a panel in place (New product) is showing
     const b = box(), res = validate(), show = f => pl.submitted || pl.touched.has(f), names = rowNames();
     pl.rows.forEach((r, i) => {
       const tr = b.querySelector(`[data-row="${i}"]`); if (!tr) return;
@@ -336,7 +333,6 @@ KT.planner = (function () {
       R.fillRemaining(pl.rows.map(r => r.pct), i).forEach((v, j) => { pl.rows[j].pct = String(v); });
       fromPcts(); pl.dirty = true; render(); focusRow(i); return;
     }
-    if (b.dataset.plcancel != null) { if (!pl.dirty || (await confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true))) U.closeDrawer(); return; }
     if (b.dataset.plsave != null) save();
   }
 
@@ -349,19 +345,19 @@ KT.planner = (function () {
     if (over && !(await confirmDialog(K.saveAnywayTitle, over.msg, K.saveAnyway))) return;
     const s = state(), now = new Date(), c0 = pl.camp, rows = planRows();
     const target = c0.ownTarget ? Object.fromEntries(Object.entries(c0.target).map(([k, v]) => [k, Number(v)])) : null;
-    const fields = { campaign_name: R.trim(c0.campaign_name), cta: c0.cta || null, budget_kol: num(c0.budget_kol), pillar_target: target };
+    const fields = { campaign_name: R.trim(c0.campaign_name), cta: c0.cta || null, budget_kol: num(c0.budget_kol), pillar_target: target, default_payment_term: R.isTerm(c0.default_payment_term) ? c0.default_payment_term : null };
     let c, oldCta = null;
     if (pl.mode === 'new') {
       c = Object.assign({ campaign_id: R.campaignIdFor(fields.campaign_name, s.campaigns), note: null, status_override: null, status_reason: null, status_changed_at: null }, fields);
       s.campaigns.push(c);
     } else { c = s.campaigns.find(x => x.campaign_id === pl.campaignId); oldCta = c.cta || null; Object.assign(c, fields); }
-    const snap = list => list.map(p => ({ phase_id: p.phase_id, label: p.label || null, start_date: p.start_date, end_date: p.end_date, budget_kol: p.budget_kol }));
+    const snap = list => list.map(p => ({ phase_id: p.phase_id, label: p.label || null, start_date: p.start_date, end_date: p.end_date, budget_kol: p.budget_kol, default_pillar: p.default_pillar || null }));
     const before = snap(s.phases.filter(p => p.campaign_id === c.campaign_id)), productsBefore = R.campaignProductCodes(s, c.campaign_id);
     const gone = new Set(pl.deleted);
     s.phases = s.phases.filter(p => !gone.has(p.phase_id));
     s.deal_posts.forEach(p => { if (gone.has(p.phase_override)) p.phase_override = null; });
     rows.slice().sort((a, b) => (a.start_date < b.start_date ? -1 : 1)).forEach(r => {
-      const rec = { campaign_id: c.campaign_id, label: R.trim(r.label) || null, start_date: r.start_date, end_date: r.end_date, budget_kol: num(r.budget_kol) };
+      const rec = { campaign_id: c.campaign_id, label: R.trim(r.label) || null, start_date: r.start_date, end_date: r.end_date, budget_kol: num(r.budget_kol), default_pillar: r.default_pillar || null };
       const p = r.phase_id && s.phases.find(x => x.phase_id === r.phase_id);
       if (p) Object.assign(p, rec); else s.phases.push(Object.assign({ phase_id: R.phaseIdFor(c.campaign_id, s.phases) }, rec));
     });
@@ -377,11 +373,13 @@ KT.planner = (function () {
         r.deals.forEach(x => { s.deals[at.get(x.deal_id)] = x; }); r.events.forEach(e => s.deal_events.push(e));
       }
     }
-    const id = c.campaign_id;
+    const id = c.campaign_id, isNew = pl.mode === 'new';
     pl.dirty = false;
-    commit(K.saved(c.campaign_name));
-    U.closeDrawer();
-    if (KT.screens.campaign.afterPlan) KT.screens.campaign.afterPlan(id);
+    /* CR-11 §4.2 — a new Campaign: "Campaign created · Open" · Plan phases: saved, back to the drawer it came from */
+    if (isNew) commit(); else commit(K.saved(c.campaign_name));
+    U.closeModal();
+    if (KT.screens.campaign.afterPlan) KT.screens.campaign.afterPlan(id, isNew);
+    if (isNew) toastAction(C.common.created(K.campaignThing), C.common.open, () => { if (KT.screens.campaign.openCampaign) KT.screens.campaign.openCampaign(id); }, 8000);
   }
 
   return { open, isOpen, reopen };

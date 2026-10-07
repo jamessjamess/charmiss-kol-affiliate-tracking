@@ -33,8 +33,23 @@ Object.assign(KT.rules, (function (R, C) {
     { key: 'payment.paid', actions: ['payment.paid'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: true },
     { key: 'payment.reopen', actions: ['payment.reopen'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'settings.payments', actions: ['settings.payments'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
+    /* CR-11 §4.7 — Settings › Go-live clean-up: Admin runs it · Accounting sees the payments step read-only */
+    { key: 'golive.run', actions: ['golive.run'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
+    { key: 'golive.view', actions: ['golive.view'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: true },
+    /* CR-11 §4.10 — Shipments (seeing them is the 'view' row · the full address is 'payee.unlock') */
+    { key: 'shipment.edit', actions: ['shipment.edit'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
+    { key: 'shipment.ship', actions: ['shipment.ship'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
+    { key: 'shipment.settings', actions: ['shipment.settings'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
   ];
   const ROW_OF = new Map(PERMISSIONS.flatMap(p => p.actions.map(a => [a, p])));
+  /* CR-11 §4.13 #8 — the Role Management matrix in groups, one a part of the app (the order of the side menu) */
+  const PERM_MODULES = ['dashboard', 'deals', 'shipments', 'payments', 'kol', 'settings'];
+  const PERM_MODULE = { view: 'dashboard', 'deal.edit': 'deals', 'deal.money': 'deals', 'campaign.products': 'deals', 'campaign.edit': 'deals',
+    'shipment.edit': 'shipments', 'shipment.ship': 'shipments', 'shipment.settings': 'shipments',
+    'payee.edit': 'payments', 'payment.request': 'payments', 'payee.unlock': 'payments', 'payee.verify': 'payments', 'vault.admin': 'payments', 'payee.import': 'payments',
+    'payment.run': 'payments', 'payment.paid': 'payments', 'payment.reopen': 'payments', 'settings.payments': 'payments',
+    'kol.edit': 'kol', 'kol.merge': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
+  const permGroups = () => PERM_MODULES.map(m => ({ module: m, rows: PERMISSIONS.filter(p => (PERM_MODULE[p.key] || 'settings') === m) })).filter(g => g.rows.length);
   /* can(user, action) — asked when a control is drawn and again right before anything is written ·
      user = the person as they act now (actingAs: an admin viewing as another role) */
   function can(user, action) {
@@ -110,6 +125,6 @@ Object.assign(KT.rules, (function (R, C) {
   const userFromDraft = (u, userId) => ({ user_id: userId, display_name: trim(u.display_name), email: trim(u.email) || null, role: u.role,
     is_pic: !!u.is_pic, pic_name: u.is_pic ? (trim(u.pic_name) || trim(u.display_name)) : null, active: u.active !== false });
 
-  return { ROLES, EMAIL_DOMAIN, PERMISSIONS, can, effectiveRole, actingAs, userById, currentUser, picName, picNames, opsPic, defaultPic, changedByName, lastActive, dealsAsPic,
+  return { ROLES, EMAIL_DOMAIN, PERMISSIONS, PERM_MODULES, PERM_MODULE, permGroups, can, effectiveRole, actingAs, userById, currentUser, picName, picNames, opsPic, defaultPic, changedByName, lastActive, dealsAsPic,
     validateUser, picRenameCount, userFromDraft };
 })(KT.rules, KT.content));

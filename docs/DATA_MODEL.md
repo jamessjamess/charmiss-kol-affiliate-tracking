@@ -1,6 +1,6 @@
 # Data model — Charmiss KOL Tracker
 
-schema_version **11** (CR-10 · 06/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
+schema_version **12** (CR-11 · 06/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
 ที่มาข้อมูลตั้งต้น: `data/KOL_seed_v2.json` → `data/seed.js` (ห้ามแก้) · การอัปเกรดทำใน `src/store.js` `migrate()` ตอนโหลด (seed · localStorage · Backup เก่า v1–v10) — ทำครั้งเดียวตาม `schema_version` · เพิ่ม field เท่านั้น ไม่ลบข้อมูลเงิน
 
 ## Collections
@@ -14,6 +14,7 @@ schema_version **11** (CR-10 · 06/10/2026) · ทั้งหมดอยู่
 | `deal_posts` | post id | deal · platform · วันที่โพสต์ / คาด · `phase_override` · metrics `views` · `likes` · `comments` · `shares` · `saves` (จำนวนเต็ม ≥ 0 หรือ null = ยังไม่มีข้อมูล ≠ 0) · `metrics_updated_at` · **`metrics_updated_by`** · **`metrics_source`** (CR-10) | CR-01 |
 | `deal_status_log` | `log_id` | ประวัติ Move stage (`sub_status` · `effective_date` · `changed_by`) | CR-01 |
 | `deal_events` | `event_id` | append-only: pic · plan · payment_term · `payment` (line เปลี่ยนสถานะ) · `payee_details_changed` (ไม่มีค่า) · **`metrics`** · **`sample`** (CR-10) | CR-02 |
+| `pick_lists` | `pick_list_id` PK0001 | รอบแพ็กของ: `name` · `shipment_ids` · `created_by` / `created_at` (CR-11 §4.10) | CR-11 |
 | `sample_shipments` | `shipment_id` SH000001 | สินค้าตัวอย่างที่ส่งให้ KOL (หลายรายการต่อ deal) · items · ship by · สถานะ · carrier · tracking (CR-10 §4.14) | CR-10 |
 | `users` | `user_id` | `display_name` · `email` · `role` · `is_pic` · `pic_name` · `active` · `meta.current_user_id` = คนที่ใช้งานในเบราว์เซอร์นี้ | CR-04 |
 | `campaign_events` | `event_id` | append-only: Phase Planner · status · **products** (CR-09) | CR-05 |
@@ -38,7 +39,8 @@ schema_version **11** (CR-10 · 06/10/2026) · ทั้งหมดอยู่
 | 8 | CR-08 | `payee_profiles` · `payment_lines` · `payment_runs` · `lookups.payment_settings` · `lookups.payee_vault` |
 | 9 | CR-09 | ดูด้านล่าง |
 | 10 | CR-10 R1 | `deal_posts.metrics_source` / `metrics_updated_by` · `lookups.metrics_stale_days` |
-| **11** | **CR-10 R6** | `sample_shipments` · `lookups.sample_settings` (ดูด้านล่าง) |
+| 11 | CR-10 R6 | `sample_shipments` · `lookups.sample_settings` (ดูด้านล่าง) |
+| **12** | **CR-11 R3** | `lookups.go_live` · `payment_lines` on_hold · `sample_shipments.purpose / campaign_id / pick_list_id` · `pick_lists` · `phases.default_pillar` · `campaigns.default_payment_term` · `lookups.metrics_checkpoints` (ดูด้านล่าง) |
 
 ## CR-09 — schema 8 → 9
 
@@ -104,3 +106,25 @@ Line status `submitted` แสดงเป็น "With Accounting" ทุกท�
 **ทุก commit** (`ui.commit` → `rules.syncShipments`): deal ที่ถึง Confirm QT ขึ้นไป ไม่ Cancel / Complete และยังไม่มี shipment → สร้าง To ship (`source = auto` · items = deal_products) · deal Cancel → shipment To ship เป็น Not required "Deal cancelled" (ที่ส่งแล้วคงไว้) · ship_by ตามวันที่ของ deal (ถ้าไม่ override) · sync `deals.delivered` / `delivery_date` · มี shipment แล้ว (รวม Not required) จะไม่สร้างใหม่
 
 **Migration v10 → v11** (`store.js` `toV11` → `rules.migrateSamples`): 1) deal `delivered = true` → shipment `delivered` (`delivered_date = delivery_date` · ว่าง = "Date not recorded" · `source = legacy`) — seed 206 รายการ (120 มีวันที่ · 86 ไม่มี) · 2) deal ไม่ Cancel · ขั้น Confirm QT ขึ้นไป · ยังไม่ Complete · ไม่มี shipment → `to_ship` (`source = auto`) — seed 8 รายการ (Overdue 7 · ไม่มี ship-by 1) · 3) deal Complete ที่ไม่มีข้อมูลส่งของ → ไม่สร้าง · 4) `lookups.sample_settings` default · 5) `schema_version = 11` — ตัวเลขเงินและค่า `deals.delivered` / `delivery_date` เดิมไม่เปลี่ยน
+
+## CR-11 — schema 11 → 12
+
+migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrate` ครั้งเดียว · ใช้กับ Backup เก่าด้วย · deal ไม่ถูกแตะ) · ก่อนอัปเกรด ข้อมูลที่เก็บไว้ถูกสำเนา 1 ชุดที่ localStorage `charmiss_kol_tracker_v1_before_v12` (`store.beforeCopy()` · Settings › Data ดาวน์โหลดได้)
+
+| ที่ | field | ค่า / ความหมาย |
+|---|---|---|
+| `lookups.go_live` | `{date, completed_at, completed_by}` | `date` = วันที่อัปเกรด (Go-live clean-up เปลี่ยนได้) · ใช้แค่บอกว่าอะไร "ไม่ได้ติดตามในแอป" (โพสต์ก่อน date − 30 วันที่ไม่มีตัวเลข = Not tracked) · ไม่ตัดข้อมูลทิ้ง · `completed_*` = รัน clean-up แล้ว |
+| `payment_lines.status` | + `on_hold` | Hold (`hold_reason` · `hold_by` · `hold_at` · `hold_created` = line ที่ Hold สร้างขึ้น → Release แล้วลบทิ้ง ให้งวดคิดจาก deal ใหม่) · ไม่เข้า run |
+| `sample_shipments` | `purpose` | `review` (ทุกแถวเดิม) · `gifting` · `replacement` · `affiliate` · `other` |
+| | `campaign_id` | Campaign ของ deal · shipment ที่ไม่ผูก deal เลือกเองได้ (หรือ null) |
+| | `pick_list_id` | pick list ที่อยู่ (อยู่ได้ 1 อัน · เอาออกได้จนกว่าจะ Shipped) |
+| | `deal_id` = null · `source` = `other` | New shipment ที่ไม่ผูก deal · `kol_id` = ผู้รับ (KOL ใน KOL Master เสมอ · ที่อยู่อยู่ใน Payee vault) |
+| `pick_lists` | ใหม่ | `{pick_list_id, name, shipment_ids [], created_by, created_at}` |
+| `phases.default_pillar` | pillar หรือ null | ตั้งจากชื่อ Phase ที่มีคำ Pillar คำเดียว (seed: KS Phase 1 Awareness · KS Phase 2 Conversion) · ส่งต่อให้ New deal / Bulk shortlist · `Apply to n deals without pillar` |
+| `campaigns.default_payment_term` | term หรือ null | ส่งต่อให้ New deal / Bulk shortlist เมื่อ KOL ไม่มี default · `Apply to n open deals without term` |
+| `lookups.metrics_checkpoints` | `[7]` | วันหลังโพสต์ที่ต้องเก็บ metrics (Settings เพิ่ม 30 ได้) · `metrics_stale_days` เก็บไว้ ไม่ใช้แล้ว |
+| `deal_events.type` | + `payment_hold` · `shipment` | Hold / Release (from → to · note = เหตุผล) · shipment ใหม่ / clean-up Delivered (imported) |
+| `campaign_events.type` | + `default_pillar` | ตั้ง Default pillar ใน Phase drawer |
+
+**Go-live clean-up** เขียนเฉพาะ: `payment_lines` (Paid outside app · `source` legacy · note "Matched with <file> · sheet … row …" หรือ note ที่พิมพ์) · `sample_shipments` (Delivered · `delivered_date` ว่าง · `source` legacy) · `lookups.go_live` · `deal_events` — **ไม่มีคอลัมน์อื่นจากไฟล์ PR** (ชื่อผู้รับ · เลขบัญชี ฯลฯ) ใน state / Backup / log
+

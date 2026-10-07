@@ -58,7 +58,7 @@ KT.payee = (function () {
   /* clicks inside the section · → true when handled */
   function onClick(e, kol, rerender) {
     if (e.target.closest('[data-smship]')) { KT.samples.shippingDialog(kol.kol_id, rerender); return true; }
-    if (e.target.closest('[data-payee-edit]')) { openDialog_({ kolId: kol.kol_id, onSaved: rerender }); return true; }
+    if (e.target.closest('[data-payee-edit]')) { openDialog_({ kolId: kol.kol_id, onSaved: rerender, opener: e.target.closest('[data-payee-edit]') }); return true; }
     if (e.target.closest('[data-payee-unlock]')) { unlockDialog(rerender); return true; }
     const vf = e.target.closest('[data-payee-verify]');
     if (vf) { if (!U.guard('payee.verify')) return true; const p = R.payeeById(state(), vf.dataset.payeeVerify); if (p) { Object.assign(p, { needs_verification: false, verified_at: nowISO(), verified_by: userId() }); commit(PY.verified); rerender(); } return true; }
@@ -70,7 +70,7 @@ KT.payee = (function () {
   }
 
   /* ===================== the Payee dialog (KOL drawer ✎ · Payments chips) ===================== */
-  /* o: {kolId | payeeId, onSaved} */
+  /* o: {kolId | payeeId | newPayee, onSaved, opener} · CR-11 §4.3: a modal (M) — Add payee for a new one, Save for one that exists */
   function openDialog_(o) {
     const s = state(), kol = o.kolId ? R.kolById(s, o.kolId) : null, stored = kol ? R.payeeOfKol(s, kol.kol_id) : o.newPayee ? null : R.payeeById(s, o.payeeId);
     if (!R.canEditPayee(s, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
@@ -91,7 +91,9 @@ KT.payee = (function () {
       return (mode === 'replace' ? `<div class="hint" style="margin-bottom:8px">${esc(PY.replaceHint)} <button type="button" class="link" data-py-keep>${esc(PY.keepSaved)}</button></div>` : '') + `<div class="fields">${bankInputs()}</div>`;
     };
     const rates = S.wht_rates.map(r => ({ value: String(r), label: `${r}%` }));
-    openDialog(`<div class="dlg-h">${esc(PY.title(name))}</div><div class="dlg-b py-dlg">
+    let typed = false;
+    U.createModal({ size: 'M', title: PY.title(name), opener: o.opener, isDirty: () => typed, onClose: () => wipe(),
+      foot: [`<div class="checks" id="py_checks"></div>`, U.cmButtons(stored ? C.common.save : PY.addOk, 'py_ok')], body: `<div class="py-dlg">
       <div class="sec-h"><span>${esc(PY.groupTax)}</span></div>
       <div class="fields">
         ${kol ? '' : `<div class="field wide"><label for="py_handle">${esc(PY.handle)} <span class="req">*</span></label><input id="py_handle" value="${esc(p.account_handle || '')}" autocomplete="off" placeholder="${esc(PY.handlePh)}"></div>`}
@@ -104,10 +106,9 @@ KT.payee = (function () {
       <div id="py_bank">${bankHTML()}</div>
       <div class="sec-h" style="margin-top:14px"><span>${esc(PY.groupDocs)}</span></div>
       <div class="fields">${R.PAYEE_DOCS.map(k => `<div class="field"><label>${esc(PY.docs[k])}</label>${dateHTML(`id="py_d_${k}"`, (p.docs || {})[k], { label: PY.docs[k] })}</div>`).join('')}
-        <div class="field wide"><label for="py_link">${esc(PY.docsLink)}</label><input id="py_link" type="url" value="${esc(p.docs_link || '')}" placeholder="${esc(PY.docsLinkPh)}" autocomplete="off"></div></div>
-      <div class="checks" id="py_checks" style="margin-top:12px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="py_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="py_ok">${esc(C.common.save)}</button></div>`, 'mid');
-    const dlg = $('dlg');
+        <div class="field wide"><label for="py_link">${esc(PY.docsLink)}</label><input id="py_link" type="url" value="${esc(p.docs_link || '')}" placeholder="${esc(PY.docsLinkPh)}" autocomplete="off"></div></div></div>` });
+    const dlg = $('cm_root');
+    dlg.addEventListener('input', () => { typed = true; }); dlg.addEventListener('change', () => { typed = true; });
     const fillOriginal = async () => {
       if (mode !== 'edit' || !p.secure) return;
       original = await V.decrypt(p.secure);
@@ -119,13 +120,11 @@ KT.payee = (function () {
     dlg.querySelector('#py_bank').addEventListener('click', e => {
       if (e.target.closest('[data-py-replace]')) { mode = 'replace'; redrawBank(); const f = $('py_b_account_name'); if (f) f.focus(); return; }
       if (e.target.closest('[data-py-keep]')) { mode = 'saved'; redrawBank(); return; }
-      if (e.target.closest('[data-py-unlock]')) { closeDialog(); unlockDialog(() => openDialog_(o)); return; }
-      if (e.target.closest('[data-py-setup]')) { closeDialog(); location.hash = '#settings/payments'; }
+      if (e.target.closest('[data-py-unlock]')) { U.closeModal(); unlockDialog(() => openDialog_(o)); return; }
+      if (e.target.closest('[data-py-setup]')) { U.closeModal(); location.hash = '#settings/payments'; }
     });
-    $('py_cancel').addEventListener('click', () => { wipe(); closeDialog(); });
-    /* the typed values leave the page as soon as the dialog closes */
-    const wipe = () => { dlg.querySelectorAll('[data-bank]').forEach(el => { el.value = ''; }); original = null; };
-    dlg.addEventListener('close', wipe, { once: true });
+    /* the typed values leave the page as soon as the modal closes */
+    function wipe() { dlg.querySelectorAll('[data-bank]').forEach(el => { el.value = ''; }); original = null; }
     const read = () => {
       const docs = Object.fromEntries(R.PAYEE_DOCS.map(k => [k, $('py_d_' + k).value || null]));
       return Object.assign({ payee_type: $('py_type').value, default_wht_rate: Number($('py_wht').value), price_basis: $('py_basis').value, vat_registered: $('py_vat').checked, docs, docs_link: R.trim($('py_link').value) || null },
@@ -146,7 +145,7 @@ KT.payee = (function () {
       if (res.errs.length) return;
       if (!R.canEditPayee(s2, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
       const plainChanged = !stored || ['payee_type', 'default_wht_rate', 'price_basis', 'vat_registered', 'docs_link', 'account_handle'].some(k => k in plain && plain[k] !== stored[k]) || R.PAYEE_DOCS.some(k => (plain.docs[k] || null) !== ((stored.docs || {})[k] || null));
-      if (!changed && !plainChanged) { wipe(); closeDialog(); toast(PY.nothingChanged); return; }
+      if (!changed && !plainChanged) { wipe(); U.closeModal(); toast(PY.nothingChanged); return; }
       $('py_ok').disabled = true; $('py_ok').textContent = PY.encrypting;
       let secure = null;
       if (changed) { try { secure = await V.encrypt(vaultOf(), R.bankRecord(bank)); } catch (e) { $('py_ok').disabled = false; $('py_ok').textContent = C.common.save; toast(PY.noCrypto); return; } }
@@ -160,7 +159,7 @@ KT.payee = (function () {
         if (R.payeeHasPaid(s3, rec.payee_id)) Object.assign(rec, { needs_verification: true, verified_at: null, verified_by: null });
         s3.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: rec.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
       }
-      wipe(); closeDialog(); commit(PY.savedToast(name));
+      wipe(); U.closeModal(); commit(PY.savedToast(name));
       if (o.onSaved) o.onSaved(rec);
     });
   }
@@ -186,20 +185,20 @@ KT.payee = (function () {
   }
   /* passphrase rules: ≥ 12 characters, typed twice the same */
   const passErrs = (a, b) => (a.length < 12 ? [{ field: 'p1', msg: VT.passShort }] : a !== b ? [{ field: 'p2', msg: VT.passMismatch }] : []);
-  function setupDialog(after) {
+  /* CR-11 §4.3 — Set up the vault: a create modal (M) · the passphrase only lives in these two boxes, cleared on close */
+  function setupDialog(after, opener) {
     if (!U.guard('vault.admin') || vaultOf()) return;
-    openDialog(`<div class="dlg-h">${esc(VT.setUpTitle)}</div><div class="dlg-b"><div class="check warn">! <span>${esc(VT.setUpExplain)}</span></div>
-      <div class="fields" style="margin-top:12px"><div class="field wide"><label for="vs_p1">${esc(VT.pass)}</label><input type="password" id="vs_p1" autocomplete="new-password"><div class="hint">${esc(VT.passHint)}</div></div>
-        <div class="field wide"><label for="vs_p2">${esc(VT.pass2)}</label><input type="password" id="vs_p2" autocomplete="new-password"></div></div><div class="checks" id="vs_checks" style="margin-top:8px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="vs_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="vs_ok">${esc(VT.setUp)}</button></div>`);
     const clear = () => { ['vs_p1', 'vs_p2'].forEach(id => { if ($(id)) $(id).value = ''; }); };
-    $('vs_cancel').addEventListener('click', () => { clear(); closeDialog(); });
+    U.createModal({ size: 'M', title: VT.setUpTitle, opener, onClose: clear, foot: [`<div class="checks" id="vs_checks"></div>`, U.cmButtons(VT.setUp, 'vs_ok')],
+      body: `<div class="check warn">! <span>${esc(VT.setUpExplain)}</span></div>
+      <div class="fields" style="margin-top:12px"><div class="field wide"><label for="vs_p1">${esc(VT.pass)}</label><input type="password" id="vs_p1" autocomplete="new-password"><div class="hint">${esc(VT.passHint)}</div></div>
+        <div class="field wide"><label for="vs_p2">${esc(VT.pass2)}</label><input type="password" id="vs_p2" autocomplete="new-password"></div></div>` });
     $('vs_ok').addEventListener('click', async () => {
       const a = $('vs_p1').value, b = $('vs_p2').value, errs = passErrs(a, b);
       $('vs_checks').innerHTML = U.checksHTML({ errs, warns: [], infos: [] }, ''); if (errs.length || !U.guard('vault.admin')) return;
       $('vs_ok').disabled = true; $('vs_ok').textContent = VT.working;
       const meta = await V.setup(a, { now: nowISO(), user: userId() });
-      clear(); state().lookups.payee_vault = meta; closeDialog(); commit(VT.setUpDone); if (after) after();
+      clear(); state().lookups.payee_vault = meta; U.closeModal(); commit(VT.setUpDone); if (after) after();
     });
   }
   function changeDialog(after) {

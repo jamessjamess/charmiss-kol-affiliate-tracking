@@ -26,7 +26,7 @@ KT.screens.kol = (function () {
     renderList();
     if (p) {
       if (editing()) { toast(C.common.blockWhileEditing); renderPanel(); return; }
-      if (p.newKol) { km.backDeal = p.back || null; startNew(); return; }
+      if (p.newKol) { km.backDeal = p.back || null; openNewKol(); return; }
       if (p.id && R.kolById(state(), p.id)) { Object.assign(km, { mode: 'view', id: p.id, backDeal: p.back || null }); renderPanel(); if (p.edit) startEdit(); return; }
     }
     if (id && R.kolById(state(), id) && !editing()) { Object.assign(km, { mode: 'view', id }); renderPanel(); }
@@ -62,9 +62,9 @@ KT.screens.kol = (function () {
     });
     $('km_more').addEventListener('click', e => {
       const b = e.target.closest('[data-m]'); if (!b) return; b.closest('details').open = false;
-      if (b.dataset.m === 'import') openImport(); else exportKols(b.dataset.m);
+      if (b.dataset.m === 'import') openImport(b.closest('details').querySelector('summary')); else exportKols(b.dataset.m);
     });
-    $('km_new').addEventListener('click', () => { km.backDeal = null; startNew(); });
+    $('km_new').addEventListener('click', e => { km.backDeal = null; openNewKol(e.currentTarget); });   // CR-11 §4.3: a modal (M)
     $('km_bulkAdd').addEventListener('click', openBulkAdd);
     $('km_selClear').addEventListener('click', () => { km.selected.clear(); renderList(); });
     const body = $('km_body');
@@ -145,7 +145,7 @@ KT.screens.kol = (function () {
         ${th(T.colKol, 'kol')}${th(T.colPlatforms)}${th(T.colFollowers, 'followers', 'num')}${th(T.colTier)}${th(T.colCategoryType)}${th(T.colPic)}${th(T.colRate, 'rate', 'num')}${th(T.colDeals, 'deals', 'num')}${th(P.colOnTime, 'ontime')}${th(P.colLastWorked, 'last')}${th(T.colLastPhase)}
       </tr></thead><tbody>` +
       shown.map(r => `<tr class="click" tabindex="0" data-id="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-sel="${esc(r.k.kol_id)}"${km.selected.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
-        `<td class="kcol"><div class="kolcell"><span class="av">${esc(initials(r.k.display_name))}</span><div class="cell2"><span class="kname"><b>${esc(r.k.display_name)}</b>${U.copyBtnHTML(r.k.display_name)}</span><span class="sub">${esc(r.k.kol_id)}${r.k.kol_status && r.k.kol_status !== 'Active' ? ` · ${esc(r.k.kol_status)}` : ''}</span></div></div></td>` +
+        `<td class="kcol"><div class="kolcell"><span class="av">${esc(initials(r.k.display_name))}</span><div class="cell2"><span class="kname"><b>${U.nameHTML(r.k.display_name)}</b>${U.copyBtnHTML(r.k.display_name)}</span><span class="sub">${esc(r.k.kol_id)}${r.k.kol_status && r.k.kol_status !== 'Active' ? ` · ${esc(r.k.kol_status)}` : ''}</span></div></div></td>` +
         `<td><span class="pfs">${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p)).join('')}</span></td>` +
         `<td class="num">${R.fmtNum(r.mf)}</td><td>${esc(r.tier)}</td><td class="kcat" title="${esc([r.k.kol_category, R.kolTypeLabel(L, r.k.kol_type)].filter(Boolean).join(' · '))}"><span class="cell2"><span>${esc(r.k.kol_category || '')}</span>${r.k.kol_type ? `<span class="sub">${esc(R.kolTypeLabel(L, r.k.kol_type))}</span>` : ''}</span></td><td>${esc(r.k.pic || '')}</td>` +
         `<td class="num" title="${esc(r.quote ? r.quote.source : '')}">${priceText(r.quote)}</td><td class="num">${r.deals.length || ''}</td><td>${r.pf.perf.measured ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${lastWorkedHTML(r.pf.last, td)}</td>` +
@@ -241,7 +241,7 @@ KT.screens.kol = (function () {
       </div>
       <div class="dr-body kgrid">
         <div class="kg-l">${sec(T.secProfile, profile)}
-        ${sec(T.secAccounts(accs.length), accounts || `<div class="hint">${esc(C.common.none)}</div>`)}
+        ${sec(T.secAccounts(accs.length), accounts || `<div class="hint">${esc(C.common.none)}</div>`, can('kol.edit') ? `<button type="button" class="btn small" data-act="addAccount">${esc(T.addAccount)}</button>` : '')}
         ${sec(C.payee.sec, KT.payee.bodyHTML(k), KT.payee.editBtn(k))}</div>
         <div class="kg-r">${sec(T.secRates(quotes.length), rates, can('kol.edit') ? `<button type="button" class="btn small" data-act="addQuote">${esc(T.addRate)}</button>` : '')}
         ${sec(P.sec, perfHTML(s, k, td), U.info({ h: P.info.h, d: P.info.d(R.perfSettings(s.lookups).grace, R.perfSettings(s.lookups).minPosts), f: P.info.f }))}</div>
@@ -274,13 +274,6 @@ KT.screens.kol = (function () {
 
   /* ---------- edit / new ---------- */
   const blankAccount = () => ({ account_id: null, platform: '', handle: '', profile_link: '', followers: '', is_legacy: false });
-  function startNew() {
-    if (!guard('kol.edit')) return;
-    if (editing()) { toast(C.common.blockWhileEditing); renderPanel(); return; }
-    Object.assign(km, { mode: 'new', id: null, dirty: false, draft: { kol_id: null, display_name: '', kol_category: '', kol_type: '', gender: '', pic: '', kol_status: 'Active',
-      status_reason: '', contact_channel: '', note: '', default_payment_term: '', accounts: [blankAccount()] } });
-    km.touched.clear(); renderPanel();
-  }
   function startEdit() {
     const s = state(), k = R.kolById(s, km.id); if (!k || !guard('kol.edit')) return;
     const draft = Object.assign({ status_reason: '' }, k);
@@ -416,147 +409,87 @@ KT.screens.kol = (function () {
       last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus();
     }
     else if (act === 'merge') { const m = b.closest('details'); if (m) m.open = false; openMerge(); }
-    else if (act === 'addQuote') openQuote();
-    else if (act === 'addPhase') openAddToPhase();
+    else if (act === 'addQuote') openQuote(b);
+    else if (act === 'addAccount') openAddAccount(b);
+    /* CR-11 §4.3 — Add to campaign: the New deal modal, Single KOL, this KOL locked (Change frees it) · the drawer shows the new deal after */
+    else if (act === 'addPhase') { const id = km.id; KT.screens.deals.openNewDeal({ tab: 'single', kolId: id, lockKol: true, opener: b, after: () => { renderList(); if (km.mode === 'view' && km.id === id) renderPanel(); } }); }
   }
 
   /* ===================== dialogs ===================== */
   const PRICE_LABEL = () => ({ rate_card: T.qRate, gencode_expense: T.qGencode, gencode_period: T.qGencodeDays, basket_fee: T.qBasket, asset_fee: T.qAsset, expediting_fee: T.qExpedite });
-  function openQuote() {
+  function openQuote(opener) {
     if (!guard('kol.edit')) return;
     const s = state(), k = R.kolById(s, km.id), accs = R.accountsOfKol(s, k.kol_id);
     const q = { kol_id: k.kol_id, account_id: accs.length === 1 ? accs[0].account_id : '', quoted_at: today(), source: T.quoteSourceDefault, note: '' };
     R.PRICE_KEYS.forEach(f => { q[f] = ''; });
     const num = f => `<div class="field"><label for="q_${f}">${esc(PRICE_LABEL()[f])}</label><input type="number" min="0" step="1" id="q_${f}" data-q="${f}"></div>`;
-    openDialog(`<div class="dlg-h">${esc(T.quoteTitle(k.display_name))}</div><div class="dlg-b">
+    U.createModal({ size: 'M', title: T.quoteTitle(k.display_name), opener, foot: [`<div class="checks" id="q_checks"></div>`, U.cmButtons(T.addRateOk, 'q_ok')], body: `
       <div class="fields">
         <div class="field wide"><label for="q_account_id">${esc(T.qAccount)}</label><select id="q_account_id" data-q="account_id">${optionsHTML(accs.map(a => ({ value: a.account_id, label: `${a.platform} @${a.handle}` })), q.account_id, T.noAccount)}</select></div>
         <div class="field"><label>${esc(T.qDate)}</label>${dateHTML('id="q_quoted_at" data-q="quoted_at"', q.quoted_at, { label: T.qDate })}</div>
         <div class="field"><label for="q_source">${esc(T.qSource)}</label><input id="q_source" data-q="source" value="${esc(q.source)}"></div>
         ${R.PRICE_KEYS.map(num).join('')}
         <div class="field wide"><label for="q_note">${esc(T.qNote)}</label><input id="q_note" data-q="note"></div>
-      </div><div class="checks" id="q_checks" style="margin-top:12px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="q_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="q_ok">${esc(C.common.save)}</button></div>`);
+      </div>` });
     const chk = () => { const res = R.validateQuote(s, q); $('q_checks').innerHTML = checksHTML(res, ''); $('q_ok').disabled = res.errs.length > 0; return res; };
-    dlg.querySelectorAll('[data-q]').forEach(el => { el.addEventListener('input', () => { q[el.dataset.q] = el.value; chk(); }); el.addEventListener('change', () => { q[el.dataset.q] = el.value; chk(); }); });
-    $('q_cancel').addEventListener('click', closeDialog);
+    $('cm_root').querySelectorAll('[data-q]').forEach(el => { el.addEventListener('input', () => { q[el.dataset.q] = el.value; chk(); }); el.addEventListener('change', () => { q[el.dataset.q] = el.value; chk(); }); });
     $('q_ok').addEventListener('click', () => {
       if (chk().errs.length) return;
       const rec = { quote_id: store.newId('quote'), kol_id: k.kol_id, account_id: q.account_id || null, quoted_at: q.quoted_at, source: R.trim(q.source), source_row: null };
       R.PRICE_KEYS.forEach(f => { rec[f] = R.isBlank(q[f]) ? null : Number(q[f]); });
       rec.note = R.trim(q.note) || null;
       s.kol_rate_quotes.push(rec);
-      closeDialog(); commit(T.rateSaved(rec.quote_id)); renderList(); renderPanel();
+      U.closeModal(); commit(T.rateSaved(rec.quote_id)); renderList(); renderPanel();
     });
     chk();
   }
-  /* CR-07 §4.5 — the five costs, empty (placeholder 0), with the Price reference beside them */
-  const costsHTML = (kolId, free) => `<div class="sec" style="margin-top:12px"><div class="sec-h"><span>${esc(PR.costs)}</span></div><div class="costwrap"><div class="costgrid">` +
-    `<div><div class="fields">${R.COST_KEYS.map(f => `<div class="field"><label for="ap_${f}">${esc(PR.rows[f])}</label>${U.costInput('ap_' + f, f, '')}</div>`).join('')}</div>` +
-    `<div class="kv total" style="margin-top:8px"><span>${esc(PR.rows.total)}</span><b id="ap_total">${R.baht(0)}</b></div></div>${U.priceRefHTML(kolId, { free })}</div></div></div>`;
-  /* term: o.exact → the term chosen in the dialog · else the KOL default wins and `term` is for KOLs without one ·
-     saveDefault keeps it as their default (none yet) · o.updateDefault replaces their default ("Also update KOL default") */
-  function createShortlistDeal(kolId, campaignId, pic, term, saveDefault, o = {}) {
-    const s = state(), dealId = store.newId('deal'), k = R.kolById(s, kolId);
-    const useTerm = o.exact && R.isTerm(term) ? term : R.isTerm(k.default_payment_term) ? k.default_payment_term : term;
-    if (R.isTerm(term) && ((saveDefault && !R.isTerm(k.default_payment_term)) || (o.updateDefault && R.termSource(k, term) === 'changed'))) k.default_payment_term = term;
-    const { deal, log } = R.shortlistDeal(s, kolId, { dealId, logId: store.newLogId(), campaignId, pic, paymentTerm: useTerm, costs: o.costs, date: today(), now: new Date(), user: userId(), note: T.shortlistNote });
-    s.deals.push(deal); s.deal_status_log.push(log);
-    return deal;
+  /* ===================== CR-11 §4.3 — create modals ===================== */
+  /* + New KOL (M): the Create KOL form of New deal · a KOL with that name / handle already → Use this KOL (its drawer) · KOL created · Open */
+  function openNewKol(opener) {
+    if (!guard('kol.edit')) return;
+    if (editing()) { toast(C.common.blockWhileEditing); renderPanel(); return; }
+    const c = { draft: Object.assign(R.createKolDraft('', U.me()), { _forDeal: false }), touched: new Set(), submitted: false, anyway: false };
+    let dirty = false;
+    U.createModal({ size: 'M', title: T.newTitle, sub: T.newSub, opener, isDirty: () => dirty, focus: '#f_ck_display_name', body: U.kolCreateHTML(c.draft),
+      foot: [`<div class="checks" id="ck_checks"></div>`, U.cmButtons(C.bulk.ck.create, 'ck_ok', { attrs: ' data-act="ckCreate"' })],
+      onClick: e => {
+        const u = e.target.closest('[data-act="ckUse"]'); if (u) { const id = u.dataset.kolid; U.closeModal(); select(id); return; }
+        const b = e.target.closest('[data-act="ckCreate"]'); if (b && !b.disabled) create();
+      } });
+    const root = $('cm_root'), chk = () => U.kolCreateCheck(root, c);
+    U.wireKolCreate(root, c, () => { dirty = true; chk(); }); chk();
+    function create() {
+      c.submitted = true; const r = chk(); if (r.res.errs.length || (r.dup && !c.anyway) || !guard('kol.edit')) return;
+      const s = state(), recs = R.createKolRecords(c.draft, { kolId: store.newId('kol'), accountId: store.newId('account') });
+      s.kol_master.push(recs.kol); if (recs.account) s.kol_accounts.push(recs.account);
+      U.closeModal(); commit(); renderList(); flashRow(recs.kol.kol_id);
+      U.toastAction(C.common.created(T.thing), C.common.open, () => select(recs.kol.kol_id), 8000);
+    }
   }
-  function openAddToPhase() {
-    if (!guard('deal.edit')) return;
-    const s = state(), k = R.kolById(s, km.id), step = R.shortlistStep(s.lookups);
-    const hasDefault = R.isTerm(k.default_payment_term), dp = R.defaultPic(U.me(), k);
-    let campaignId = R.defaultCampaignId(s, today()) || '', pic = dp.pic || '', picSource = dp.source, term = hasDefault ? k.default_payment_term : '', saveDefault = !hasDefault, updateDefault = false;
-    openDialog(`<div class="dlg-h">${esc(T.addTitle(k.display_name))} ${U.reliabilityChip(R.kolPerformance(s, k.kol_id, today()))}</div><div class="dlg-b">
-      <div class="fields">
-        <div class="field wide"><label for="ap_campaign">${esc(T.campaign)} <span class="req">*</span></label><select id="ap_campaign" data-combo="campaign">${campaignOptionsHTML(campaignId, T.chooseCampaign)}</select></div>
-        <div class="field wide"><label for="ap_pic">${esc(T.pic)} <span class="req">*</span></label><select id="ap_pic">${optionsHTML(picList(pic), pic, T.choose)}</select><div class="hint" id="ap_picSrc"></div></div>
-        <div class="field wide"><label for="ap_term">${esc(T.term)} <span class="req">*</span></label><select id="ap_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), term, T.chooseTerm)}</select>
-          <div class="hint" id="ap_termSrc"></div>
-          ${hasDefault ? `<label class="tick hidden" style="margin-top:6px" id="ap_updW"><input type="checkbox" id="ap_upd"> ${esc(C.deal.alsoUpdateKol)}</label>` : `<label class="tick" style="margin-top:6px"><input type="checkbox" id="ap_save" checked> ${esc(T.saveAsDefault)}</label>`}</div>
-      </div>
-      <p class="hint">${esc(T.startsAt(step ? step.sub_status : ''))}</p>${costsHTML(k.kol_id, term === 'free')}<div class="checks" id="ap_checks" style="margin-top:12px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="ap_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="ap_ok">${esc(T.createDeal)}</button></div>`, 'mid');
-    /* what was typed: numbers ≥ 0 · empty = not set */
-    const costs = () => Object.fromEntries(R.COST_KEYS.filter(f => !R.isBlank($('ap_' + f).value)).map(f => [f, Number($('ap_' + f).value)]));
-    U.enhanceCombos($('dlg'));
-    const chk = () => {
-      const res = R.checkAddToCampaign(s, k.kol_id, campaignId, pic, term), src = R.termSource(k, term), cv = costs();
-      R.COST_KEYS.forEach(f => { const bad = f in cv && (isNaN(cv[f]) || cv[f] < 0); $('ap_' + f).classList.toggle('invalid', bad); if (bad) res.errs.push({ field: f, msg: C.msg.quoteNumber(PR.rows[f]) }); });
-      $('ap_total').textContent = R.baht(R.totalCost(cv)); U.priceRefFree($('dlg'), term === 'free');
-      $('ap_picSrc').textContent = picSource === 'user' ? C.deal.picYou : picSource === 'kol' ? C.deal.picKol : '';
-      $('ap_termSrc').textContent = src === 'kol' ? C.deal.termFromKol : src === 'changed' ? C.deal.termChanged : '';
-      if ($('ap_updW')) { $('ap_updW').classList.toggle('hidden', src !== 'changed'); if (src !== 'changed') { $('ap_upd').checked = false; updateDefault = false; } }
-      $('ap_checks').innerHTML = checksHTML(res, ''); $('ap_ok').disabled = res.errs.length > 0; return res;
-    };
-    $('ap_campaign').addEventListener('change', e => { campaignId = e.target.value; chk(); });
-    $('ap_pic').addEventListener('change', e => { pic = e.target.value; picSource = null; chk(); });
-    $('ap_term').addEventListener('change', e => { term = e.target.value; chk(); });
-    R.COST_KEYS.forEach(f => $('ap_' + f).addEventListener('input', chk));
-    if ($('ap_save')) $('ap_save').addEventListener('change', e => { saveDefault = e.target.checked; });
-    if ($('ap_upd')) $('ap_upd').addEventListener('change', e => { updateDefault = e.target.checked; });
-    $('ap_cancel').addEventListener('click', closeDialog);
-    $('ap_ok').addEventListener('click', () => {
-      if (chk().errs.length) return;
-      const deal = createShortlistDeal(k.kol_id, campaignId, pic, term, saveDefault, { exact: true, updateDefault, costs: costs() });
-      closeDialog(); commit(T.createdOne(deal.deal_id, deal.sub_status)); renderList(); renderPanel();
+  /* + Add account (M, over the KOL drawer): the KOL Master account checks · back to the drawer with it */
+  function openAddAccount(opener) {
+    if (!guard('kol.edit')) return;
+    const k = R.kolById(state(), km.id); if (!k) return;
+    const a = { draft: { platform: '', handle: '', followers: '', profile_link: '' }, touched: new Set(), submitted: false };
+    U.createModal({ size: 'M', title: C.deal.aaTitle(k.display_name), opener, body: U.accountFieldsHTML(a.draft), foot: [`<div class="checks" id="aa_checks"></div>`, U.cmButtons(C.deal.aaCreate, 'aa_ok')] });
+    const root = $('cm_root'), chk = () => U.accountCheck(root, k.kol_id, a);
+    U.wireAccount(root, a, chk); chk();
+    $('aa_ok').addEventListener('click', () => {
+      a.submitted = true; if (chk().errs.length || !guard('kol.edit')) return;
+      const rec = R.newAccountRecord(k.kol_id, a.draft, store.newId('account')); state().kol_accounts.push(rec);
+      U.closeModal(); commit(C.deal.aaDone(rec.handle)); renderList(); renderPanel();
     });
-    chk();
+  }
+  /* a new row lit up for 5 s (the list shows enough rows to reach it) */
+  function flashRow(id) {
+    const i = km.rows.findIndex(r => r.k.kol_id === id); if (i >= km.limit) { km.limit = i + 1; renderList(); }
+    setTimeout(() => { const tr = document.querySelector(`#km_body tr[data-id="${CSS.escape(id)}"]`); if (!tr) return; tr.classList.add('flash'); tr.scrollIntoView({ block: 'center' }); setTimeout(() => tr.classList.remove('flash'), 5000); }, 200);
   }
   /* CR-10 §4.11 — the ticked KOLs go to Bulk shortlist (Campaign · Phase · PIC · Pillar · preview · Undo) */
   function openBulkAdd() {
     if (!guard('deal.edit')) return;
     const ids = [...km.selected]; if (!ids.length) return;
     KT.bulk.open({ kolIds: ids });
-  }
-  function openBulkAddOld() {
-    if (!guard('deal.edit')) return;
-    const s = state(), ids = [...km.selected];
-    if (!ids.length) return;
-    let campaignId = R.defaultCampaignId(s, today()) || '', pic = '', term = '', saveDefault = false;
-    const myPic = R.picName(U.me());
-    openDialog(`<div class="dlg-h">${esc(T.bulkTitle(ids.length))}</div><div class="dlg-b">
-      ${myPic ? `<p class="hint" style="margin-top:0">${esc(T.bulkPicYou(myPic))}</p>` : ''}
-      <div class="fields">
-        <div class="field wide"><label for="ba_campaign">${esc(T.campaign)} <span class="req">*</span></label><select id="ba_campaign" data-combo="campaign">${campaignOptionsHTML(campaignId, T.chooseCampaign)}</select></div>
-        <div class="field wide hidden" id="ba_picWrap"><label for="ba_pic">${esc(T.picFallback)}</label><select id="ba_pic">${optionsHTML(picList(), '', T.choose)}</select></div>
-        <div class="field wide hidden" id="ba_termWrap"><label for="ba_term">${esc(T.termFallback)}</label><select id="ba_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), '', T.chooseTerm)}</select>
-          <label class="tick" style="margin-top:6px"><input type="checkbox" id="ba_save"> ${esc(T.saveAsTheirDefault)}</label></div>
-      </div><div id="ba_prev"></div><div class="checks" id="ba_checks" style="margin-top:12px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="ba_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="ba_ok"></button></div>`);
-    U.enhanceCombos($('dlg'));
-    const names = list => `<div class="muted small" style="max-height:140px;overflow:auto;margin:4px 0 8px">${list.map(esc).join(', ')}</div>`;
-    const chk = () => {
-      const plan = R.planShortlist(s, ids, campaignId, pic, term, myPic);
-      $('ba_picWrap').classList.toggle('hidden', !!myPic || !plan.add.some(k => !k.pic));
-      $('ba_termWrap').classList.toggle('hidden', !plan.noTerm.length);
-      $('ba_prev').innerHTML = campaignId ? `<p style="margin:12px 0 0"><b>${esc(T.willAdd(plan.add.length))}</b></p>${names(plan.add.map(k => k.display_name))}` +
-        (plan.skip.length ? `<p style="margin:8px 0 0"><b>${esc(T.willSkip(plan.skip.length))}</b></p>${names(plan.skip.map(x => `${x.kol.display_name} (${x.dealIds.join(', ')})`))}` : '') : '';
-      $('ba_checks').innerHTML = checksHTML(plan, '');
-      $('ba_ok').textContent = T.addN(plan.add.length);
-      $('ba_ok').disabled = plan.errs.length > 0 || !plan.add.length;
-      return plan;
-    };
-    $('ba_campaign').addEventListener('change', e => { campaignId = e.target.value; chk(); });
-    $('ba_pic').addEventListener('change', e => { pic = e.target.value; chk(); });
-    $('ba_term').addEventListener('change', e => { term = e.target.value; chk(); });
-    $('ba_save').addEventListener('change', e => { saveDefault = e.target.checked; });
-    $('ba_cancel').addEventListener('click', closeDialog);
-    $('ba_ok').addEventListener('click', () => {
-      const plan = chk(); if (plan.errs.length || !plan.add.length) return;
-      const created = plan.add.map(k => ({ k, deal: createShortlistDeal(k.kol_id, campaignId, myPic || k.pic || pic, term, saveDefault) }));
-      km.selected.clear();
-      commit(T.resultAdded(created.length));
-      renderList();
-      openDialog(`<div class="dlg-h">${esc(T.resultTitle)}</div><div class="dlg-b">
-        <div class="check ok">✓ <span>${esc(T.resultAdded(created.length))}</span></div>${names(created.map(x => `${x.k.display_name} (${x.deal.deal_id})`))}
-        ${plan.skip.length ? `<div class="check warn">! <span>${esc(T.resultSkipped(plan.skip.length))}</span></div>${names(plan.skip.map(x => `${x.kol.display_name} (${x.dealIds.join(', ')})`))}` : ''}</div>
-        <div class="dlg-f"><button type="button" class="btn primary" id="ba_close">${esc(C.common.close)}</button></div>`);
-      $('ba_close').addEventListener('click', closeDialog);
-    });
-    chk();
   }
   function openMerge() {
     if (!guard('kol.merge')) return;
@@ -606,15 +539,13 @@ KT.screens.kol = (function () {
     if (kind === 'accounts') downloadCSV('kol_accounts.csv', R.ACCOUNT_COLS, R.accountRows(s, s.kol_accounts.filter(a => ids.has(a.kol_id))));
     if (kind === 'quotes') downloadCSV('kol_rate_quotes.csv', R.QUOTE_COLS, R.quoteRows(s, s.kol_rate_quotes.filter(q => ids.has(q.kol_id))));
   }
-  function openImport() {
+  function openImport(opener) {
     if (!guard('kol.edit')) return;
     const IO = C.io;
     let plan = null, fileName = ''; const confirmed = new Set();
-    openDialog(`<div class="dlg-h">${esc(IO.importTitle)}</div><div class="dlg-b">
-      <div class="toolbar"><input type="file" id="im_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="im_sample">${esc(IO.importSample)}</button></div>
-      <p class="hint">${esc(IO.importCols(R.IMPORT_COLS.join(', ')))}</p><p class="hint">${esc(IO.importRules)}</p><div id="im_prev"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="im_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="im_ok" disabled>${esc(IO.importApply)}</button></div>`, true);
-    $('im_cancel').addEventListener('click', closeDialog);
+    U.createModal({ size: 'L', title: IO.importTitle, opener, isDirty: () => !!plan, foot: ['', U.cmButtons(IO.importApply, 'im_ok', { attrs: ' disabled' })],
+      body: `<div class="toolbar"><input type="file" id="im_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="im_sample">${esc(IO.importSample)}</button></div>
+      <p class="hint">${esc(IO.importCols(R.IMPORT_COLS.join(', ')))}</p><p class="hint">${esc(IO.importRules)}</p><div id="im_prev"></div>` });
     $('im_sample').addEventListener('click', () => downloadCSV('kol_import_sample.csv', R.IMPORT_SAMPLE[0], R.IMPORT_SAMPLE.slice(1)));
     const show = () => {
       if (!plan) return;
@@ -622,7 +553,7 @@ KT.screens.kol = (function () {
       const n = k => plan.rows.filter(r => r.kind === k).length, KIND_CLS = { match: 'muted', new_account: 'warn', new_kol: 'done', error: 'cancel' };
       $('im_prev').innerHTML = (plan.rows.length ? `<div class="check info">i <span>${esc(IO.importSummary(n('match'), n('new_account'), n('new_kol'), n('error')))}</span></div>` +
         (n('new_account') ? `<div class="check warn" style="margin-top:6px">! <span>${esc(IO.importTick)}</span></div>` : '') +
-        `<div class="tablewrap" style="max-height:320px;margin-top:8px"><table class="tbl compact-sm"><thead><tr><th>${esc(IO.importRow)}</th><th></th><th>${esc(IO.importConfirmCol)}</th><th>${esc(IO.cName)}</th><th>${esc(IO.cPlatform)}</th><th>${esc(IO.cHandle)}</th><th class="num">${esc(IO.cFollowers)}</th><th class="num">${esc(IO.cRate)}</th><th>KOL</th><th>${esc(IO.cNotes)}</th></tr></thead><tbody>` +
+        `<div class="tablewrap" style="max-height:52vh;margin-top:8px"><table class="tbl compact-sm"><thead><tr><th>${esc(IO.importRow)}</th><th></th><th>${esc(IO.importConfirmCol)}</th><th>${esc(IO.cName)}</th><th>${esc(IO.cPlatform)}</th><th>${esc(IO.cHandle)}</th><th class="num">${esc(IO.cFollowers)}</th><th class="num">${esc(IO.cRate)}</th><th>KOL</th><th>${esc(IO.cNotes)}</th></tr></thead><tbody>` +
         plan.rows.map(r => `<tr><td>${r.n}</td><td><span class="st ${KIND_CLS[r.kind]}">${esc(IO.importKind[r.kind])}</span></td>` +
           `<td>${r.needsConfirm ? `<input type="checkbox" data-imok="${r.n}"${confirmed.has(r.n) ? ' checked' : ''}>` : ''}</td><td>${esc(r.name)}</td><td>${esc(r.platform)}</td><td>${r.handle ? '@' + esc(r.handle) : ''}</td>` +
           `<td class="num">${R.fmtNum(r.followers)}</td><td class="num">${R.fmtNum(r.prices.rate_card)}</td><td>${r.kol ? esc(r.kol.display_name + ' · ' + r.kol.kol_id) : ''}</td>` +
@@ -642,7 +573,7 @@ KT.screens.kol = (function () {
       if (!plan || plan.headerError) return;
       const out = R.applyImport(state(), plan, confirmed, fileName, today());
       Object.assign(state(), { kol_master: out.kol_master, kol_accounts: out.kol_accounts, kol_rate_quotes: out.kol_rate_quotes });
-      closeDialog(); commit(IO.importDone(out.summary));
+      U.closeModal(); commit(IO.importDone(out.summary));
       renderList(); if (km.mode === 'view') renderPanel();
     });
   }

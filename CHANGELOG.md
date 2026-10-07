@@ -1,5 +1,91 @@
 # CHANGELOG — Charmiss KOL Tracker
 
+## CR-11 v1.1 · 06/10/2026 — Go-live clean-up · Data health · Payments ไม่มี Request + Hold · Shipments · กรอกครั้งเดียว · Metrics D+7 · UI polish (R3–R6)
+
+Spec: `docs/CR-11.md` (v1.1) · schema_version **11 → 12** (migration ตอนโหลด · ใช้กับ Backup เก่า · `data/KOL_seed_v2.json` ไม่แก้) · สูตรเงิน CR-05 §4.5 · ภาษี CR-08 · วันที่ legacy ไม่เปลี่ยน · To pay ก่อน clean-up ยัง 125 lines ฿826,950.00
+
+**schema 12 (R3)** — `src/rules-golive.js` `migrateV12` · `src/store.js`
+- `lookups.go_live` {date = วันที่อัปเกรด, completed_at, completed_by} · `sample_shipments.purpose` (review) / `campaign_id` (ของ deal) / `pick_list_id` · `pick_lists` (ใหม่ PK0001)
+- `phases.default_pillar` จากชื่อ Phase ที่มีคำ Pillar คำเดียว (KS Phase 1 Awareness · KS Phase 2 Conversion) · `campaigns.default_payment_term` = null · `lookups.metrics_checkpoints` = [7] · deal ไม่ถูกแตะ
+- ข้อมูลที่เก็บไว้ก่อนอัปเกรด → สำเนา 1 ชุดใน localStorage `charmiss_kol_tracker_v1_before_v12` · Settings › Data มีลิงก์ดาวน์โหลด
+
+**Imported = "—" (R3 §4.6)** — `rules.isImported` (legacy_job_ids) · `isImportedClosed` (+ Complete / Cancel)
+- deal ปิดแล้วจากไฟล์เดิม: Pillar / Payment term ว่าง = "—" เทา (ไม่มีปุ่ม Set pillar · ไม่มี reminder) · shipment legacy Delivered อ่านอย่างเดียว ("—" + tooltip "Imported · not tracked before go-live" · ไม่มี "Date not recorded")
+- โพสต์ก่อน go-live − 30 วันที่ไม่มีตัวเลข = **Not tracked** · Performance มีบรรทัด "Not tracked (before dd/mm) n" · KOL Master badge ข้อมูลไม่พอ = "—" จาง (tooltip จำนวนโพสต์ที่ต้องมี)
+- Filters `Include imported` (Deals · Performance — เปิดอยู่ default)
+
+**Settings › Go-live clean-up (R3 §4.7)** — ไฟล์ใหม่ `src/screen-golive.js` · reader `.xlsx` / `.csv` ใน `src/xlsx.js` (`KT.xlsx.read` · `readCsv` · ไม่ใช้ CDN)
+- wizard modal L 4 ขั้น: Go-live date · Payments (งวดค้างของ deal Imported · group Campaign › KOL · Mark paid outside app ต้องมีวันที่ + note) · Shipments (To ship ของ deal Imported · เลือก deal Complete ให้) · Review & apply
+- **Match with PR file**: อ่านไฟล์ในหน่วยความจำ · เลือกคอลัมน์ Name / Amount / Paid date (เดาให้จากหัวคอลัมน์) · ชื่อ normalize + ยอดห่าง net / gross ≤ ฿1 = Matched (เลือกให้) · ชื่อตรงยอดไม่ตรง = Check amount · ไม่เจอ = Not found · บันทึกแค่ note "Matched with <file> · sheet … row …" — ไม่มีค่าอื่นจากไฟล์ใน state / Backup / log
+- Apply: ดาวน์โหลด Backup ก่อน · toast + Undo (สำเนาในหน่วยความจำจนกว่าจะ reload · ปุ่ม Undo ใน Settings ด้วย) · Last run · banner ใน Payments / Shipments จนกว่าจะรัน หรือ Dismiss
+- สิทธิ์ใหม่ `golive.run` (Admin) · `golive.view` (Admin · Accounting เห็นขั้น 2 อ่านอย่างเดียว ผ่าน banner)
+
+**Operations (R3 §4.8)** — `rules.dataHealth` (ฟังก์ชันเดียว ใช้ทั้งจอและ export)
+- แถว To do: Overdue · Shipments to ship · Docs to collect (นับ KOL) · Metrics due · แถว Data health (หุบ · จำต่อคน): Payment term not set 70 · Pillar not set 67 · Campaigns without products 4 · Phases without budget 1 → **4 items** (ไม่นับ Imported & closed · Posted without date = 0 · Duplicate links ที่เจออยู่บน deal ปิดแล้วทั้งหมด)
+- item เปิดตารางใน Operations พร้อม bulk Reassign / Set pillar / Set payment term · การ์ดเก่า Unpaid after posting / Payment due before brief / Needs phase / Outside เอาออก
+
+**Payments (R3 §4.9)**
+- ไม่มี Request แล้ว: เอกสารครบ = Ready ทันที · **Hold** (ต้องมีเหตุผล · สร้าง line `on_hold` · Add to run ไม่ได้) · **Release** · `deal_events` type `payment_hold`
+- header To pay: Ready ฿ · Missing docs ฿ · On hold ฿ (คลิก = filter) · ตัวกรองแยกต่อ tab · Payment runs ไม่มี PIC · tab Accounting เห็นเฉพาะ Admin / Accounting / KOL Manager
+
+**Shipments (R4 §4.10)** — ไฟล์ใหม่ `src/rules-ship.js` · `src/screen-shipments.js` · side menu ระหว่าง Payments กับ KOL Master · `#shipments/to-ship | in-transit | delivered`
+- scope bar: Campaign (All) · PIC + `Mine` · Purpose · Search · Filters · Clear all · การ์ด Overdue · Ship this week · In transit · No ship-by date · Problem
+- To ship เรียง Overdue → This week → Later → No ship-by date → Problem · In transit มี Days in transit (> 5 วัน = เหลือง) · Delivered ซ่อน imported + "Show imported (206)"
+- แถวเป็นข้อความ (ไม่มี dropdown / input) · แก้ผ่าน ⋯ / bulk · คลิกแถว = Deal drawer ที่ section Shipments / ไม่มี deal = Shipment drawer
+- **Pick list**: Items summary รวมต่อ TR code · Print A4 (ที่อยู่เฉพาะตอน Unlock — ไม่งั้น "See shipping list") · Export shipping list · **Mark all shipped** (Carrier ทั้งชุด · tracking วางจากชีท 1 บรรทัดต่อแถว)
+- **New shipment** (M): Purpose · ผู้รับ = KOL ใน KOL Master (+ Create KOL) · Deal (ไม่บังคับ) · Campaign · Items · Ship by · Note · ไม่มีช่องที่อยู่
+- สิทธิ์ใหม่ `shipment.edit` (items / ship by / Not required: PIC ของ deal หรือคนสร้าง) · `shipment.ship` (Staff ทุกคน Mark shipped / delivered ได้) · `shipment.settings`
+- Deals: view tabs เหลือ Table · Pipeline · Performance · `#deals/samples` → Shipments › To ship · drawer section "Shipments" + Open in Shipments · Journey track "Shipment" · filter "Shipment status" · Settings › Shipments
+
+**กรอกครั้งเดียว (R5 §4.11)** — ไฟล์ใหม่ `src/rules-fill.js`
+- Default pillar ต่อ Phase (Phase Planner คอลัมน์ใหม่ · Phase drawer) · `Apply to n deals without pillar` (รวม Imported · ไม่รวม Cancel) + Undo
+- Default payment term ต่อ Campaign (Planner · Campaign drawer › Edit) · `Apply to n open deals without term` + Undo · ลำดับ prefill KOL → Campaign → ว่าง (chip "From campaign" · ไม่บันทึกเป็น default ของ KOL)
+- New deal / Bulk shortlist: Pillar จาก Phase (chip "From phase") · สินค้าเดียวของ Campaign เลือกให้ (chip "Only product in campaign") · ค่าที่ผู้ใช้เลือกเองไม่ถูกทับ
+- Allocation vs target: spend ไม่มี pillar > 50% → "Most spend has no pillar · Set default pillar per phase" (เปิด Plan phases)
+
+**Metrics D+7 (R5 §4.12)** — `rules.metricsStatus(post, today, checkpoints, goLive)` แทน Updated / Stale ของ CR-10
+- Due · Waiting ("D+7 on dd/mm") · Collected · Not posted · Not tracked · Imported · Metrics due ใน Operations (→ Performance filter Due) · Due in next 7 days มี "Collect metrics" · Settings › KOL performance › Metrics checkpoints ("7" หรือ "7, 30") · `metrics_stale_days` เก็บไว้ ไม่ใช้
+
+**UI polish (R6 §4.13)**
+- Deals toolbar 2 แถว (Campaign · Phase · PIC · Search · Filters · Clear all ··· Table / Pipeline / Performance · แถว 2 = state tabs · Group by · เงิน) · chip เฉพาะค่าจาก Filters panel
+- ⓘ เหลือเฉพาะหัวที่เป็นสูตร (Committed · Pending · Paid · Remaining · ER · CPV · CPE · Days left · Used %) · หัวอื่นใช้ tooltip ที่ข้อความ (`ui.labelInfo`)
+- Pipeline: Post ย้ายเป็น lane **Posted** ใต้ Row 1 (หุบ default · จำต่อคน) · คอลัมน์ Row 1 ยืดหดได้ — 1440px ไม่เลื่อนแนวนอน
+- ชื่อ KOL ขึ้นบรรทัดเฉพาะหลัง `_ . -` / ช่องว่าง (`ui.nameHTML` ใส่ `<wbr>`) · ไม่ตัดกลางคำ · KOL Master "Last phase" ไม่ตัดด้วย "…"
+- Timeline มี legend ใต้ตาราง (แสดงเฉพาะสี / เส้นที่ใช้จริง — กรอบแดง = Over budget มีกติกาจริง จึงคงไว้)
+- Settings › Journey steps: `rules.CORE_STEPS` (Contacted · Confirm QT · Brief · Approve Draft 1 · Post · Cancel) 🔒 แก้ได้เฉพาะ Label · ลบ / ปิด / Optional ไม่ได้
+- Duplicate post links (`rules.duplicatePostGroups`): chip "Duplicate link" + filter ใน Performance · Views / ER นับลิงก์เดียวครั้งเดียว (โพสต์แรกตาม post ID — Kiss Signal Views 91,267 → 78,467) · นับใน Data health เมื่ออยู่บน deal ที่ยังไม่ปิด
+- Role Management: matrix จัดกลุ่ม Dashboard · Deals · Shipments · Payments · KOL Master · Settings หุบ/กางได้ · หัวตาราง sticky
+- To pay: ตัวอักษร ≥ 13px · ตัวเลขชิดขวา tabular · ในแถวมีแค่ ⋯ (และ chip Missing) — สิ่งที่ขาดอยู่ใน ⋯ ด้วย
+- Activity by campaign: ชื่อ Campaign ยาวเกิน 2 บรรทัด → code (CH · KS · AC · PH) + tooltip ชื่อเต็ม
+
+**Tests** — `tests/cr11.spec.js` R3–R6 · test ของ CR-09 TC-47 (การ์ด Operations) · CR-10 TC-05 / TC-06 / TC-07 / TC-22 / metrics status (ถูกแทนที่ด้วย CR-11 §4.12 / §4.13 #7) ปรับตาม · รวม **448 ข้อผ่าน**
+
+## CR-11 · 06/10/2026 — Create modal (R1–R2)
+
+Spec: `docs/CR-11.md` (v1.1) · R1–R2 เปลี่ยนแค่ภาชนะ / layout ของการสร้างใหม่ (กติกาข้อมูล · validation · สิทธิ์ คงเดิม · data model ไม่เปลี่ยน) · รูปแบบที่ใช้ทุกหน้า: `docs/UI_PATTERNS.md`
+
+**`ui.createModal` (R1)** — `src/ui.js` · `<dialog id="cmodal">` แยกจาก dialog ยืนยัน
+- ขนาด L (90vw ≤ 1400 × 85vh) · M (720) · S (480) · ต่ำกว่า 768px เต็มจอ · header = tabs หรือ title + ✕ + บรรทัดรอง · body scroll ในตัว · footer sticky (checks ซ้าย · Cancel / ปุ่มรอง / ปุ่มหลักขวา)
+- Discard changes? (Discard / Keep editing) เมื่อกรอกแล้วกด ✕ · Esc · Cancel · คลิก backdrop · ยังไม่กรอก = ปิดทันที · Ctrl/⌘ + Enter = ปุ่มหลัก · Tab วนใน modal · focus ช่องแรกที่ต้องกรอก · ปิดแล้ว focus กลับปุ่มที่เปิด · หน้าหลังเลื่อน / คลิกไม่ได้
+- panel แทนที่ในตัว (`ui.modalPanel` · ← Back) แทน modal ซ้อน modal · toast อยู่ใน modal เมื่อเปิดอยู่
+
+**New deal (R1)** — `src/screen-deals.js` · `src/screen-bulk.js`
+- Single KOL + Bulk shortlist ใน modal L เดียวกัน (ค่าของแต่ละ tab คงอยู่ · Discard นับรวม 2 tabs) · บรรทัดรอง "Adding to <Campaign>"
+- Single KOL 2 คอลัมน์: ซ้าย Deal (Campaign · **Phase** Auto / เลือก · KOL · บัญชีที่จะโพสต์ · Start at · PIC · Pillar · CTA · Products · Brief · Remark) · ขวา การ์ด KOL (บัญชี + followers · Tier · Performance · Last worked) · Payment · Costs + Price reference · Timeline
+- Create KOL · **Add account** (`rules.validateAddAccount` / `newAccountRecord`) · **Add products to campaign** (Campaign ยังไม่มีสินค้า · สิทธิ์ CR-09) เป็น panel ใน modal · ปุ่ม `Create & next` · **`Create deal`** → toast "Deal created · Open" + แถวใหม่ highlight 5 วินาที
+
+**ทุกการสร้างใหม่เป็น modal (R2)**
+- Phase Planner (`src/screen-planner.js`) = modal L: New campaign · New phase (เลือก Campaign ใน modal S ถ้ายังไม่ได้เปิด) · Plan phases จาก Campaign drawer (เปิดทับ drawer · บันทึกแล้วกลับ drawer) · Campaign 40% | Phases 60% · `Create campaign` → "Campaign created · Open" / `Save phases` · New phase เปิด picker ช่วงวันที่ของแถวใหม่ · New product ระหว่างวางแผน = panel
+- KOL Master: `+ New KOL` (M · ฟอร์มเดียวกับ Create KOL ใน New deal · "KOL created · Open") · Import KOL (L) · เลือกหลายแถว › Bulk shortlist ใน New deal modal · KOL drawer › `Add to campaign` = New deal modal tab Single KOL **KOL ล็อก 🔒 + Change** · `+ Add account` (M ทับ drawer) · `+ Add rate` (M)
+- Deal drawer: `+ Add post` (M ทับ drawer · ฟอร์ม Posts เดิมแก้โพสต์ที่มีอยู่) · `+ Add shipment` (M) · Deals › Performance › Paste metrics (L)
+- Payments: `+ Add manual line` (M · + New payee สลับไปแล้วกลับมาพร้อม payee ใหม่) · `Create payment run` และ `+ New run` (S · Pay date + Prepared by · New run ไม่สร้างทันทีอีกต่อไป) · Payee details (M · `Add payee` สำหรับ payee ใหม่)
+- Settings: Products `+ New product` (M) · Import (L) · KOL types `+ Add type` (S) · Lists `+ Add` (S) · Payee vault `Set up` (M) · Import payee details (L) — แถวกรอกด้านล่างตารางเดิมถูกแทนด้วยปุ่มเหล่านี้
+- Role Management: `+ Add user` (M · "User created · Open")
+- ปุ่มหลักของการสร้างใช้ Create … / Add … · ฟอร์มใน drawer ยังเป็น Save · Viewer ไม่เห็นปุ่มสร้าง
+- ชื่อ Phase ใน Timeline ของ Planner ไม่ตัดด้วย "…" แล้ว (ขึ้นบรรทัดใหม่)
+
+**Tests** — `tests/cr11.spec.js` (R1) · รวม **415 ข้อผ่าน**
+
 ## CR-10 · 06/10/2026 — Deals › Performance · Date range picker · Timeline filter · New deal (Single / Bulk shortlist) · Drawer 60% · Samples
 
 Spec: `docs/CR-10.md` (v1.3) · schema_version **9 → 10 → 11** (migration ตอนโหลด · ใช้กับ Backup เก่า · `data/KOL_seed_v2.json` ไม่แก้) · สูตรเงินไม่เปลี่ยน — anchors CR-05 §5.0 (Budget ฿2,748,400 · Committed ฿1,783,579 · Pending ฿98,000 · Paid (est.) ฿774,579) ตรง · Dashboard กับ Performance ใช้ `rules.postMetrics` ตัวเดียว · data model: `docs/DATA_MODEL.md`

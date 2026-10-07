@@ -5,8 +5,8 @@ KT.screens.settings = (function () {
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['targets', K.navTargets], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['data', K.navData]];
-  const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data');
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['targets', K.navTargets], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['data', K.navData], ['golive', C.golive.nav]];
+  const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
   function render(id) {
@@ -41,16 +41,16 @@ KT.screens.settings = (function () {
     }
     $('set_nav').innerHTML = `<div class="grp">${esc(K.lists)}</div>` + LIST_SECTIONS.map(navBtn).join('') +
       (can('roles') ? `<button type="button" class="link small set-piclink" data-goroles>${esc(C.roles.managePic)}</button>` : '') +
-      `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'data'));
+      `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'targets' ? targetsHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'targets' ? targetsHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : listHTML(st.section);
     if (st.section === 'perf') perfCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
     if (st.section === 'targets') targetsCheck();
     /* CR-04 §4.4 — Lists and Pillar targets are read-only for everyone but an admin */
-    if (st.section !== 'data' && !can(editAction())) {
+    if (st.section !== 'data' && st.section !== 'golive' && !can(editAction())) {
       $('set_body').querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = true; });
       const card = $('set_body').querySelector('.card'); if (card) card.insertAdjacentHTML('afterbegin', `<div class="hint ro-note">${esc(st.section === 'tiers' ? C.roles.tiersReadOnly : C.roles.settingsReadOnly)}</div>`);
       $('set_body').querySelectorAll('[data-psearch]').forEach(el => { el.disabled = false; });   // anyone can search the catalog
@@ -58,7 +58,7 @@ KT.screens.settings = (function () {
     }
   }
   /* CR-05 §4.1: Tier rules — admin · the other Lists, Pillar targets and Products (CR-06) — admin and KOL Manager */
-  const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : 'settings.lists');
+  const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : st.section === 'samples' ? 'shipment.settings' : 'settings.lists');
   const navBtn = ([k, l]) => `<button type="button" data-sec="${k}" class="${k === st.section ? 'on' : ''}">${esc(l)}</button>`;
   function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; st.smp = null; render(); }
 
@@ -72,6 +72,7 @@ KT.screens.settings = (function () {
         ${kv(K.dataSize, K.sizeOf(mb.toFixed(2), S.QUOTA_MB))}
         <div class="btns" style="margin-top:16px"><button type="button" class="btn primary" data-act="backup">${esc(K.backupNow)}</button>
           ${can('data.restore') ? `<button type="button" class="btn" data-act="restore">${esc(K.restore)}</button><button type="button" class="btn danger" data-act="reset">${esc(K.reset)}</button>` : ''}</div>
+        ${KT.golive.beforeCopyHTML()}
       </div>
       <div class="card"><div class="card-head"><h3>${esc(C.issues.title)}</h3></div>${issuesHTML()}</div>`;
   }
@@ -92,22 +93,22 @@ KT.screens.settings = (function () {
     const s = state(), steps = R.stepsOf(s.lookups);
     return `<div class="card"><div class="card-head"><h3>${esc(K.navJourney)}</h3></div><p class="hint" style="margin-top:0">${esc(LS.journeyHint)}</p>
       <div class="tablewrap"><table class="tbl"><thead><tr><th class="num">${esc(LS.order)}</th><th>${esc(LS.status)}</th><th>${esc(LS.step)}</th><th>${esc(LS.label)}</th><th>${esc(LS.optional)}</th><th>${esc(LS.active)}</th><th></th></tr></thead><tbody>` +
-      steps.map(j => { const locked = R.stepLocked(j), used = R.stepUse(s, j.sub_status);
-        return `<tr data-step="${esc(j.sub_status)}"><td class="num">${j.sort_order}</td><td>${stChip(j.status)}</td><td>${esc(j.sub_status)}</td>` +
+      /* CR-11 §4.13 #6 — the steps the stage rules use (R.CORE_STEPS): 🔒 · the label can change · never deleted or turned off */
+      steps.map(j => { const core = R.isCoreStep(j), locked = R.stepLocked(j) || core, used = R.stepUse(s, j.sub_status), why = core ? LS.coreStep : LS.locked;
+        return `<tr data-step="${esc(j.sub_status)}"${core ? ' class="core"' : ''}><td class="num">${j.sort_order}</td><td>${stChip(j.status)}</td><td>${esc(j.sub_status)}${core ? ` <span class="corelock" title="${esc(LS.coreStep)}" aria-label="${esc(LS.coreStep)}">🔒</span>` : ''}</td>` +
           `<td style="max-width:none"><input data-s="label_th" value="${esc(j.label_th || '')}" aria-label="${esc(LS.label)}" style="min-width:160px"></td>` +
-          `<td class="c"><input type="checkbox" data-s="is_optional"${j.is_optional ? ' checked' : ''}${locked ? ` disabled title="${esc(LS.locked)}"` : ''} aria-label="${esc(LS.optional)}"></td>` +
-          `<td class="c"><input type="checkbox" data-s="active"${j.active !== false ? ' checked' : ''}${locked ? ` disabled title="${esc(LS.locked)}"` : ''} aria-label="${esc(LS.active)}"></td>` +
-          `<td><button type="button" class="link" data-s="delete"${locked || used ? ` disabled title="${esc(locked ? LS.locked : LS.stepInUse(used))}"` : ''}>${esc(LS.del)}</button></td></tr>`; }).join('') +
+          `<td class="c"><input type="checkbox" data-s="is_optional"${j.is_optional ? ' checked' : ''}${locked ? ` disabled title="${esc(why)}"` : ''} aria-label="${esc(LS.optional)}"></td>` +
+          `<td class="c"><input type="checkbox" data-s="active"${j.active !== false ? ' checked' : ''}${locked ? ` disabled title="${esc(why)}"` : ''} aria-label="${esc(LS.active)}"></td>` +
+          `<td><button type="button" class="link" data-s="delete"${locked || used ? ` disabled title="${esc(locked ? why : LS.stepInUse(used))}"` : ''}>${esc(LS.del)}</button></td></tr>`; }).join('') +
       `</tbody></table></div></div>`;
   }
   function listHTML(key) {
     const s = state(), L = s.lookups, vals = L[key] || [], title = SECTIONS.find(x => x[0] === key)[1];
-    return `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div>
+    return `<div class="card"><div class="card-head"><h3>${esc(title)}</h3>${can(editAction()) ? `<div class="btns"><button type="button" class="btn small" data-act="laddopen">${esc(LS.add)}</button></div>` : ''}</div>
       ${vals.map(v => { const used = R.listValueUse(s, key, v), off = R.isInactiveValue(L, key, v);
         return `<div class="lrow" data-v="${esc(v)}"><span class="grow" title="${esc(v)}">${esc(v)}</span><span class="muted small">${esc(used ? LS.usedBy(used) : LS.unused)}</span>
           <label class="tick"><input type="checkbox" data-l="active"${off ? '' : ' checked'}> ${esc(LS.active)}</label>
           <button type="button" class="link" data-l="delete"${used ? ` disabled title="${esc(LS.inUse(used))}"` : ''}>${esc(LS.del)}</button></div>`; }).join('') || `<div class="hint">${esc(key === 'cta_list' ? LS.ctaEmpty : C.common.none)}</div>`}
-      <div class="lrow"><input data-l="new" placeholder="${esc(LS.addPh)}" aria-label="${esc(LS.addPh)}"><button type="button" class="btn small" data-l="add">${esc(LS.add)}</button></div>
       <div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
   function tiersHTML() {
@@ -150,18 +151,19 @@ KT.screens.settings = (function () {
   /* ===================== KOL performance (CR-06 §4.4): grace days · minimum posts — saved as soon as both are valid ===================== */
   function perfHTML() {
     const L = state().lookups, PF = C.perf;
-    if (!st.perf) st.perf = { ontime_grace_days: String(R.perfSettings(L).grace), reliability_min_posts: String(R.perfSettings(L).minPosts), metrics_stale_days: String(R.metricsStaleDays(L)) };
-    const inp = (k, label, hint) => `<div class="field"><label for="pf_${k}">${esc(label)}</label><input type="number" min="0" step="1" inputmode="numeric" id="pf_${k}" data-pf2="${k}" value="${esc(st.perf[k])}"><div class="hint">${esc(hint)}</div></div>`;
+    if (!st.perf) st.perf = { ontime_grace_days: String(R.perfSettings(L).grace), reliability_min_posts: String(R.perfSettings(L).minPosts), metrics_checkpoints: R.metricsCheckpoints(L).join(', ') };
+    const inp = (k, label, hint, text) => `<div class="field"><label for="pf_${k}">${esc(label)}</label><input ${text ? 'type="text" inputmode="numeric" autocomplete="off"' : 'type="number" min="0" step="1" inputmode="numeric"'} id="pf_${k}" data-pf2="${k}" value="${esc(st.perf[k])}"><div class="hint">${esc(hint)}</div></div>`;
     return `<div class="card"><div class="card-head"><h3>${esc(K.navPerf)}</h3></div><p class="hint" style="margin-top:0">${esc(PF.info.d(R.perfSettings(L).grace, R.perfSettings(L).minPosts))}</p>
-      <div class="fields">${inp('ontime_grace_days', PF.grace, PF.graceHint)}${inp('reliability_min_posts', PF.minPosts, PF.minPostsHint)}${inp('metrics_stale_days', PF.staleDays, PF.staleHint)}</div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+      <div class="fields">${inp('ontime_grace_days', PF.grace, PF.graceHint)}${inp('reliability_min_posts', PF.minPosts, PF.minPostsHint)}${inp('metrics_checkpoints', PF.checkpoints, PF.checkpointsHint, true)}</div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
   function perfCheck() {
     const res = R.validatePerfSettings(st.perf);
     $('ls_checks').innerHTML = checksHTML(res, '');
     $('set_body').querySelectorAll('[data-pf2]').forEach(i => i.classList.toggle('invalid', res.errs.some(e => e.field === i.dataset.pf2)));
     if (!res.errs.length && can('settings.lists')) {
-      const L = state().lookups, g = Number(st.perf.ontime_grace_days), m = Number(st.perf.reliability_min_posts), sd = Number(st.perf.metrics_stale_days);
-      if (L.ontime_grace_days !== g || L.reliability_min_posts !== m || L.metrics_stale_days !== sd) { L.ontime_grace_days = g; L.reliability_min_posts = m; L.metrics_stale_days = sd; commit(C.perf.saved); }
+      /* CR-11 §4.12: checkpoints replace "stale after" (metrics_stale_days is kept as it was) */
+      const L = state().lookups, g = Number(st.perf.ontime_grace_days), m = Number(st.perf.reliability_min_posts), cp = R.parseCheckpoints(st.perf.metrics_checkpoints).list;
+      if (L.ontime_grace_days !== g || L.reliability_min_posts !== m || JSON.stringify(R.metricsCheckpoints(L)) !== JSON.stringify(cp)) { L.ontime_grace_days = g; L.reliability_min_posts = m; L.metrics_checkpoints = cp; commit(C.perf.saved); }
     }
     return res;
   }
@@ -192,7 +194,7 @@ KT.screens.settings = (function () {
   /* ===================== KOL types (CR-07 §4.6): the Type presets of KOL Master ===================== */
   function kolTypesHTML() {
     const s = state(), list = R.kolTypeList(s.lookups), counts = R.kolTypeCounts(s);
-    return `<div class="card"><div class="card-head"><h3>${esc(K.navKolTypes)} <span class="muted">${R.fmtNum(list.length)}</span></h3></div><p class="hint" style="margin-top:0">${esc(KTY.hint)}</p>
+    return `<div class="card"><div class="card-head"><h3>${esc(K.navKolTypes)} <span class="muted">${R.fmtNum(list.length)}</span></h3>${can(editAction()) ? `<div class="btns"><button type="button" class="btn small" data-act="ktaddopen">${esc(KTY.add)}</button></div>` : ''}</div><p class="hint" style="margin-top:0">${esc(KTY.hint)}</p>
       <div class="tablewrap"><table class="tbl compact-sm kt-tbl"><thead><tr><th></th><th>${esc(KTY.colLabel)}</th><th>${esc(KTY.colAliases)}</th><th class="num">${esc(KTY.colKols)}</th><th>${esc(KTY.colActive)}</th><th></th></tr></thead><tbody>` +
       list.map((t, i) => { const n = counts.get(t.key) || 0;
         return `<tr data-kt="${esc(t.key)}"${t.active === false ? ' class="faded-row"' : ''}><td class="kt-move"><span class="kt-grip" title="${esc(KTY.drag)}" aria-hidden="true">⋮⋮</span>` +
@@ -202,7 +204,6 @@ KT.screens.settings = (function () {
           `<td class="num">${R.fmtNum(n)}</td><td class="c"><input type="checkbox" data-ktf="active"${t.active === false ? '' : ' checked'} aria-label="${esc(`${KTY.colActive} · ${t.label}`)}"></td>` +
           `<td><button type="button" class="link" data-ktdel${n ? ` disabled title="${esc(KTY.inUse(n))}"` : ''}>${esc(KTY.del)}</button></td></tr>`; }).join('') +
       `</tbody></table></div>
-      <div class="lrow kt-add"><input data-ktn="label" placeholder="${esc(KTY.addPh)}" aria-label="${esc(KTY.addPh)}" autocomplete="off"><input data-ktn="aliases" placeholder="${esc(KTY.aliasesPh)}" aria-label="${esc(KTY.colAliases)}" autocomplete="off"><button type="button" class="btn small" data-act="ktadd">${esc(KTY.add)}</button></div>
       <div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
   const ktList = () => state().lookups.kol_type_list;
@@ -219,15 +220,6 @@ KT.screens.settings = (function () {
     $('ls_checks').innerHTML = checksHTML(res, ''); t.classList.toggle('invalid', res.errs.length > 0);
     if (res.errs.length) return;
     type.label = R.trim(label); type.aliases = aliases; commit(KTY.saved); render();
-  }
-  function addKolType() {
-    const box = $('set_body'), label = box.querySelector('[data-ktn="label"]').value, aliases = R.splitAliases(box.querySelector('[data-ktn="aliases"]').value);
-    const res = R.validateKolType(ktList(), label, aliases, null);
-    box.querySelector('[data-ktn="label"]').classList.toggle('invalid', res.errs.some(x => x.field === 'label'));
-    if (res.errs.length) { $('ls_checks').innerHTML = checksHTML(res, ''); return; }
-    const list = ktList(), t = { key: R.kolTypeKeyFor(label, list), label: R.trim(label), aliases, active: true, sort_order: Math.max(0, ...list.map(x => x.sort_order || 0)) + 10 };
-    list.push(t); commit(KTY.added(t.label)); render();
-    const first = $('set_body').querySelector('[data-ktn="label"]'); if (first) first.focus();
   }
 
   /* ===================== Payments (CR-08 §4.8): tax · bands · run day — and the Payee vault ===================== */
@@ -272,16 +264,14 @@ KT.screens.settings = (function () {
     return res;
   }
   /* CR-08 §4.4 — payee details from a CSV: each row is encrypted as soon as it is imported; the file is not kept */
-  function openPayeeImport() {
+  function openPayeeImport(opener) {
     if (!U.guard('payee.import')) return;
     const VT = C.vault, V = KT.vault; let plan = null;
-    openDialog(`<div class="dlg-h">${esc(VT.importTitle)}</div><div class="dlg-b">
-      <div class="toolbar"><input type="file" id="pv_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="pv_tpl">${esc(VT.template)}</button></div>
-      <p class="hint">${esc(VT.importExplain)} ${esc(VT.importCols(R.PAYEE_CSV_COLS.join(', ')))}</p><div id="pv_prev"></div><div class="checks" id="pv_checks"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="pv_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="pv_ok" disabled>${esc(VT.importOk)}</button></div>`, true);
+    /* the file is read in memory only; closing the modal forgets it (CR-08 §6) */
     const forget = () => { plan = null; const f = $('pv_file'); if (f) f.value = ''; };
-    $('dlg').addEventListener('close', forget, { once: true });
-    $('pv_cancel').addEventListener('click', () => { forget(); closeDialog(); });
+    U.createModal({ size: 'L', title: VT.importTitle, opener, isDirty: () => !!plan, onClose: forget, foot: [`<div class="checks" id="pv_checks"></div>`, U.cmButtons(VT.importOk, 'pv_ok', { attrs: ' disabled' })],
+      body: `<div class="toolbar"><input type="file" id="pv_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="pv_tpl">${esc(VT.template)}</button></div>
+      <p class="hint">${esc(VT.importExplain)} ${esc(VT.importCols(R.PAYEE_CSV_COLS.join(', ')))}</p><div id="pv_prev"></div>` });
     $('pv_tpl').addEventListener('click', () => downloadCSV('payee_details_template.csv', R.PAYEE_CSV_COLS, [], true));
     $('pv_file').addEventListener('change', async e => {
       const f = e.target.files[0]; if (!f) return;
@@ -290,7 +280,7 @@ KT.screens.settings = (function () {
       const action = r => (r.kind === 'error' ? `<span class="muted">${esc(VT.actSkip)}</span>`
         : r.kind === 'new' ? `<select data-pvact="${r.n}"><option value="new">${esc(VT.actNew)}</option><option value="skip">${esc(VT.actSkip)}</option></select>`
         : r.has_details ? `<select data-pvact="${r.n}"><option value="skip">${esc(VT.actSkip)}</option><option value="replace">${esc(VT.actReplace)}</option></select>` : `<span>${esc(VT.actAdd)}</span>`);
-      $('pv_prev').innerHTML = `<div class="tablewrap" style="max-height:360px"><table class="tbl compact-sm"><thead><tr><th class="num">${esc(VT.colRow)}</th><th>${esc(VT.colHandle)}</th><th>${esc(VT.colMatch)}</th><th>${esc(VT.colAction)}</th></tr></thead><tbody>` +
+      $('pv_prev').innerHTML = `<div class="tablewrap" style="max-height:52vh"><table class="tbl compact-sm"><thead><tr><th class="num">${esc(VT.colRow)}</th><th>${esc(VT.colHandle)}</th><th>${esc(VT.colMatch)}</th><th>${esc(VT.colAction)}</th></tr></thead><tbody>` +
         plan.rows.map(r => `<tr><td class="num">${r.n}</td><td>@${esc(r.handle)}</td><td>${r.kind === 'error' ? `<span class="late">${esc(r.errs.join(' · '))}</span>` : r.kol ? esc(VT.matchKol(r.kol.display_name)) + (r.has_details ? ` <span class="muted small">(${esc(VT.hasDetails)})</span>` : '') : `<span class="muted">${esc(VT.noKol)}</span>`}</td><td>${action(r)}</td></tr>`).join('') + `</tbody></table></div>`;
       $('pv_ok').disabled = !plan.rows.some(r => r.kind !== 'error');
     });
@@ -312,17 +302,16 @@ KT.screens.settings = (function () {
         r.details = null;
         if (r.kol) sum.matched++; else sum.created++;
       }
-      forget(); closeDialog(); commit(C.vault.importDone(sum.matched, sum.created, sum.skipped)); render();
+      forget(); U.closeModal(); commit(C.vault.importDone(sum.matched, sum.created, sum.skipped)); render();
     });
   }
 
   /* ===================== Products (CR-06 §4.3): the catalog of TR codes ===================== */
   function productsHTML() {
     const n = (state().products || []).length;
-    return `<div class="card"><div class="card-head"><h3>${esc(K.navProducts)} <span class="muted">${R.fmtNum(n)}</span></h3><div class="btns"><button type="button" class="btn small" data-act="pimport">${esc(P.importCsv)}</button></div></div>
+    return `<div class="card"><div class="card-head"><h3>${esc(K.navProducts)} <span class="muted">${R.fmtNum(n)}</span></h3><div class="btns"><button type="button" class="btn small" data-act="pimport">${esc(P.importCsv)}</button>` +
+        `<button type="button" class="btn small primary" data-act="pnew">${esc(P.newProduct)}</button></div></div>
       <p class="hint" style="margin-top:0">${esc(P.hint)}</p>
-      <div class="lrow pr-add"><input data-pn="tr_code" placeholder="${esc(P.codePh)}" aria-label="${esc(P.colCode)}" autocomplete="off"><input data-pn="product_name" placeholder="${esc(P.namePh)}" aria-label="${esc(P.colName)}" autocomplete="off">
-        <input data-pn="variant" placeholder="${esc(P.variantPh)}" aria-label="${esc(P.colVariant)}" autocomplete="off"><button type="button" class="btn small" data-act="padd">${esc(P.add)}</button></div>
       <div class="checks" id="ls_checks" style="margin:8px 0"></div>
       <input type="search" class="pr-search" data-psearch value="${esc(st.pq)}" placeholder="${esc(P.search)}" aria-label="${esc(P.search)}">
       <div class="tablewrap" style="margin-top:8px;max-height:calc(100vh - 360px)"><table class="tbl compact-sm pr-tbl"><thead><tr><th>${esc(P.colCode)}</th><th>${esc(P.colName)}</th><th>${esc(P.colVariant)}</th><th class="num">${esc(P.colUsed)}</th><th>${esc(P.colActive)}</th><th></th></tr></thead>
@@ -347,34 +336,24 @@ KT.screens.settings = (function () {
     if (t.dataset.pf === 'product_name' && !v) { $('ls_checks').innerHTML = checksHTML({ errs: [{ msg: C.msg.productNameRequired }] }, ''); t.value = p.product_name; return; }
     p[t.dataset.pf] = v || null; $('ls_checks').innerHTML = ''; commit(P.saved);
   }
-  function addProduct() {
-    const box = $('set_body'), d = {}; box.querySelectorAll('[data-pn]').forEach(el => { d[el.dataset.pn] = el.value; });
-    const res = R.validateProduct(state(), d, true);
-    box.querySelectorAll('[data-pn]').forEach(el => el.classList.toggle('invalid', res.errs.some(x => x.field === el.dataset.pn)));
-    if (res.errs.length) { $('ls_checks').innerHTML = checksHTML(res, ''); return; }
-    const p = R.newProduct(d); state().products.push(p); commit(P.added(p.tr_code)); render();
-    const first = $('set_body').querySelector('[data-pn="tr_code"]'); if (first) first.focus();
-  }
   /* Import CSV (tr_code, product_name, variant): preview new / update name / no change / duplicate / error, then apply */
-  function openProductImport() {
+  function openProductImport(opener) {
     if (!U.guard('products.edit')) return;
     let plan = null;
-    openDialog(`<div class="dlg-h">${esc(P.importTitle)}</div><div class="dlg-b">
-      <div class="toolbar"><input type="file" id="pi_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="pi_sample">${esc(P.importSample)}</button></div>
-      <p class="hint">${esc(P.importCols(R.PRODUCT_IMPORT_COLS.join(', ')))}</p><div id="pi_prev"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="pi_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="pi_ok" disabled>${esc(P.importApply)}</button></div>`, true);
+    U.createModal({ size: 'L', title: P.importTitle, opener, isDirty: () => !!plan, foot: ['', U.cmButtons(P.importApply, 'pi_ok', { attrs: ' disabled' })],
+      body: `<div class="toolbar"><input type="file" id="pi_file" accept=".csv,text/csv" style="width:auto"><button type="button" class="btn small" id="pi_sample">${esc(P.importSample)}</button></div>
+      <p class="hint">${esc(P.importCols(R.PRODUCT_IMPORT_COLS.join(', ')))}</p><div id="pi_prev"></div>` });
     const KIND_CLS = { new: 'done', update: 'warn', same: 'muted', duplicate: 'muted', error: 'cancel' };
     const show = () => {
       if (plan.headerError) { $('pi_prev').innerHTML = checksHTML({ errs: [{ msg: plan.headerError }] }, ''); $('pi_ok').disabled = true; return; }
       const c = R.importCounts(plan);
       $('pi_prev').innerHTML = plan.rows.length ? `<div class="check info">i <span>${esc(P.importSummary(c))}</span></div>` +
-        `<div class="tablewrap" style="max-height:320px;margin-top:8px"><table class="tbl compact-sm"><thead><tr><th>${esc(P.importRow)}</th><th></th><th>${esc(P.colCode)}</th><th>${esc(P.colName)}</th><th>${esc(P.colVariant)}</th><th></th></tr></thead><tbody>` +
+        `<div class="tablewrap" style="max-height:52vh;margin-top:8px"><table class="tbl compact-sm"><thead><tr><th>${esc(P.importRow)}</th><th></th><th>${esc(P.colCode)}</th><th>${esc(P.colName)}</th><th>${esc(P.colVariant)}</th><th></th></tr></thead><tbody>` +
         plan.rows.map(r => `<tr><td>${r.n}</td><td><span class="st ${KIND_CLS[r.kind]}">${esc(P.importKind[r.kind])}</span></td><td>${esc(r.tr_code)}</td><td>${esc(r.product_name)}</td><td>${esc(r.variant || '')}</td>` +
           `<td class="${r.kind === 'error' ? 'late' : 'muted'}" title="${esc(r.msg || '')}">${esc(r.msg || '')}</td></tr>`).join('') + `</tbody></table></div>`
         : `<div class="hint">${esc(P.importNoRows)}</div>`;
       $('pi_ok').disabled = !(c.new + c.update);
     };
-    $('pi_cancel').addEventListener('click', closeDialog);
     $('pi_sample').addEventListener('click', () => downloadCSV('products_sample.csv', R.PRODUCT_IMPORT_SAMPLE[0], R.PRODUCT_IMPORT_SAMPLE.slice(1)));
     $('pi_file').addEventListener('change', async e => {
       const f = e.target.files[0]; plan = null; $('pi_ok').disabled = true; $('pi_prev').innerHTML = ''; if (!f) return;
@@ -383,7 +362,7 @@ KT.screens.settings = (function () {
     $('pi_ok').addEventListener('click', () => {
       if (!plan || plan.headerError) return;
       const out = R.applyProductImport(state(), plan);
-      state().products = out.products; closeDialog(); commit(P.importDone(out.counts)); render();
+      state().products = out.products; U.closeModal(); commit(P.importDone(out.counts)); render();
     });
   }
 
@@ -399,8 +378,9 @@ KT.screens.settings = (function () {
     if (row && t.dataset.s) {
       const step = L.journey_steps.find(j => j.sub_status === row.dataset.step);
       if (t.dataset.s === 'label_th') step.label_th = R.trim(t.value) || step.sub_status;
-      if (t.dataset.s === 'is_optional') step.is_optional = t.checked;
-      if (t.dataset.s === 'active') step.active = t.checked;
+      const fixed = R.stepLocked(step) || R.isCoreStep(step);   // CR-11 §4.13 #6: never off, never optional
+      if (t.dataset.s === 'is_optional' && !fixed) step.is_optional = t.checked;
+      if (t.dataset.s === 'active' && !fixed) step.active = t.checked;
       commit(LS.saved); return;
     }
     const lr = t.closest('[data-v]');
@@ -416,6 +396,7 @@ KT.screens.settings = (function () {
   }
   function bodyClick(e) {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (KT.golive.settingsClick(e, () => render())) return;   // CR-11 §4.7
     if (b.dataset.deal) { go('deals', { deal: b.dataset.deal }); return; }
     const act = b.dataset.act;
     if (act === 'backup') { doBackup(); return; }
@@ -424,41 +405,64 @@ KT.screens.settings = (function () {
     if (act === 'vtemplate') { downloadCSV('payee_details_template.csv', R.PAYEE_CSV_COLS, [], true); return; }
     if (act === 'vunlock') { KT.payee.unlockDialog(() => render()); return; }
     if (act === 'vlock') { KT.vault.lock(); toast(C.vault.locked); render(); return; }
-    if (act === 'vsetup') { KT.payee.setupDialog(() => render()); return; }
+    if (act === 'vsetup') { KT.payee.setupDialog(() => render(), b); return; }
     if (act === 'vchange') { KT.payee.changeDialog(() => render()); return; }
     if (act === 'vreset') { KT.payee.resetDialog(() => render()); return; }
-    if (act === 'vimport') { openPayeeImport(); return; }
+    if (act === 'vimport') { openPayeeImport(b); return; }
     if (act === 'reset') { openReset(); return; }
     if (!can(editAction())) return;
-    if (act === 'padd') { addProduct(); return; }
-    if (act === 'ktadd') { addKolType(); return; }
+    if (act === 'pnew') { U.openNewProduct('', null, { created: code => { render(); flashRow(`[data-pc="${CSS.escape(code)}"]`); U.toast(P.added(code)); } }); return; }
+    if (act === 'ktaddopen') { openAddKolType(b); return; }
+    if (act === 'laddopen') { openAddListValue(b); return; }
     if (b.dataset.ktmove) { const key = b.closest('[data-kt]').dataset.kt, list = R.kolTypeList(state().lookups); moveKolType(key, list.findIndex(t => t.key === key) + Number(b.dataset.ktmove)); return; }
     if (b.dataset.ktdel != null) {
       const key = b.closest('[data-kt]').dataset.kt, s = state(), t = ktList().find(x => x.key === key); if (!t || R.kolTypeUse(s, key)) return;
       s.lookups.kol_type_list = ktList().filter(x => x.key !== key); commit(KTY.deleted(t.label)); render(); return;
     }
-    if (act === 'pimport') { openProductImport(); return; }
+    if (act === 'pimport') { openProductImport(b); return; }
     if (b.dataset.pdel != null) {
       const code = b.closest('[data-pc]').dataset.pc, s = state(); if (!R.canDeleteProduct(s, code)) return;
       s.products = s.products.filter(p => !R.sameCode(p.tr_code, code)); commit(P.deleted(code)); render(); return;
     }
     const L = state().lookups;
-    if (b.dataset.s === 'delete') { const sub = b.closest('[data-step]').dataset.step; L.journey_steps = L.journey_steps.filter(j => j.sub_status !== sub); commit(LS.saved); render(); return; }
+    if (b.dataset.s === 'delete') { const sub = b.closest('[data-step]').dataset.step, st0 = R.stepOf(L, sub); if (st0 && (R.stepLocked(st0) || R.isCoreStep(st0))) return; L.journey_steps = L.journey_steps.filter(j => j.sub_status !== sub); commit(LS.saved); render(); return; }
     if (b.dataset.l === 'delete') { const key = st.section, v = b.closest('[data-v]').dataset.v; L[key] = (L[key] || []).filter(x => x !== v);
       if (L.inactive_values && L.inactive_values[key]) L.inactive_values[key] = L.inactive_values[key].filter(x => x !== v); commit(LS.saved); render(); return; }
-    if (b.dataset.l === 'add') {
-      const key = st.section, inp = $('set_body').querySelector('[data-l="new"]'), res = R.validateListValue(state(), key, inp.value);
-      if (res.errs.length) { $('ls_checks').innerHTML = checksHTML(res, ''); return; }
-      L[key] = (L[key] || []).concat([R.trim(inp.value)]); commit(LS.saved); render(); return;
-    }
     if (b.dataset.t === 'delete') { st.tiers.splice(+b.closest('[data-tier]').dataset.tier, 1); $('set_body').innerHTML = tiersHTML(); tiersCheck(); return; }
     if (b.dataset.t === 'add') { st.tiers.push({ tier: '', min_followers: '' }); $('set_body').innerHTML = tiersHTML(); tiersCheck(); }
   }
-  document.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || !e.target.matches) return;
-    if (e.target.matches('#set_body [data-l="new"]')) { const b = $('set_body').querySelector('[data-l="add"]'); if (b) b.click(); }
-    if (e.target.matches('#set_body [data-pn]')) { const b = $('set_body').querySelector('[data-act="padd"]'); if (b) b.click(); }
-  });
+  /* ===================== CR-11 §4.3 — + Add in Settings: a create modal (S) ===================== */
+  /* a value of Pillar · CTA · Platform (Settings › Lists) */
+  function openAddListValue(opener) {
+    if (!U.guard(editAction())) return;
+    const key = st.section, title = SECTIONS.find(x => x[0] === key)[1];
+    U.createModal({ size: 'S', title: LS.addTitle(title), opener, foot: [`<div class="checks" id="la_checks"></div>`, U.cmButtons(LS.addOk, 'la_ok')],
+      body: `<div class="field"><label for="la_v">${esc(LS.value)} <span class="req">*</span></label><input id="la_v" placeholder="${esc(LS.addPh)}" autocomplete="off"></div>` });
+    const go2 = () => {
+      const v = $('la_v').value, res = R.validateListValue(state(), key, v);
+      $('la_checks').innerHTML = checksHTML(res, ''); $('la_v').classList.toggle('invalid', res.errs.length > 0);
+      if (res.errs.length || !U.guard(editAction())) return;
+      const L = state().lookups; L[key] = (L[key] || []).concat([R.trim(v)]); U.closeModal(); commit(LS.added(R.trim(v))); render(); flashRow(`[data-v="${CSS.escape(R.trim(v))}"]`);
+    };
+    $('la_ok').addEventListener('click', go2);
+    $('la_v').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go2(); } });
+  }
+  /* a KOL type preset: label + aliases */
+  function openAddKolType(opener) {
+    if (!U.guard(editAction())) return;
+    U.createModal({ size: 'S', title: KTY.addTitle, opener, foot: [`<div class="checks" id="kt_checks"></div>`, U.cmButtons(KTY.addOk, 'kt_ok')],
+      body: `<div class="fields one"><div class="field"><label for="kt_label">${esc(KTY.colLabel)} <span class="req">*</span></label><input id="kt_label" placeholder="${esc(KTY.addPh)}" autocomplete="off"></div>` +
+        `<div class="field"><label for="kt_aliases">${esc(KTY.colAliases)}</label><input id="kt_aliases" placeholder="${esc(KTY.aliasesPh)}" autocomplete="off"></div></div>` });
+    $('kt_ok').addEventListener('click', () => {
+      const label = $('kt_label').value, aliases = R.splitAliases($('kt_aliases').value), res = R.validateKolType(ktList(), label, aliases, null);
+      $('kt_checks').innerHTML = checksHTML(res, ''); $('kt_label').classList.toggle('invalid', res.errs.some(x => x.field === 'label'));
+      if (res.errs.length || !U.guard(editAction())) return;
+      const list = ktList(), t = { key: R.kolTypeKeyFor(label, list), label: R.trim(label), aliases, active: true, sort_order: Math.max(0, ...list.map(x => x.sort_order || 0)) + 10 };
+      list.push(t); U.closeModal(); commit(KTY.added(t.label)); render(); flashRow(`[data-kt="${CSS.escape(t.key)}"]`);
+    });
+  }
+  /* the new row lit up (5 s) */
+  function flashRow(sel) { setTimeout(() => { const el = $('set_body').querySelector(sel); if (!el) return; el.classList.add('flash'); el.scrollIntoView({ block: 'nearest' }); setTimeout(() => el.classList.remove('flash'), 5000); }, 50); }
 
   function reset() { st.tiers = null; st.targets = null; }
   return { render, reset };

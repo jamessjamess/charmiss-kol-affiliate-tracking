@@ -174,7 +174,7 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ===================== payment lines · To pay (§4.3, §4.5) ===================== */
   /* stored line status: open (requested, not in a run) · in_run · submitted · paid · cancelled — what the screen shows comes from lineStatus */
-  const LINE_STATUSES = ['not_due', 'missing_docs', 'ready', 'in_run', 'submitted', 'paid', 'cancelled'];
+  const LINE_STATUSES = ['not_due', 'missing_docs', 'ready', 'on_hold', 'in_run', 'submitted', 'paid', 'cancelled'];   // on_hold: CR-11 §4.9
   const dealOf = (state, id) => (id ? state.deals.find(d => d.deal_id === id) || null : null);
   const runOf = (state, id) => (id ? (state.payment_runs || []).find(r => r.run_id === id) || null : null);
   /* a line's payee: the one it names, else the payee of its KOL (bank details may be entered after the line was requested) */
@@ -192,6 +192,7 @@ Object.assign(KT.rules, (function (R, C) {
   function lineStatus(state, line, today) {
     if (line.status === 'paid') return 'paid';
     if (line.status === 'cancelled') return 'cancelled';
+    if (line.status === 'on_hold') return 'on_hold';   // CR-11 §4.9 — not paid until it is released
     const run = runOf(state, line.run_id);
     if (run) return run.status === 'draft' ? 'in_run' : 'submitted';
     if (line.due_date && line.due_date > today) return 'not_due';
@@ -247,7 +248,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* the queue cards: Ready · Missing docs · Upcoming 14 days (not owed yet, expected today … today + 14) · Needs check */
   function payCards(items, checks, today) {
     const end = R.addDays(today, 14), sum = list => ({ n: list.length, gross: round2(list.reduce((a, x) => a + x.tax.gross, 0)) });
-    return { ready: sum(items.filter(x => x.status === 'ready')), missing: sum(items.filter(x => x.status === 'missing_docs')),
+    return { ready: sum(items.filter(x => x.status === 'ready')), missing: sum(items.filter(x => x.status === 'missing_docs')), hold: sum(items.filter(x => x.status === 'on_hold')),
       upcoming: sum(items.filter(x => x.status === 'not_due' && x.due_date && x.due_date >= today && x.due_date <= end)), check: { n: checks.length } };
   }
   /* who may ask for a payment: Admin / KOL Manager any deal · Staff the deals they are PIC of */
@@ -256,7 +257,7 @@ Object.assign(KT.rules, (function (R, C) {
     if (user.role === 'admin' || user.role === 'kol_manager') return true;
     const me = R.picName(user); return !!(deal && me && deal.pic === me);
   }
-  /* Request payment: a virtual instalment becomes a stored line (open) with the amount, basis and WHT confirmed · o: {lineId, agreed_amount, price_basis, wht_rate, pay_to, reimburse_user, note, user, now} */
+  /* a worked-out instalment becomes a stored line (open) — Add to run · Hold · Paid outside app (CR-11 §4.9: no Request step) with the amount, basis and WHT confirmed · o: {lineId, agreed_amount, price_basis, wht_rate, pay_to, reimburse_user, note, user, now} */
   function newLine(state, item, o) {
     const payee = item.payee, tax = taxOf(state, { agreed_amount: o.agreed_amount, price_basis: o.price_basis, wht_rate: o.wht_rate }, payee), miss = docsRequired(state, Object.assign({}, item, { pay_to: o.pay_to }), payee);
     return { line_id: o.lineId, source: item.source || 'deal', deal_id: item.deal_id, payee_id: payee ? payee.payee_id : null, payee_version_at_submit: null, milestone: item.milestone,
@@ -352,6 +353,7 @@ Object.assign(KT.rules, (function (R, C) {
   function addToRun(state, run, items, ctx) {
     const events = [];
     items.forEach(x => {
+      if (x.status === 'on_hold' || (x.line && x.line.status === 'on_hold')) return;   // CR-11 §4.9: held — not into a run
       let l = x.line;
       if (!l || (l.run_id && l.run_id !== run.run_id) || l.status === 'paid' || l.status === 'cancelled') {
         l = newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now });

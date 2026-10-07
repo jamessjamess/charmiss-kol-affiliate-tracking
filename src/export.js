@@ -120,22 +120,27 @@ KT.export = (function (R, C) {
 
   /* ===================== Operations (§4.6) ===================== */
   const whereOf = (s, ctx, d) => { const p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), c = ctx.campaigns.get(d.campaign_id) || {}; return `${c.campaign_name || ''}${p ? ` › ${R.phaseName(s, p.phase_id)}` : ''}`; };
+  /* CR-11 §4.8 — To do · Data health: the numbers of the tab (R.dataHealth, the same function) */
   function summaryOps(x) {
-    const ctx = R.dealContext(x.state), Q = R.opsQueues(x.state, x.f, x.today, ctx), rows = [[O.picLabel, O.picLabel, x.picLabel]];
-    const shown = x.queue && Q[x.queue] && Q[x.queue].length ? x.queue : R.QUEUES.find(k => Q[k].length);
-    if (shown) rows.push([O.sheet.queue, O.queueShown, O.queues[shown]]);
-    R.QUEUES.forEach(k => { if (Q[k].length) rows.push([O.queuesL, O.queues[k], Q[k].length]); });
-    const pq = R.payQueue(x.state, x.today).items.filter(i => (!x.f.pic || (x.f.pic === '__none' ? !i.pic : i.pic === x.f.pic)) && (!x.f.campaign || i.campaign_id === x.f.campaign));
-    rows.push([C.tabs.payments || 'Payments', O.payDocsMissing, pq.filter(i => i.status === 'missing_docs').length], [C.tabs.payments || 'Payments', O.payReady, pq.filter(i => i.status === 'ready').length]);
+    const s = x.state, ctx = R.dealContext(s), Q = R.opsQueues(s, x.f, x.today, ctx), H = R.dataHealth(s, x.f, x.today), rows = [[O.picLabel, O.picLabel, x.picLabel]];
+    const hk = x.queue && x.queue.startsWith('h:') ? x.queue.slice(2) : null;
+    if (x.queue) rows.push([O.sheet.queue, O.queueShown, hk ? O.healthItems[hk] : O.queues[x.queue]]);
+    rows.push([O.todo, O.queues.overdue, Q.overdue.length], [O.todo, O.toShip, R.shipmentsToShip(s, x.f, x.today).length], [O.todo, O.docsToCollect, R.docsToCollect(s, x.f, x.today).length]);
+    if (R.metricsDue) rows.push([O.todo, O.metricsDue, R.metricsDue(s, x.f, x.today).length]);
+    H.items.forEach(i => rows.push([O.health, O.healthItems[i.key], i.n]));
+    if (!H.total) rows.push([O.health, O.allGood, 0]);
     return { key: 'summary_ops', name: O.sheet.summary, header: [O.colCard, O.colMetric, O.colValue], rows, total: null };
   }
   function queue(x) {
-    const s = x.state, ctx = R.dealContext(s), Q = R.opsQueues(s, x.f, x.today, ctx), key = x.queue && Q[x.queue] ? x.queue : R.QUEUES.find(k => Q[k].length);
-    const name = O.sheet.queue;
-    if (!key) return { key: 'queue', name: O.sheet.queue, header: [O.colKol], rows: [], total: null };
-    if (key === 'noProducts') return { key: 'queue', name, header: [O.colCampaign, O.colStatus, O.colFrom, O.colTo, O.deals],
-      rows: R.sortCampaigns(Q.noProducts, s.phases, x.today).map(c => { const [a, z] = R.scopeRange(s, { campaignId: c.campaign_id }); return [c.campaign_name, statusLabel(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), x.today)), dmy(a), dmy(z), s.deals.filter(d => d.campaign_id === c.campaign_id && !R.isCancelled(d)).length]; }), total: null };
-    const rows = R.queueRows(s, key, Q[key], x.today, ctx);
+    const s = x.state, ctx = R.dealContext(s), Q = R.opsQueues(s, x.f, x.today, ctx), name = O.sheet.queue;
+    const hk = x.queue && x.queue.startsWith('h:') ? x.queue.slice(2) : null, it = hk ? R.dataHealth(s, x.f, x.today).items.find(i => i.key === hk) : null;
+    const camps = it && it.campaigns, phases = it && it.phases;
+    if (camps) return { key: 'queue', name, header: [O.colCampaign, O.colStatus, O.colFrom, O.colTo, O.deals],
+      rows: R.sortCampaigns(camps, s.phases, x.today).map(c => { const [a, z] = R.scopeRange(s, { campaignId: c.campaign_id }); return [c.campaign_name, statusLabel(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), x.today)), dmy(a), dmy(z), s.deals.filter(d => d.campaign_id === c.campaign_id && !R.isCancelled(d)).length]; }), total: null };
+    if (phases) return { key: 'queue', name, header: [O.colCampaign, O.colPhase, O.colFrom, O.colTo, O.colIssue],
+      rows: phases.map(p => [R.campaignName(s, p.campaign_id), R.phaseName(s, p.phase_id), dmy(p.start_date), dmy(p.end_date), O.issueNoBudget]), total: null };
+    const deals = it ? it.deals : Q.overdue;
+    const rows = it ? deals.map(d => ({ deal: d, issue: O.healthItems[hk] })) : R.queueRows(s, 'overdue', deals, x.today, ctx);
     return { key: 'queue', name, header: [O.colKol, O.colCampaignPhase, O.colStage, O.picLabel, O.colIssue, O.colTotal],
       rows: rows.map(r => [(ctx.kols.get(r.deal.kol_id) || {}).display_name || r.deal.kol_id, whereOf(s, ctx, r.deal), r.deal.sub_status, r.deal.pic || '', r.issue, r2(R.totalCost(r.deal))]),
       total: [O.colTotal, '', '', '', rows.length, r2(rows.reduce((a, r) => a + R.totalCost(r.deal), 0))] };
@@ -162,7 +167,8 @@ KT.export = (function (R, C) {
       switch (k) {
         case 'tier': return r.tier; case 'platform': return r.platform; case 'post_date': return dmy(p.post_date); case 'expected': return dmy(p.expected_post_date);
         case 'er': return r4(r.er); case 'cost': return r2(r.cost); case 'cpv': return r4(r.cpv); case 'cpe': return r2(r.cpe); case 'vpf': return r2(r.vpf);
-        case 'updated': return r.status === 'none' ? '' : r.status === 'imported' ? P.status.imported : dmy(String(p.metrics_updated_at || '').slice(0, 10));
+        case 'updated': return r.status === 'collected' ? dmy(String(p.metrics_updated_at || '').slice(0, 10)) || P.status.collected
+          : r.status === 'waiting' && r.minfo ? P.waitingL(r.minfo.next, dmy(r.minfo.nextDate)) : P.status[r.status] || '';   // CR-11 §4.12
         case 'pic': return r.pic; case 'phase': return phaseOf(r.phase); case 'gencode': return p.gencode_code || ''; case 'pillar': return r.deal.pillar || '';
         case 'ontime': return r.lateDays == null ? '' : r.lateDays ? P.late(r.lateDays) : P.onTime;
         default: return r[k];

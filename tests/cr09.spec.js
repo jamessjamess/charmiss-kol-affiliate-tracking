@@ -127,8 +127,9 @@
       const tables = E.tabTables('ops', x), Q = R.opsQueues(s, x.f, TD);
       assert.deepEqual(tables.map(t => t.name), ['Summary', 'Queue', 'Active pipeline', 'Due in next 7 days']);
       assert.equal(tables[1].rows.length, Q.overdue.length);
-      assert.deepEqual(tables[0].rows.find(r => r[1] === O.queues.unpaid), [O.queuesL, O.queues.unpaid, Q.unpaid.length]);
-      assert.equal(tables[0].rows.find(r => r[1] === O.payDocsMissing)[2], 18);
+      /* CR-11 §4.8: To do / Data health replace the old cards — Unpaid after posting → Docs to collect (KOLs) */
+      assert.ok(!tables[0].rows.some(r => r[1] === O.queues.unpaid));
+      assert.deepEqual(tables[0].rows.find(r => r[1] === O.docsToCollect), [O.todo, O.docsToCollect, 18]);
     });
   });
 

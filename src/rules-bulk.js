@@ -68,7 +68,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (inCamp.has(id)) { skip.push({ kol: k, reason: 'in_campaign' }); return; }
       if (k.kol_status === 'Blacklist') { skip.push({ kol: k, reason: 'blacklisted' }); return; }
       if (k.kol_status === 'Inactive') warns.push({ kol: k, msg: M.addKolStatus(k.display_name, k.kol_status) });
-      create.push({ kol: k, pic: picFor(k), term: isTerm(k.default_payment_term) ? k.default_payment_term : null });
+      create.push({ kol: k, pic: picFor(k), term: R.termPrefill(state, k, campaignId).term || null });   // CR-11 §4.11: the KOL's default → the Campaign's
     });
     return { errs, create, skip, warns };
   }
@@ -101,5 +101,18 @@ Object.assign(KT.rules, (function (R, C) {
     }).filter(x => x.changes.length);
   }
 
-  return { MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan };
+  /* CR-11 §4.1 — New deal › Add account (a panel in the modal): the same checks as an account in KOL Master (platform · handle · profile link ·
+     followers · not another KOL's) · fields aa_platform / aa_handle / aa_profile_link / aa_followers */
+  function validateAddAccount(state, kolId, a) {
+    const k = R.kolById(state, kolId), accs = state.kol_accounts.filter(x => x.kol_id === kolId), pre = `acc${accs.length}_`;
+    const res = R.validateKol(state, { kol_id: kolId, display_name: (k && k.display_name) || '-', accounts: accs.concat([Object.assign({ account_id: null }, a)]) });
+    const mine = e => String(e.field || '').startsWith(pre), map = e => ({ field: 'aa_' + e.field.slice(pre.length), msg: e.msg });
+    return { errs: (k ? [] : [{ field: 'aa_kol', msg: M.kolNameRequired }]).concat(res.errs.filter(mine).map(map)), warns: res.warns.filter(mine).map(map), infos: [] };
+  }
+  /* the kol_accounts row */
+  const newAccountRecord = (kolId, a, id) => ({ account_id: id, kol_id: kolId, platform: a.platform, handle: trim(a.handle), profile_link: trim(a.profile_link) || null,
+    followers: isBlank(a.followers) ? null : Number(a.followers), is_legacy: false });
+
+  return { MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan,
+    validateAddAccount, newAccountRecord };
 })(KT.rules, KT.content));

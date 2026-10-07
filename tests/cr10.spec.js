@@ -38,20 +38,25 @@
       const withViews = rows.filter(r => r.views > 0), mean = withViews.reduce((a, r) => a + r.er, 0) / withViews.length;
       assert.notEqual(mean.toFixed(4), m.er.toFixed(4));
     });
-    test('TC-05: Kiss Signal 79 · 10 · 91,267 · ER 1.68% · CPV ฿0.387 · Perfect Heart 52 · 0 → ER / CPV none · Acne Fade 0 posted', () => {
+    /* CR-11 §4.13 #7: a post link that is on two posts counts once — Kiss Signal had one (12,800 views twice): 91,267 → 78,467 · the posts stay 79 */
+    test('TC-05: Kiss Signal 79 · 10 · 78,467 (CR-11: the duplicate link once) · ER 1.72% · CPV ฿0.412 · Perfect Heart 52 · 0 → ER / CPV none · Acne Fade 0 posted', () => {
       const s = fresh(), k = R.perfMetricsOf(perf(s, 'Kiss')), ph = R.perfMetricsOf(perf(s, 'Perfect')), a = perf(s, 'Acne');
-      assert.deepEqual([k.posted, k.withMetrics, k.views, (k.er * 100).toFixed(2), k.cpv.toFixed(3)], [79, 10, 91267, '1.68', '0.387']);
+      assert.deepEqual([k.posted, k.withMetrics, k.views, (k.er * 100).toFixed(2), k.cpv.toFixed(3)], [79, 10, 78467, '1.72', '0.412']);
+      assert.equal(R.postMetrics(perf(s, 'Kiss').map(r => ({ post: r.post, cost: r.cost }))).views + 12800, 91267, 'without the second copy of the link');
       assert.deepEqual([ph.posted, ph.withMetrics, ph.er, ph.cpv], [52, 0, null, null]);
       assert.equal(a.length, 0);
       assert.equal(C.perfTab.empty, 'No posted content in this scope');
     });
-    test('TC-06: a post without metrics — every metric null (not 0) · status No metrics', () => {
+    test('TC-06: a post without metrics — every metric null (not 0) · a status without numbers (CR-11 §4.12)', () => {
       const s = fresh(), r = perf(s, 'Charming').find(x => x.views == null);
-      assert.deepEqual([r.views, r.likes, r.comments, r.shares, r.saves, r.er, r.cpv, r.status], [null, null, null, null, null, null, null, 'none']);
+      assert.deepEqual([r.views, r.likes, r.comments, r.shares, r.saves, r.er, r.cpv], [null, null, null, null, null, null, null]);
+      assert.ok(['due', 'waiting', 'not_posted', 'not_tracked'].includes(r.status));
     });
-    test('TC-07: Metrics status = No metrics → 65 · cleared → 86 · the other filters and search', () => {
-      const s = fresh(), rows = perf(s, 'Charming'), f = Object.assign({ q: '' }, R.blankPerfFilter());
-      assert.equal(R.filterPerfRows(rows, Object.assign({}, f, { mstatus: 'none' })).length, 65);
+    test('TC-07: the posts without metrics → 65 (CR-11: Due 33 · Waiting 1 · Not posted 15 · Not tracked 16) · cleared → 86 · the other filters and search', () => {
+      const s = fresh(), rows = perf(s, 'Charming'), f = Object.assign({ q: '' }, R.blankPerfFilter()), by = k => R.filterPerfRows(rows, Object.assign({}, f, { mstatus: k })).length;
+      assert.deepEqual(['due', 'waiting', 'not_posted', 'not_tracked', 'imported', 'collected'].map(by), [33, 1, 15, 16, 21, 0]);
+      assert.equal(by('due') + by('waiting') + by('not_posted') + by('not_tracked'), 65);
+      assert.equal(by('stale'), 86, 'a status from before CR-11 filters nothing');
       assert.equal(R.filterPerfRows(rows, f).length, 86);
       assert.equal(R.filterPerfRows(rows, Object.assign({}, f, { platform: 'Instagram' })).length, 7);
       assert.equal(R.filterPerfRows(rows, Object.assign({}, f, { link: 'none' })).length + R.filterPerfRows(rows, Object.assign({}, f, { link: 'has' })).length, 86);
@@ -82,9 +87,10 @@
       assert.deepEqual([d.withMetrics, d.posted, d.noDate], [18, 70, 3], 'Metrics on 18 of 70 posts · +3 without post date');
     });
     test('metrics status · count parsing · post links (§4.3, §4.5, §4.6)', () => {
-      const p = { views: 10, metrics_source: 'manual', metrics_updated_at: '2026-09-30' };
-      assert.deepEqual([R.metricsStatus({ views: null }, TD, 14), R.metricsStatus({ views: 5, metrics_source: 'legacy' }, TD, 14), R.metricsStatus(p, TD, 14), R.metricsStatus(p, TD, 5)],
-        ['none', 'imported', 'updated', 'stale']);
+      /* CR-11 §4.12 replaces No metrics / Updated / Stale with checkpoints (see cr11.spec TC-47 … TC-49) */
+      const p = { views: 10, metrics_source: 'manual', metrics_updated_at: '2026-09-30', post_date: '2026-09-20', post_link: 'x' };
+      assert.deepEqual([R.metricsStatus({ views: null }, TD, [7], TD), R.metricsStatus({ views: 5, metrics_source: 'legacy' }, TD, [7], TD), R.metricsStatus(p, TD, [7], TD), R.metricsStatus(p, TD, [7, 14], TD)],
+        ['not_posted', 'imported', 'collected', 'due']);
       assert.deepEqual(['1300000', '1,300,000', '1.3M', '33.4K', '1.2k', '12.5K', ' '].map(x => R.parseCount(x).value), [1300000, 1300000, 1300000, 33400, 1200, 12500, null]);
       ['-5', 'abc', '12.5', '1.2.3'].forEach(x => assert.equal(R.parseCount(x).error, 'Enter a whole number, e.g. 12,500 or 12.5K', x));
       assert.equal(R.normalizePostLink('https://www.TikTok.com/@pst.marina119/video/7683451360452365576?is_from_webapp=1&sender_device=pc'), R.normalizePostLink('tiktok.com/@pst.marina119/video/7683451360452365576/'));
@@ -104,7 +110,7 @@
       assert.deepEqual([r.post.views, r.post.metrics_updated_at, r.post.metrics_updated_by, r.post.metrics_source], [12500, TD, 'U001', 'manual']);
       assert.deepEqual([ev.type, ev.post_id, ev.from.views, ev.to.views, ev.changed_by], ['metrics', r.post.post_id, old || null, 12500, 'U001']);
       assert.equal(R.perfMetricsOf(perf(s, 'Perfect')).views, before - old + 12500);
-      assert.equal(R.metricsStatus(r.post, TD, 14), 'updated');
+      assert.equal(R.metricsStatus(r.post, TD, [7], R.goLiveDate(s.lookups)), 'collected');
     });
     test('TC-14 / TC-20: who may edit — Admin · KOL Manager · Staff on own deals · not another PIC\'s deal · not Viewer / Accounting', () => {
       const s = fresh(), rows = perf(s, 'Perfect'), mine = rows.find(x => x.deal.pic === 'Amp').deal, other = rows.find(x => x.deal.pic && x.deal.pic !== 'Amp').deal;
@@ -147,14 +153,16 @@
       posts[0].views = '1'; posts[0].likes = '50';
       assert.ok(R.validateDeal(s, d, posts, TD, ctxD).warns.some(w => /Engagement is higher than views/.test(w.msg)));
     });
-    test('TC-22: updated more than 14 days ago → Stale · 30 days in Settings → Updated', () => {
+    test('TC-22 (CR-11 §4.12 replaces Stale): saved after D+7 → Collected · a D+30 checkpoint in Settings → Due again', () => {
       const s = fresh(), p = perf(s, 'Charming')[0].post;
+      Object.assign(p, { post_date: '2026-08-20', post_link: p.post_link || 'https://www.tiktok.com/@x/video/1' });
       R.setMetrics(p, { views: 100 }, Object.assign(ctx(), { today: '2026-09-15' }), 'manual');
-      assert.equal(R.metricsStatus(p, TD, R.metricsStaleDays(s.lookups)), 'stale');
-      s.lookups.metrics_stale_days = 30;
-      assert.equal(R.metricsStatus(p, TD, R.metricsStaleDays(s.lookups)), 'updated');
+      assert.equal(R.metricsStatus(p, TD, R.metricsCheckpoints(s.lookups), R.goLiveDate(s.lookups)), 'collected');
+      s.lookups.metrics_checkpoints = [7, 30];
+      assert.equal(R.metricsStatus(p, TD, R.metricsCheckpoints(s.lookups), R.goLiveDate(s.lookups)), 'due');
       assert.equal(R.validatePerfSettings({ ontime_grace_days: '1', reliability_min_posts: '2', metrics_stale_days: '0' }).errs[0].field, 'metrics_stale_days');
-      assert.equal(R.filterPerfRows(R.perfRows(s, s.deals.filter(d => d.deal_id === p.deal_id), TD, R.dealContext(s)), { mstatus: 'updated' }).length >= 1, true);
+      assert.equal(R.validatePerfSettings({ ontime_grace_days: '1', reliability_min_posts: '2', metrics_checkpoints: '7, 0' }).errs[0].field, 'metrics_checkpoints');
+      assert.equal(R.filterPerfRows(R.perfRows(s, s.deals.filter(d => d.deal_id === p.deal_id), TD, R.dealContext(s)), { mstatus: 'due' }).length >= 1, true);
     });
   });
 

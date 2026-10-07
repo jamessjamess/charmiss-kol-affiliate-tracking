@@ -74,17 +74,28 @@
                          created_by/at, updated_by/at} — a deal with delivered = true gets a Delivered (legacy) shipment, an open deal from Confirm QT on gets a To ship (auto)
                          (rules-samples.js migrateSamples) · deals.delivered / delivery_date stay and follow the shipments from now on (ui.commit → R.syncShipments)
      lookups.sample_settings  lead_days 7 · carriers · tracking_url {carrier: 'https://…{tracking}'}
-     payee_profiles.secure_ship  the shipping details (recipient · phone · address) encrypted like the bank details · shipping_on_file true / false */
+     payee_profiles.secure_ship  the shipping details (recipient · phone · address) encrypted like the bank details · shipping_on_file true / false
+   schema_version 12 (CR-11 R3) — go-live · shipments · fill-once (rules-golive.js migrateV12):
+     lookups.go_live     {date (the day this upgrade ran — Settings › Go-live clean-up can change it), completed_at, completed_by} — what came from the old files
+                         and is closed shows "—" instead of a warning (rules.isImportedClosed) · the data is never cut by this date
+     payment_lines.status  + 'on_hold' (hold_reason · hold_by · hold_at · hold_created when Hold made the line) — To pay › Hold / Release
+     sample_shipments    + purpose ('review' for all of them) · campaign_id (the deal's) · pick_list_id · deal_id may be empty and source 'other' (Shipments › New shipment)
+     pick_lists          new: {pick_list_id PK0001, name, shipment_ids [], created_by, created_at}
+     phases.default_pillar  a label with exactly one pillar word → that pillar (seed: KS Phase 1 Awareness · KS Phase 2 Conversion) · else null — deals untouched
+     campaigns.default_payment_term = null · lookups.metrics_checkpoints = [7] (days after the post)
+     deal_events         type 'payment_hold' (from → to, note = the reason) · 'shipment'
+     the stored data from before is kept once in localStorage (charmiss_kol_tracker_v1_before_v12) — Settings › Data can download it */
 KT.store = (function (R) {
   'use strict';
   const KEY = 'charmiss_kol_tracker_v1';
   const CORRUPT_KEY = KEY + '_corrupt';
+  const BEFORE_KEY = KEY + '_before_v12';   // CR-11 §3: the data as it was before schema 12
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 11;
+  const SCHEMA_VERSION = 12;
   const QUOTA_MB = 5;
-  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments'];
+  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists'];
   /* collections that older versions do not have yet (they are created by migrate) */
-  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11 };
+  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12 };
   /* client-side IDs continue from the highest number in use */
   const ID_FORMATS = {
     kol: { prefix: 'K', coll: 'kol_master', key: 'kol_id', width: 4 },
@@ -96,6 +107,7 @@ KT.store = (function (R) {
     post: { prefix: 'P', coll: 'deal_posts', key: 'post_id', width: 6 },
     user: { prefix: 'U', coll: 'users', key: 'user_id', width: 3 },
     shipment: { prefix: 'SH', coll: 'sample_shipments', key: 'shipment_id', width: 6 },
+    pickList: { prefix: 'PK', coll: 'pick_lists', key: 'pick_list_id', width: 4 },
   };
 
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -110,7 +122,7 @@ KT.store = (function (R) {
       lookups: clone(seed.lookups || {}),
     };
     COLLECTIONS.forEach(k => { if (!ADDED_IN[k]) s[k] = clone(seed[k] || []); });
-    return migrate(s);
+    return migrate(s, now);
   }
   /* error codes (text lives in content.js settings.restoreErr) */
   function shapeErrors(obj) {
@@ -249,8 +261,10 @@ KT.store = (function (R) {
   }
   /* v10 → v11 (see the top of this file) */
   function toV11(obj) { R.migrateSamples(obj); obj.schema_version = 11; }
-  /* upgrade older saved states step by step, once */
-  function migrate(obj) {
+  /* v11 → v12 (see the top of this file) — go_live = the Bangkok date of the upgrade */
+  function toV12(obj, now) { R.migrateV12(obj, R.dateOfTimestamp((now || new Date()).toISOString())); obj.schema_version = 12; }
+  /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
+  function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
     if (obj.schema_version === 2) toV3(obj);
     if (obj.schema_version === 3) toV4(obj);
@@ -261,6 +275,7 @@ KT.store = (function (R) {
     if (obj.schema_version === 8) toV9(obj);
     if (obj.schema_version === 9) toV10(obj);
     if (obj.schema_version === 10) toV11(obj);
+    if (obj.schema_version === 11) toV12(obj, now);
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }
@@ -305,7 +320,9 @@ KT.store = (function (R) {
         const errs = shapeErrors(obj);
         if (errs.length) throw new Error(errs[0]);
         const was = obj.schema_version;
-        state = migrate(obj); status.source = 'local';
+        /* CR-11 §3 — before the go-live upgrade, a copy of what was stored stays aside (once; no room = no copy, the upgrade still runs) */
+        if (was < 12) { try { if (!storage.getItem(BEFORE_KEY)) storage.setItem(BEFORE_KEY, raw); status.beforeCopy = BEFORE_KEY; } catch (_) { status.beforeCopy = null; } }
+        state = migrate(obj, now()); status.source = 'local';
         /* save the upgraded data right away so the next open does not migrate again */
         if (was < SCHEMA_VERSION) { status.migratedFrom = was; save(); }
       } catch (e) {
@@ -334,7 +351,7 @@ KT.store = (function (R) {
       const p = previewRestore(text);
       if (!p.ok) return p;
       const was = p.obj.schema_version, me = state && state.meta && state.meta.current_user_id;
-      state = migrate(p.obj);
+      state = migrate(p.obj, now());
       const scrubbed = R.scrubSensitive(state);   // CR-08 §4.4
       /* the person in this browser stays the same when the backup has that user (active) */
       if (me && (state.users || []).some(u => u.user_id === me && u.active !== false)) state.meta.current_user_id = me;
@@ -352,10 +369,12 @@ KT.store = (function (R) {
       save();
     }
     function newId(kind) { const f = ID_FORMATS[kind]; return nextId(f.prefix, state[f.coll], f.key, f.width); }
+    /* the copy kept before the schema 12 upgrade (text) · null when there is none */
+    function beforeCopy() { try { return storage ? storage.getItem(BEFORE_KEY) : null; } catch (e) { return null; } }
 
     return {
       get state() { return state; },
-      status, save, backup, previewRestore, restore, reset, newId,
+      status, save, backup, previewRestore, restore, reset, newId, beforeCopy,
       newLogId: () => nextNumber(state.deal_status_log, 'log_id'),
       newEventId: () => nextNumber(state.deal_events, 'event_id'),
       newCampaignEventId: () => nextNumber(state.campaign_events, 'event_id'),
@@ -364,6 +383,6 @@ KT.store = (function (R) {
     };
   }
 
-  return { KEY, CORRUPT_KEY, THEME_KEY, SCHEMA_VERSION, QUOTA_MB, COLLECTIONS, ADDED_IN, ID_FORMATS, PILLAR_TARGET_DEFAULT, CTA_DEFAULT, ADMIN_USER,
+  return { KEY, CORRUPT_KEY, BEFORE_KEY, THEME_KEY, SCHEMA_VERSION, QUOTA_MB, COLLECTIONS, ADDED_IN, ID_FORMATS, PILLAR_TARGET_DEFAULT, CTA_DEFAULT, ADMIN_USER,
     fromSeed, shapeErrors, migrate, counts, nextId, nextNumber, backupFilename, daysSinceBackup, createStore };
 })(KT.rules);

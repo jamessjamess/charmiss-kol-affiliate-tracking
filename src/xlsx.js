@@ -1,6 +1,8 @@
 /* xlsx.js — CR-08 §4.7: a small .xlsx writer of our own (no library, nothing from a CDN): SpreadsheetML parts in a zip that only
    stores (no compression). Cells: text (inline strings), numbers (2 decimals shown with #,##0.00), TRUE / FALSE and =SUM() formulas.
-   KT.xlsx.workbook([{ name, rows: [[cell…]…], widths: [chars…] }]) → Uint8Array · cell = value | { v, t: 'n' | 's' | 'b' | 'f', bold, money } */
+   KT.xlsx.workbook([{ name, rows: [[cell…]…], widths: [chars…] }]) → Uint8Array · cell = value | { v, t: 'n' | 's' | 'b' | 'f', bold, money }
+   CR-11 §4.7 — and a reader, for Match with PR file: KT.xlsx.read(bytes) → Promise<{ sheets: [{ name, rows: [[text | number]…] }] }> (stored or deflated
+   parts — DecompressionStream, nothing from a CDN) · KT.xlsx.readCsv(text) → the same shape. All in memory: the caller keeps only the columns it maps. */
 KT.xlsx = (function () {
   'use strict';
   const te = new TextEncoder();
@@ -77,5 +79,94 @@ KT.xlsx = (function () {
     return zip(files);
   }
   const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  return { crc32, zip, colName, ref, sheetName, workbook, MIME };
+  /* ===================== reading (CR-11 §4.7) ===================== */
+  const td = new TextDecoder('utf-8');
+  /* the parts of a zip from its central directory → Map name → { method, data (as stored), size } */
+  function unzip(bytes) {
+    const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let e = -1;
+    for (let i = b.length - 22; i >= Math.max(0, b.length - 22 - 65535); i--) if (dv.getUint32(i, true) === 0x06054B50) { e = i; break; }
+    if (e < 0) throw new Error('not a zip');
+    const count = dv.getUint16(e + 10, true), out = new Map();
+    let p = dv.getUint32(e + 16, true);
+    for (let k = 0; k < count; k++) {
+      if (dv.getUint32(p, true) !== 0x02014B50) throw new Error('bad zip');
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), size = dv.getUint32(p + 24, true);
+      const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+      const name = td.decode(b.subarray(p + 46, p + 46 + nl));
+      const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+      out.set(name, { method, data: b.subarray(start, start + csize), size });
+      p += 46 + nl + xl + cl;
+    }
+    return out;
+  }
+  async function inflateRaw(data) {
+    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  async function partText(parts, name) {
+    const f = parts.get(name); if (!f) return null;
+    return td.decode(f.method === 0 ? f.data : f.method === 8 ? await inflateRaw(f.data) : new Uint8Array(0));
+  }
+  const unxml = t => String(t).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(Number(d))).replace(/&amp;/g, '&');
+  const attr = (tag, name) => { const m = tag.match(new RegExp('(?:^|\\s)' + name + '="([^"]*)"')); return m ? unxml(m[1]) : null; };
+  /* the text of an <si> / <is>: every <t> run (not the phonetic <rPh>) */
+  const runs = x => unxml(x.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').replace(/<t\b[^>]*\/>/g, '').match(/<t\b[^>]*>[\s\S]*?<\/t>/g)?.map(t => t.replace(/^<t\b[^>]*>|<\/t>$/g, '')).join('') || '');
+  const colIndex = r => { const m = /^([A-Z]+)/.exec(r || ''); if (!m) return -1; let n = 0; for (const ch of m[1]) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  function sheetRows(xml, shared) {
+    const rows = [];
+    (xml.match(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g) || []).forEach((rowXml, ri) => {
+      const rn = Number(attr(rowXml.match(/^<row\b[^>]*>/)[0], 'r')) || ri + 1, row = [];
+      (rowXml.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || []).forEach((c, ci) => {
+        const open = c.match(/^<c\b[^>]*?\/?>/)[0], t = attr(open, 't'), r = attr(open, 'r'), i = r ? colIndex(r) : ci;
+        const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [])[1];
+        let val = null;
+        if (t === 's') val = v == null ? null : shared[Number(v)] == null ? null : shared[Number(v)];
+        else if (t === 'inlineStr') val = runs((c.match(/<is>[\s\S]*?<\/is>/) || [''])[0]);
+        else if (t === 'str' || t === 'e') val = v == null ? null : unxml(v);
+        else if (t === 'b') val = v == null ? null : v === '1' ? 'TRUE' : 'FALSE';
+        else val = v == null || v === '' ? null : isNaN(v) ? unxml(v) : Number(v);
+        if (i >= 0) row[i] = val;
+      });
+      for (let k = 0; k < row.length; k++) if (row[k] === undefined) row[k] = null;
+      rows[rn - 1] = row;
+    });
+    for (let k = 0; k < rows.length; k++) if (!rows[k]) rows[k] = [];
+    return rows;
+  }
+  /* bytes of a .xlsx → { sheets: [{ name, rows }] } in the order of the workbook */
+  async function read(bytes) {
+    const parts = unzip(bytes), wb = await partText(parts, 'xl/workbook.xml');
+    if (wb == null) throw new Error('not a workbook');
+    const rels = (await partText(parts, 'xl/_rels/workbook.xml.rels')) || '', target = new Map();
+    (rels.match(/<Relationship\b[^>]*>/g) || []).forEach(t => target.set(attr(t, 'Id'), attr(t, 'Target')));
+    const ssXml = await partText(parts, 'xl/sharedStrings.xml'), shared = ssXml ? (ssXml.match(/<si\b[^>]*>[\s\S]*?<\/si>|<si\s*\/>/g) || []).map(runs) : [];
+    const sheets = [];
+    for (const [k, t] of (wb.match(/<sheet\b[^>]*>/g) || []).entries()) {
+      const id = attr(t, 'r:id'), tg = target.get(id) || `worksheets/sheet${k + 1}.xml`;
+      const path = tg.startsWith('/') ? tg.slice(1) : 'xl/' + tg.replace(/^\.\//, '');
+      const xml = await partText(parts, path); if (xml == null) continue;
+      sheets.push({ name: attr(t, 'name') || `Sheet${k + 1}`, rows: sheetRows(xml, shared) });
+    }
+    return { sheets };
+  }
+  /* a .csv (comma, or Tab / semicolon when the first line has more of them) → one sheet · quotes "…" with "" inside */
+  function readCsv(text, name) {
+    const t = String(text || '').replace(/^\uFEFF/, ''), first = t.split(/\r?\n/)[0] || '';
+    const sep = [',', '\t', ';'].map(c => [c, first.split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (q) { if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; continue; }
+      if (ch === '"' && cell === '') q = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return { sheets: [{ name: name || 'CSV', rows: rows.map(r => r.map(c => (c.trim() === '' ? null : c))) }] };
+  }
+
+  return { crc32, zip, colName, ref, sheetName, workbook, MIME, unzip, read, readCsv };
 })();

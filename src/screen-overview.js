@@ -95,7 +95,7 @@ KT.screens.overview = (function () {
   /* CR-09 §4.1 Row 1 — 5 KPI cards, no buttons (ⓘ only) */
   function kpiCards(k) {
     const c = k.campaigns, d = k.deals, m = k.money, p = k.paid, PS = C.phaseStatus;
-    const card = (label, tip, v, body) => `<div class="kpi"><div class="l">${esc(label)} ${info(tip, label)}</div><div class="v">${v}</div>${body}</div>`;
+    const card = (label, tip, v, body) => `<div class="kpi"><div class="l">${U.labelInfo(label, tip, label)}</div><div class="v">${v}</div>${body}</div>`;
     const seg = (n, cls, label) => (n ? `<span class="${cls}" style="flex:${n}" title="${esc(`${label} ${n}`)}"></span>` : '');
     const stLine = ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].filter(st => c.by[st]).map(st => `${PS[st]} ${c.by[st]}`).join(' · ');
     const campaigns = card(O.kCampaigns, O.kCampaignsTip, R.fmtNum(c.n), `<div class="sub">${esc(stLine)}</div>` +
@@ -147,7 +147,8 @@ KT.screens.overview = (function () {
     if (!m.rows.length) { $('ov_port').innerHTML = `<div class="hint">${esc(O.noCampaignInRange)}</div>`; return; }
     const th = c => { const on = so.key === c.k, ar = on ? (so.dir === 'desc' ? '▼' : '▲') : '';
       const btn = `<button type="button" class="thsort" data-psort="${c.k}" title="${esc(O.sortBy(c.l))}">${esc(c.l)}${ar ? `<span class="ar">${ar}</span>` : ''}</button>`;
-      return `<th class="${c.num ? 'num' : ''}${c.cls ? ' ' + c.cls : ''}"${on ? ` aria-sort="${so.dir === 'desc' ? 'descending' : 'ascending'}"` : ''}>${c.tip && c.num ? info(c.tip) + ' ' : ''}${btn}${c.tip && !c.num ? ' ' + info(c.tip) : ''}</th>`; };
+      const fx = c.tip && U.isFormulaInfo(c.tip);   // CR-11 §4.13 #2: ⓘ for a formula · else the header's tooltip
+      return `<th class="${c.num ? 'num' : ''}${c.cls ? ' ' + c.cls : ''}"${on ? ` aria-sort="${so.dir === 'desc' ? 'descending' : 'ascending'}"` : ''}${c.tip && !fx ? ` title="${esc(U.tipText(c.tip))}"` : ''}>${fx && c.num ? info(c.tip) + ' ' : ''}${btn}${fx && !c.num ? ' ' + info(c.tip) : ''}</th>`; };
     const t = m.total;
     $('ov_port').innerHTML = `<div class="tablewrap"><table class="tbl port"><thead><tr>${PCOLS().map(th).join('')}</tr></thead><tbody>` +
       m.rows.map(r => `<tr class="click" tabindex="0" data-gocamp="${esc(r.campaign.campaign_id)}"><td class="nm"><b>${esc(r.campaign.campaign_name)}</b></td><td>${phaseChip(r.status)}</td><td class="nowrap">${esc(r.from ? `${dm(r.from)} – ${dm(r.to)}` : '')}</td>` +
@@ -159,7 +160,7 @@ KT.screens.overview = (function () {
   /* KOL tier mix (Row 2, right) — donut of committed deals by tier · Spend / Deals · total in the middle · legend table beside it */
   const TIER_VAR = { Mega: 'mega', Macro: 'macro', 'Mid-tier': 'mid', Micro: 'micro', Nano: 'nano' };
   const tierColor = t => (TIER_VAR[t] ? css(`--tier-${TIER_VAR[t]}`) : css('--series-grey'));
-  const tierCard = () => `<div class="card tmix"><div class="card-head"><h3>${esc(O.tierTitle)} ${info(O.tierTip, O.tierTitle)}</h3><div class="btns ov-ctl">
+  const tierCard = () => `<div class="card tmix"><div class="card-head"><h3>${U.labelInfo(O.tierTitle, O.tierTip, O.tierTitle)}</h3><div class="btns ov-ctl">
       <button type="button" class="icon-btn" data-tact="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu('tiermix')}
       <button type="button" class="icon-btn" data-tact="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>
     <div class="tm-ctl"><div class="seg" data-tmix="measure"><button type="button" data-v="spend">${esc(O.mSpend)}</button><button type="button" data-v="deals">${esc(O.mDeals)}</button></div></div><div id="ov_tmix" class="tm-body"></div></div>`;
@@ -244,7 +245,8 @@ KT.screens.overview = (function () {
     tip.classList.remove('show');
     const LANE = 56 + (md.laneExtra || 0), LABEL = Math.min(170, Math.max(110, (box.clientWidth || 800) * 0.18)), W = Math.max(320, box.clientWidth || 800), m = { l: LABEL, r: 12, t: 8, b: 26 };
     /* a campaign name wraps onto more lines (never cut with …) and its lane grows to fit */
-    const names = md.lanes.map(l => wrapText(l.campaign.campaign_name, LABEL - 14)), LH = names.map(t => Math.max(LANE, 14 * t.length + 34));
+    /* CR-11 §4.13 #10 — a name longer than 2 lines: the Campaign code (CH · KS …), the full name on hover */
+    const names = md.lanes.map(l => { const t = wrapText(l.campaign.campaign_name, LABEL - 14); return t.length > 2 ? [l.campaign.campaign_id] : t; }), LH = names.map(t => Math.max(LANE, 14 * t.length + 34));
     const tops = LH.map((x, i) => m.t + LH.slice(0, i).reduce((a, y) => a + y, 0));
     const H = m.t + LH.reduce((a, y) => a + y, 0) + m.b, iw = W - m.l - m.r, cGrid = css('--grid'), cAxis = css('--muted'), cAcc = css('--accent');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
@@ -255,7 +257,7 @@ KT.screens.overview = (function () {
     md.lanes.forEach((l, i) => {
       const top = tops[i], nl = names[i], ny = top + (nl.length > 1 ? 16 : 22);
       g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y0(i)}" y2="${y0(i)}" stroke="${cGrid}"/>` +
-        `<text x="8" y="${ny}" class="axis lane-n${l.posted + l.planned ? '' : ' empty'}">${nl.map((t, k) => `<tspan x="8" dy="${k ? 14 : 0}">${esc(t)}</tspan>`).join('')}</text><text x="8" y="${ny + 14 * (nl.length - 1) + 16}" class="axis">${esc(O.laneCount(fmtV(l.posted + l.planned, md.measure), md.measure))}</text>`;
+        `<text x="8" y="${ny}" class="axis lane-n${l.posted + l.planned ? '' : ' empty'}"><title>${esc(l.campaign.campaign_name)}</title>${nl.map((t, k) => `<tspan x="8" dy="${k ? 14 : 0}">${esc(t)}</tspan>`).join('')}</text><text x="8" y="${ny + 14 * (nl.length - 1) + 16}" class="axis">${esc(O.laneCount(fmtV(l.posted + l.planned, md.measure), md.measure))}</text>`;
       l.bins.forEach((b, j) => {
         const x = m.l + band * j + band / 2 - bw / 2;
         if (b.posted) marks += `<rect x="${x}" y="${y0(i) - h(b.posted)}" width="${bw}" height="${h(b.posted)}" fill="${l.color}"/>`;
@@ -355,7 +357,7 @@ KT.screens.overview = (function () {
   function renderCards(s, scope) {
     const c = R.summaryCards(s, scope, td()), D1 = c.deals, B = c.budget, P = c.posts, E = c.engagement;
     const seg = (n, cls, label) => (n ? `<span class="${cls}" style="flex:${n}" title="${esc(`${label} ${n}`)}"></span>` : '');
-    const deals = `<div class="kpi scard"><div class="l">${esc(O.deals)} ${info(O.dealsTip, O.deals)}</div><div class="v">${R.fmtNum(D1.active)}</div>` +
+    const deals = `<div class="kpi scard"><div class="l">${U.labelInfo(O.deals, O.dealsTip, O.deals)}</div><div class="v">${R.fmtNum(D1.active)}</div>` +
       `<div class="sub">${esc(O.completedLine(R.fmtNum(D1.complete), Math.round(D1.completedPct)))}</div>` +
       `<div class="sbar">${seg(D1.list, 'list', C.status.List)}${seg(D1.inprocess, 'progress', C.status.Inprocess)}${seg(D1.complete, 'done', C.status.Complete)}</div>` +
       `<div class="slegend"><span><i class="list"></i>${esc(C.status.List)} ${D1.list}</span><span><i class="progress"></i>${esc(C.status.Inprocess)} ${D1.inprocess}</span><span><i class="done"></i>${esc(C.status.Complete)} ${D1.complete}</span></div>` +
@@ -366,11 +368,11 @@ KT.screens.overview = (function () {
       (m.usedPct != null ? `<div class="bar2" title="${esc(O.paidOfCommitted)}"><span class="c${m.remaining < 0 ? ' over' : ''}" style="width:${Math.min(100, m.usedPct)}%"></span><span class="p" style="width:${paidPct}%"></span></div>` +
         `<div class="sub">${m.remaining < 0 ? `<b class="late">${esc(O.usedOver(Math.round(m.usedPct), R.baht(-m.remaining)))}</b>` : esc(O.usedLine(Math.round(m.usedPct), R.baht(m.remaining)))}</div>` : '') +
       `<div class="sub muted">${esc(O.pendingLine(R.baht(m.pending)))} ${info(MN.pending)} · ${esc(O.paidLine(R.baht(m.paid)))}</div></div>`;
-    const posts = `<div class="kpi scard"><div class="l">${esc(O.posts)} ${info(O.postsCardTip, O.posts)}</div><div class="v">${R.fmtNum(P.posted)} <small>${esc(O.ofPlanned(R.fmtNum(P.planned)))}</small></div>` +
+    const posts = `<div class="kpi scard"><div class="l">${U.labelInfo(O.posts, O.postsCardTip, O.posts)}</div><div class="v">${R.fmtNum(P.posted)} <small>${esc(O.ofPlanned(R.fmtNum(P.planned)))}</small></div>` +
       `<div class="pfrow">${P.byPlatform.map(x => `<span class="${x.posted ? '' : 'muted'}" title="${esc(O.platformTip(x.platform, x.posted, x.planned))}">${pfIcon(x.platform, x.posted ? 'posted' : 'planned', O.platformTip(x.platform, x.posted, x.planned))} ${esc(x.platform)} ${x.posted}</span>`).join('')}</div>` +
       productsLine(s, scope) + `</div>`;
     const kv2 = (l, v) => `<span class="k">${esc(l)}</span><b>${esc(v)}</b>`;
-    const eng = `<div class="kpi scard"><div class="l">${esc(O.engagement)} ${info(O.engagementTip, O.engagement)}</div>` + (E ? `<div class="egrid">` +
+    const eng = `<div class="kpi scard"><div class="l">${U.labelInfo(O.engagement, O.engagementTip, O.engagement)}</div>` + (E ? `<div class="egrid">` +
       kv2(O.views, shortNum(E.views)) + kv2(O.likes, shortNum(E.likes)) + kv2(O.comments, shortNum(E.comments)) + kv2(O.saves, shortNum(E.saves)) +
       kv2(O.shares, shortNum(E.shares)) +
       `</div><div class="sub muted">${esc(O.metricsOn(E.withMetrics, E.posted))}${E.noDate ? ` · ${esc(O.metricsNoDate(E.noDate))}` : ''}</div>` : `<div class="v muted small-v">${esc(O.noMetrics)}</div>`) + `</div>`;
@@ -402,7 +404,7 @@ KT.screens.overview = (function () {
     $('ov_chartbox').classList.toggle('hidden', P.view !== 'chart'); $('ov_tablewrap').classList.toggle('hidden', P.view !== 'table');
     const postedAll = m.bins.reduce((a, b) => a + b.posted, 0), plannedAll = m.bins.reduce((a, b) => a + b.planned, 0);
     $('ov_legend').innerHTML = m.series.map(x => { const t = m.totals.get(x.key);
-      return `<span class="lg" title="${esc(O.legendTip(x.label, fmtV(t.posted, m.measure), fmtV(t.planned, m.measure)))}"><i class="${x.grey ? 'tex' : ''}" style="background-color:${x.color}"></i>${esc(x.label)} <b>${esc(fmtV(t.posted + t.planned, m.measure))}</b></span>`; }).join('') +
+      return `<span class="lg" title="${esc(O.legendTip(x.label, fmtV(t.posted, m.measure), fmtV(t.planned, m.measure)))}"><i class="${x.grey ? 'tex' : ''}" style="background-color:${x.color}"></i>${esc(x.kind === 'campaign' && x.label.length > 24 ? x.key : x.label)} <b>${esc(fmtV(t.posted + t.planned, m.measure))}</b></span>`; }).join('') +   // CR-11 §4.13 #10: a long Campaign name → its code (the name on hover)
       `<span class="lg"><i class="planned"></i>${esc(O.planned)}</span><span class="lg muted">${esc(O.postedPlanned(fmtV(postedAll, m.measure), fmtV(plannedAll, m.measure)))}</span>`;
     renderActivityChart($('ov_svg'), $('ov_chartbox'), $('ov_tip'), m, 250);
     if (P.view === 'table') $('ov_tablewrap').innerHTML = tableOf(KT.export.rowsFor('activity_camp', campX()));
@@ -521,8 +523,12 @@ KT.screens.overview = (function () {
     $('ov_alloc').innerHTML = `<div class="slegend alegend">${keys.map(k => `<span><i class="${k === R.NOT_SET ? 'tex' : ''}" style="background-color:${col(k)}"></i>${esc(lab(k))}</span>`).join('')}</div>` +
       line(esc(O.target), bar(a.target.pct)) +
       line(`<b>${esc(O.actualOf(camp.campaign_name || ''))}</b>`, bar(a.actual.pct, a.actual.money) + gap) +
-      a.phases.map(p => line(esc(R.phaseName(s, p.phase.phase_id)), p.total ? bar(p.pct, p.money) : `<span class="muted small">${esc(O.noCommitted)}</span>`, p.phase.phase_id === ov.camp.phase ? 'sel' : '')).join('');
+      a.phases.map(p => line(esc(R.phaseName(s, p.phase.phase_id)), p.total ? bar(p.pct, p.money) : `<span class="muted small">${esc(O.noCommitted)}</span>`, p.phase.phase_id === ov.camp.phase ? 'sel' : '')).join('') +
+      /* CR-11 §4.11 — most of the spend has no pillar: say so, with the way to fix it once (a default pillar per Phase) */
+      (R.mostSpendNoPillar(a.actual) ? `<div class="alloc-note check warn">! <span>${esc(C.fill.mostNoPillar)} ·</span>` +
+        (U.can('campaign.edit') ? `<button type="button" class="link" data-allocplan="${esc(ov.camp.campaign)}">${esc(C.fill.setDefaults)}</button>` : `<span>${esc(C.fill.setDefaults)}</span>`) + `</div>` : '');
   }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-allocplan]'); if (b && KT.planner) KT.planner.open({ campaignId: b.dataset.allocplan, opener: b }); });
   /* CR-07 §4.2 — Workload by PIC of this Campaign (and Phase): most open deals first · Total · your row lit · a row opens Operations on that PIC */
   function renderCampaignWorkload(s, scope) {
     const rows = R.workloadByPic(s, scope, td()), sum = k => rows.reduce((a, r) => a + r[k], 0), mine = R.picName(U.me());
@@ -557,33 +563,56 @@ KT.screens.overview = (function () {
       `<label class="tlab">${esc(O.tierLabel)} <select id="ov_otier">${optionsHTML(R.tierOrder(s.lookups.tier_rules), f.tier, O.allTiers)}</select></label>` +
       `<span class="spacer"></span><button type="button" class="btn small ov-export" data-export="ops" title="${esc(O.exportTip)}">${ICON.download}<span>${esc(O.exportTab)}</span></button>`;
     U.enhanceCombos($('ov_tools'));
-    const ctx = R.dealContext(s), Q = R.opsQueues(s, f, td(), ctx);
-    const keys = R.QUEUES.filter(k => Q[k].length);
-    if (!ov.ops.queue || !keys.includes(ov.ops.queue)) ov.ops.queue = keys[0] || null;
-    /* CR-08 §4.8 — payments of this PIC: documents missing · ready to pay (open Payments › To pay with that filter) */
-    const pq = R.payQueue(s, td()).items.filter(x => (!f.pic || (f.pic === '__none' ? !x.pic : x.pic === f.pic)) && (!f.campaign || x.campaign_id === f.campaign));
-    const payCards = [['missing', 'missing_docs', O.payDocsMissing], ['ready', 'ready', O.payReady]].map(([q, st, label]) => [q, pq.filter(x => x.status === st).length, label]).filter(c => c[1])
-      .map(([q, n, label]) => `<button type="button" class="qcard pay" data-gopay="${q}"><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(label)} →</span></button>`).join('');
-    const cards = keys.map(k => `<button type="button" class="qcard${k === ov.ops.queue ? ' on' : ''}" data-queue="${k}" aria-pressed="${k === ov.ops.queue}"><span class="n">${R.fmtNum(Q[k].length)}</span><span class="t">${esc(O.queues[k])}</span></button>`).join('');
-    /* CR-10 §4.14 — samples of this PIC to ship (Overdue + Ship this week) */
-    const toShip = R.samplesToShip(s, f, td()), smCard = toShip.length ? `<button type="button" class="qcard pay" data-gosamples="${esc(toShip[0].deal.campaign_id)}"><span class="n">${R.fmtNum(toShip.length)}</span><span class="t">${esc(C.samples.toShipCard)} →</span></button>` : '';
-    $('ov_body').innerHTML = `<div class="qcards">${cards || `<div class="allclear">✓ ${esc(O.allClear)}</div>`}${payCards}${smCard}</div>` +
-      (ov.ops.queue ? `<div class="card" style="margin:16px 0"><div class="card-head"><h3>${esc(O.queues[ov.ops.queue])} <span class="muted">${R.fmtNum(Q[ov.ops.queue].length)}</span></h3>` +
-        `<div class="btns ov-ctl">${dlMenu('queue')}</div><div class="btns hidden" id="ov_qbulk"><b id="ov_qselN"></b>${can('deal.edit') ? `<button type="button" class="btn small" data-qbulk="pic">${esc(C.deal.reassign)}</button><button type="button" class="btn small" data-qbulk="pillar">${esc(C.deal.setPillar)}</button>` : ''}<button type="button" class="btn small ghost" data-qclear>${esc(C.deal.clear)}</button></div></div><div id="ov_qtable"></div></div>` : '') +
+    /* CR-11 §4.8 — Row 1 To do (work with a date) · Row 2 Data health (folds, remembered per person) · a card or an item opens its table below */
+    const ctx = R.dealContext(s), Q = R.opsQueues(s, f, td(), ctx), H = R.dataHealth(s, f, td());
+    const toShip = R.shipmentsToShip(s, f, td()), docs = R.docsToCollect(s, f, td()), mDue = R.metricsDue ? R.metricsDue(s, f, td()) : null;
+    const hItem = k => H.items.find(x => x.key === k);
+    if (ov.ops.queue && ov.ops.queue.startsWith('h:') && !hItem(ov.ops.queue.slice(2))) ov.ops.queue = null;
+    if (ov.ops.queue === 'overdue' && !Q.overdue.length) ov.ops.queue = null;
+    if (ov.ops.queue === null && Q.overdue.length) ov.ops.queue = 'overdue';
+    const card = (attrs, n, label, on, go) => `<button type="button" class="qcard${on ? ' on' : ''}${go ? ' pay' : ''}" ${attrs}${on ? ' aria-pressed="true"' : ''}><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(label)}${go ? ' →' : ''}</span></button>`;
+    const todo = card('data-queue="overdue"', Q.overdue.length, O.queues.overdue, ov.ops.queue === 'overdue') +
+      card('data-gosamples', toShip.length, O.toShip, false, true) +
+      card('data-gopay="missing"', docs.length, O.docsToCollect, false, true) + (mDue ? card('data-gometrics', mDue.length, O.metricsDue, false, true) : '');
+    const open = pref.get('opshealth_' + (U.userId() || ''), '0') === '1' || (ov.ops.queue || '').startsWith('h:');
+    const health = `<details class="card ops-health${H.total ? '' : ' good'}" id="ov_health"${open && H.total ? ' open' : ''}><summary><span class="chev${open ? ' open' : ''}">${ICON.chevron}</span>` +
+      `<b>${esc(H.total ? O.healthN(H.total) : O.allGood)}</b>${H.total ? '' : ' <span class="ok">✓</span>'}</summary>` +
+      (H.total ? `<div class="qcards hl-items">${H.items.map(x => card(`data-queue="h:${x.key}"`, x.n, O.healthItems[x.key], ov.ops.queue === 'h:' + x.key)).join('')}</div><div class="hint">${esc(O.healthHint)}</div>` : '') + `</details>`;
+    const qk = ov.ops.queue, hk = qk && qk.startsWith('h:') ? qk.slice(2) : null, it = hk ? hItem(hk) : null;
+    const qTitle = hk ? O.healthItems[hk] : qk ? O.queues[qk] : '', qN = hk ? it.n : qk ? Q[qk].length : 0, dealQueue = qk === 'overdue' || (it && it.deals);
+    $('ov_body').innerHTML = `<div class="ops-todo"><div class="ops-h">${esc(O.todo)}</div><div class="qcards">${todo}</div></div>${health}` +
+      (qk ? `<div class="card" style="margin:16px 0"><div class="card-head"><h3>${esc(qTitle)} <span class="muted">${R.fmtNum(qN)}</span></h3>` +
+        `<div class="btns ov-ctl">${qk === 'overdue' ? dlMenu('queue') : ''}</div><div class="btns hidden" id="ov_qbulk"><b id="ov_qselN"></b>${can('deal.edit') && dealQueue ? `<button type="button" class="btn small" data-qbulk="pic">${esc(C.deal.reassign)}</button><button type="button" class="btn small" data-qbulk="pillar">${esc(C.deal.setPillar)}</button><button type="button" class="btn small" data-qbulk="term">${esc(O.setTerm)}</button>` : ''}<button type="button" class="btn small ghost" data-qclear>${esc(C.deal.clear)}</button></div></div><div id="ov_qtable"></div></div>` : '') +
       `<div class="ov-half"><div class="card"><div class="card-head"><h3>${esc(O.pipelineTitle)}</h3></div><div class="hbars" id="ov_pipe"></div><div class="foot-note" id="ov_pipeFoot"></div></div>` +
       `<div class="card"><div class="card-head"><h3>${esc(O.dueTitle)}</h3></div><div id="ov_due"></div></div></div>`;
-    if (ov.ops.queue === 'noProducts') renderCampaignQueue(s, Q.noProducts); else if (ov.ops.queue) renderQueue(s, Q[ov.ops.queue], ctx);
+    if (hk === 'noProducts') renderCampaignQueue(s, it.campaigns);
+    else if (hk === 'noBudget') renderPhaseQueue(s, it.phases);
+    else if (hk) renderQueue(s, it.deals, ctx, healthIssue(s, hk, it, ctx));
+    else if (qk) renderQueue(s, Q[qk], ctx);
     renderOpsPipeline(s, f, ctx); renderDue(s, f, ctx);
   }
-  function renderQueue(s, deals, ctx) {
-    const rows = R.queueRows(s, ov.ops.queue, deals, td(), ctx), shown = rows.slice(0, ov.ops.limit), edit = can('deal.edit'), D2 = KT.screens.deals;
+  /* the issue of a Data health deal */
+  function healthIssue(s, key, it, ctx) {
+    if (key === 'postedNoDate') return d => O.issueNoDatePosts(it.posts.filter(p => p.deal_id === d.deal_id).length);
+    if (key === 'dupLinks') return d => O.issueDup((it.groups.find(g => g.posts.some(p => p.deal_id === d.deal_id)) || {}).link || '');
+    return () => O.healthItems[key];
+  }
+  /* Phases without budget: Campaign · Phase · Period · Plan phases */
+  function renderPhaseQueue(s, phases) {
+    const edit = can('campaign.edit');
+    $('ov_qtable').innerHTML = `<div class="tablewrap" style="max-height:480px"><table class="tbl qtbl"><thead><tr><th>${esc(O.colCampaign)}</th><th>${esc(O.colPhase)}</th><th>${esc(C.campaign.colPeriod)}</th><th>${esc(O.colIssue)}</th><th></th></tr></thead><tbody>` +
+      phases.map(p => `<tr><td><b>${esc(R.campaignName(s, p.campaign_id))}</b></td><td>${esc(R.phaseName(s, p.phase_id))}</td><td>${esc(p.start_date ? `${dm(p.start_date)} – ${dm(p.end_date)}` : '')}</td><td>${esc(O.issueNoBudget)}</td>` +
+        `<td>${edit ? `<button type="button" class="btn small" data-addprod="${esc(p.campaign_id)}">${esc(O.healthFix.noBudget)}</button>` : ''}</td></tr>`).join('') + `</tbody></table></div>`;
+  }
+  function renderQueue(s, deals, ctx, issueOf) {
+    const rows = issueOf ? deals.map(d => ({ deal: d, rank: 0, issue: issueOf(d) })) : R.queueRows(s, ov.ops.queue, deals, td(), ctx), shown = rows.slice(0, ov.ops.limit), edit = can('deal.edit'), D2 = KT.screens.deals;
     [...ov.ops.selected].forEach(id => { if (!deals.some(d => d.deal_id === id)) ov.ops.selected.delete(id); });
     const where = d => { const p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), c = ctx.campaigns.get(d.campaign_id) || {}; return `${c.campaign_name || ''}${p ? ` › ${R.phaseName(s, p.phase_id)}` : ''}`; };
     $('ov_qtable').innerHTML = `<div class="tablewrap" style="max-height:480px"><table class="tbl qtbl"><thead><tr>${edit ? `<th class="cb"><input type="checkbox" id="ov_qall" aria-label="${esc(C.deal.selectAll)}"></th>` : ''}` +
       `<th>${esc(O.colKol)}</th><th>${esc(O.colCampaignPhase)}</th><th>${esc(O.colStage)}</th><th>${esc(O.picLabel)}</th><th>${esc(O.colIssue)}</th><th class="num">${esc(O.colTotal)}</th><th></th></tr></thead><tbody>` +
       shown.map(r => { const d = r.deal, k = ctx.kols.get(d.kol_id) || {};
         return `<tr data-qid="${esc(d.deal_id)}">${edit ? `<td class="cb"><input type="checkbox" data-qsel="${esc(d.deal_id)}"${ov.ops.selected.has(d.deal_id) ? ' checked' : ''} aria-label="${esc(k.display_name || d.deal_id)}"></td>` : ''}` +
-          `<td><b>${esc(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td>${U.stageCell(d, R.logsOf(s, d.deal_id))}</td><td>${D2.picCell(d)}</td>` +
+          `<td class="kn"><b>${U.nameHTML(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td>${U.stageCell(d, R.logsOf(s, d.deal_id))}</td><td>${D2.picCell(d)}</td>` +
           `<td class="iss${ov.ops.queue === 'overdue' ? ' late' : ''}" title="${esc(r.issue)}">${esc(r.issue)}</td><td class="num">${R.baht(R.totalCost(d))}</td><td><button type="button" class="btn small" data-open="${esc(d.deal_id)}">${esc(O.open)}</button></td></tr>`; }).join('') +
       `</tbody></table></div>` + (rows.length > shown.length ? `<div class="loadmore"><button type="button" class="btn" data-qmore>${esc(C.deal.loadMore(rows.length - shown.length))}</button></div>` : '');
     qBulk();
@@ -610,13 +639,13 @@ KT.screens.overview = (function () {
   }
   /* CR-07 §4.3 — Due in next 7 days: date (Today / Tomorrow / dd/mm) · KOL · Campaign › Phase · the step due · Open */
   function renderDue(s, f, ctx) {
-    const t = td(), rows = R.upcomingDues(s, f, t, 7, ctx).concat(R.sampleDues(s, f, t, 7)).sort((a, b) => a.due.localeCompare(b.due) || a.deal.deal_id.localeCompare(b.deal.deal_id));   // + Ship sample (CR-10 §4.14)
+    const t = td(), rows = R.upcomingDues(s, f, t, 7, ctx).concat(R.sampleDues(s, f, t, 7), R.metricsDues(s, f, t, 7)).sort((a, b) => a.due.localeCompare(b.due) || a.deal.deal_id.localeCompare(b.deal.deal_id));   // + Ship sample (CR-10 §4.14) · Collect metrics (CR-11 §4.12)
     const when = d => (d === t ? O.dueToday : d === R.addDays(t, 1) ? O.dueTomorrow : dm(d));
     const where = d => { const p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), c = ctx.campaigns.get(d.campaign_id) || {}; return `${c.campaign_name || ''}${p ? ` › ${R.phaseName(s, p.phase_id)}` : ''}`; };
     const allPics = !f.pic;   // All PICs: who each deal belongs to (CR-09 §4.6)
     $('ov_due').innerHTML = !rows.length ? `<div class="muted">${esc(O.dueNone)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm duet"><thead><tr><th>${esc(O.colDue)}</th><th>${esc(O.colKol)}</th><th>${esc(O.colCampaignPhase)}</th><th>${esc(O.colStep)}</th>${allPics ? `<th>${esc(O.picLabel)}</th>` : ''}<th></th></tr></thead><tbody>` +
       rows.map(r => { const d = r.deal, k = ctx.kols.get(d.kol_id) || {};
-        return `<tr><td class="nowrap${r.due === t ? ' warn' : ''}">${esc(when(r.due))}</td><td><b>${esc(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td class="nowrap">${esc(r.sample ? C.samples.shipSample : R.stepShort(r.step ? r.step.sub_status : ''))}</td>${allPics ? `<td>${esc(d.pic || O.noPic)}</td>` : ''}` +
+        return `<tr><td class="nowrap${r.due === t ? ' warn' : ''}">${esc(when(r.due))}</td><td class="kn"><b>${U.nameHTML(k.display_name || d.kol_id)}</b></td><td class="muted cph">${esc(where(d))}</td><td class="nowrap">${esc(r.metrics ? O.collectMetrics : r.sample ? C.samples.shipSample : R.stepShort(r.step ? r.step.sub_status : ''))}</td>${allPics ? `<td>${esc(d.pic || O.noPic)}</td>` : ''}` +
           `<td><button type="button" class="btn small" data-open="${esc(d.deal_id)}">${esc(O.open)}</button></td></tr>`; }).join('') + `</tbody></table></div>`;
   }
 
@@ -662,14 +691,19 @@ KT.screens.overview = (function () {
     const gd = e.target.closest('[data-godeals]'); if (gd) { go('deals', { filter: { campaign: ov.camp.campaign, phaseSel: gd.dataset.godeals } }); return; }
     /* Operations */
     const ap = e.target.closest('[data-addprod]'); if (ap) { go('campaign', { planCampaign: ap.dataset.addprod }); return; }
-    const gsm = e.target.closest('[data-gosamples]'); if (gsm) { const f = opsFilter(); go('deals', { samples: { campaign: f.campaign || gsm.dataset.gosamples, pic: f.pic || 'all', sstatus: 'toShip' } }); return; }
+    /* CR-11 §4.10 — Shipments › To ship of that PIC (and Campaign) */
+    const gsm = e.target.closest('[data-gosamples]'); if (gsm) { const f = opsFilter(); go('shipments', { tab: 'to-ship', campaign: f.campaign || '', pic: f.pic || 'all', status: '', purpose: '', q: '' }); return; }
     const gpy = e.target.closest('[data-gopay]'); if (gpy) { const f = opsFilter(); go('payments', { tab: 'topay', pic: f.pic, campaign: f.campaign || '', queue: gpy.dataset.gopay }); return; }
-    const q = e.target.closest('[data-queue]'); if (q) { ov.ops.queue = q.dataset.queue; ov.ops.limit = 50; ov.ops.selected.clear(); renderOps(); return; }
+    const q = e.target.closest('[data-queue]'); if (q) { ov.ops.queue = ov.ops.queue === q.dataset.queue && !q.dataset.queue.startsWith('h:') ? ov.ops.queue : q.dataset.queue; ov.ops.limit = 50; ov.ops.selected.clear(); renderOps(); return; }
     if (e.target.id === 'ov_qall') { const on = e.target.checked; document.querySelectorAll('#ov_qtable [data-qsel]').forEach(c => { c.checked = on; on ? ov.ops.selected.add(c.dataset.qsel) : ov.ops.selected.delete(c.dataset.qsel); }); qBulk(); return; }
     const qs = e.target.closest('[data-qsel]'); if (qs) { qs.checked ? ov.ops.selected.add(qs.dataset.qsel) : ov.ops.selected.delete(qs.dataset.qsel); qBulk(); return; }
     if (e.target.closest('[data-qmore]')) { ov.ops.limit += 50; renderOps(); return; }
     if (e.target.closest('[data-qclear]')) { ov.ops.selected.clear(); renderOps(); return; }
-    const qb = e.target.closest('[data-qbulk]'); if (qb) { const ids = [...ov.ops.selected]; ov.ops.selected.clear(); D2.openBulkField(qb.dataset.qbulk, ids); return; }
+    const qb = e.target.closest('[data-qbulk]'); if (qb) { const ids = [...ov.ops.selected]; ov.ops.selected.clear(); if (qb.dataset.qbulk === 'term') D2.openSetDetails(ids, { term: true, after: renderOps }); else D2.openBulkField(qb.dataset.qbulk, ids); return; }
+    const hs = e.target.closest('#ov_health > summary'); if (hs) { setTimeout(() => { const d = $('ov_health'); if (!d) return; pref.set('opshealth_' + (U.userId() || ''), d.open ? '1' : '0'); const c = d.querySelector('summary .chev'); if (c) c.classList.toggle('open', d.open); }, 0); return; }
+    /* Deals shows one Campaign: the chosen one, else the Campaign with the most posts due */
+    const gm = e.target.closest('[data-gometrics]'); if (gm) { const f = opsFilter(), due = R.metricsDue(state(), f, td()), by = new Map(); due.forEach(x => by.set(x.deal.campaign_id, (by.get(x.deal.campaign_id) || 0) + 1));
+      const camp = f.campaign || ([...by.entries()].sort((a, b) => b[1] - a[1])[0] || [''])[0]; go('deals', { perf: { campaign: camp, pic: f.pic || 'all', status: 'due' } }); return; }
     const pc = e.target.closest('[data-pic]'); if (pc) { D2.openPicMenu(pc, 'pic'); return; }
     const op = e.target.closest('[data-open]'); if (op) { go('deals', { deal: op.dataset.open }); return; }
     const sub = e.target.closest('[data-sub]'); if (sub) { const f = opsFilter(); go('deals', { filter: { campaign: f.campaign, phaseSel: 'all', sub: sub.dataset.sub, pic: f.pic || 'all', tiers: f.tier ? [f.tier] : null } }); }

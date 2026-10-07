@@ -660,7 +660,7 @@ tr:hover .picbtn::after,.picbtn:focus-visible::after{opacity:1}
 .pl-text{font-size:13px;margin-top:6px}
 .pl-tl{display:flex;flex-direction:column;gap:6px}
 .pl-row{display:grid;grid-template-columns:140px minmax(0,1fr);gap:8px;align-items:center;font-size:12px}
-.pl-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-name{white-space:normal;overflow-wrap:break-word;line-height:1.25}
 .pl-months{position:relative;height:16px;border-bottom:1px solid var(--grid)}
 .pl-m{position:absolute;top:0;font-size:11px;font-weight:600;color:var(--muted);padding-left:3px;border-left:1px solid var(--grid)}
 .pl-track2{position:relative;height:12px;background:var(--surface-2)}
@@ -1405,3 +1405,208 @@ select.sm-in{width:132px}
 .sm-trkrow{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr);gap:8px;align-items:center}
 .sm-trkrow span{overflow-wrap:anywhere}
 .py-ship{margin-top:8px}
+
+/* ===================== CR-11 §4.2 — the create modal (S 480 · M 720 · L 90vw ≤ 1400 × 85vh · full screen under 768px) ===================== */
+body.cm-open{overflow:hidden}
+dialog.cmodal{padding:0;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);box-shadow:var(--shadow-lg);max-height:85vh;overflow:hidden}
+dialog.cmodal[open]{display:flex;flex-direction:column}
+dialog.cmodal::backdrop{background:rgba(0,0,0,.4)}
+dialog.cmodal.cm-l{width:90vw;max-width:1400px;height:85vh}
+dialog.cmodal.cm-m{width:min(720px,calc(100vw - 32px))}
+dialog.cmodal.cm-s{width:min(480px,calc(100vw - 32px))}
+.cm-root{display:flex;flex-direction:column;flex:1;min-height:0;max-height:85vh}
+dialog.cmodal.cm-l .cm-root{height:100%}
+.cm-h{flex:none;display:flex;align-items:center;gap:12px;padding:12px 16px 0 24px;border-bottom:1px solid var(--border);min-height:52px}
+.cm-h .cm-title{margin:0 0 12px;font-size:18px;font-weight:700;flex:1;min-width:0;overflow-wrap:anywhere}
+.cm-h .cm-tabs{flex:1;min-width:0;margin:0;border:0;align-self:flex-end}
+.cm-h .cm-x{margin:0 0 10px auto;flex:none}
+.cm-sub{flex:none;padding:8px 24px 0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.cm-b{flex:1;min-height:0;overflow:auto;padding:24px}
+.cm-b.flush{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.cm-f{flex:none;display:flex;align-items:center;gap:12px;padding:12px 24px;border-top:1px solid var(--border);background:var(--surface)}
+.cm-fl{flex:1;min-width:0}
+.cm-fl .checks{margin:0;max-height:96px;overflow:auto}
+.cm-f .btns{flex:none;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:767px){
+  dialog.cmodal,dialog.cmodal.cm-l,dialog.cmodal.cm-m,dialog.cmodal.cm-s{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;border:0}
+  .cm-root{max-height:100dvh;height:100%}
+  .cm-b{padding:16px}
+  .cm-f{flex-wrap:wrap;padding:10px 16px}
+  .cm-fl{flex-basis:100%}
+  .cm-f .btns{width:100%}
+  .cm-f .btns .btn{flex:1}
+}
+/* CR-11 §4.4 — New deal › Single KOL: Deal on the left · KOL & cost on the right */
+.nd-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px;align-items:start}
+.nd-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+@media (max-width:1000px){.nd-grid{grid-template-columns:minmax(0,1fr)}}
+.nd-kol{border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--surface-2);display:flex;flex-direction:column;gap:6px}
+.nd-kol.empty{color:var(--muted);font-size:13px}
+.nd-kh{display:flex;align-items:center;gap:6px;font-size:16px;flex-wrap:wrap}
+.nd-kh b{overflow-wrap:anywhere}
+.nd-ka{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin-bottom:4px}
+.nd-acc{display:inline-flex;align-items:center;gap:4px;overflow-wrap:anywhere}
+.nd-kol .kv{font-size:13px}
+.nd-back{margin:0 0 12px}
+.nd-prodlink{margin-top:6px}
+.cm-b .bk{flex:1;min-height:0;display:flex;flex-direction:column}
+.cm-h .cm-tabs{margin-bottom:-1px}
+.nd-ph{margin:0 0 4px;font-size:16px}
+.nd-psub{margin:0 0 14px}
+#dl_body .flash:not(tr){box-shadow:0 0 0 2px var(--accent);transition:box-shadow .3s}
+/* CR-11 §4.5 — the Phase Planner in the create modal: Campaign 40% · Phases 60% · one column when the modal is under 1100px */
+.cm-b{container-type:inline-size}
+.pl-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:20px;align-items:start}   /* CR-11 §4.11: the Phases side needs the Default pillar column */
+.pl-l,.pl-r{display:flex;flex-direction:column;gap:16px;min-width:0}
+@container (max-width:1180px){.pl-grid{grid-template-columns:minmax(0,1fr)}}
+/* CR-11 §4.4 — New deal opened from KOL Master: the KOL locked (Change frees it) */
+.kollock{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;padding:4px 6px 4px 12px;border:1px dashed var(--border-strong);border-radius:8px;background:var(--surface-2)}
+.kollock .kl-n{min-width:0;overflow-wrap:anywhere}
+.cm-b .pl-tbl input[data-k="label"]{min-width:92px;width:100%}
+.cm-b .pl-tbl td.pl-per{min-width:214px;width:220px}
+.cm-b .pl-tbl input[type=number]{width:78px}
+/* CR-11 §4.9 — To pay: On hold · the header sums are filters */
+.st.holdc{background:var(--warn-soft,#fff4e5);color:var(--warn)}
+.pm-held td{background:color-mix(in srgb,var(--surface-2) 70%,transparent)}
+.pm-holdr{display:block;font-size:12px;color:var(--muted);overflow-wrap:anywhere;max-width:260px}
+.pm-sumb{border:0;background:none;font:inherit;color:var(--muted);padding:2px 4px;border-radius:6px;cursor:pointer}
+.pm-sumb b{color:var(--text);font-variant-numeric:tabular-nums}
+.pm-sumb:hover,.pm-sumb.on{background:var(--surface-2)}
+.pm-sumb.on{box-shadow:inset 0 -2px 0 var(--accent)}
+/* CR-11 §4.8 — Operations: To do · Data health (folds) */
+.ops-todo{margin-bottom:12px}
+.ops-h{font-weight:600;font-size:13px;color:var(--text-2);margin:0 0 8px}
+.ops-health{padding:0}
+.ops-health > summary{list-style:none;display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer}
+.ops-health > summary::-webkit-details-marker{display:none}
+.ops-health > summary .chev{display:inline-flex;transition:transform .15s}
+.ops-health > summary .chev.open{transform:rotate(90deg)}
+.ops-health.good > summary{cursor:default;color:var(--ok)}
+.ops-health .hl-items{padding:0 16px 8px}
+.ops-health > .hint{padding:0 16px 12px}
+
+/* ===== CR-11 §4.6 / §4.12 — Imported "—" · metrics checkpoints ===== */
+.rel.rel-none.faint{box-shadow:none;background:none;color:var(--muted);opacity:.75;font-weight:400}
+.chip.pf-due{background:var(--warn-soft);color:var(--warn);border-color:transparent;font-weight:600}
+.pf-nt{margin:-4px 0 12px}
+.sm-legacy td{color:var(--muted)}
+/* ===== CR-11 §4.7 — Go-live clean-up ===== */
+.gl-banner{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 14px;margin:0 0 12px;border-radius:10px;background:var(--warn-soft);color:var(--text);border:1px solid transparent}
+.gl-banner > span:first-child{flex:1 1 280px;min-width:0}
+.gl-step{display:flex;flex-direction:column;gap:8px;min-width:0}
+.gl-tools{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start;margin:4px 0 8px}
+.gl-pr,.gl-def{border:1px solid var(--border);border-radius:10px;padding:12px;min-width:0}
+.gl-def{display:flex;flex-direction:column;gap:8px}
+.gl-map{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;margin-top:8px}
+.gl-map .field{flex:1 1 150px;min-width:0;margin:0}
+.gl-map select{width:100%}
+.gl-msum{margin-top:8px}
+.gl-miss{margin-top:6px}
+.gl-miss ul{margin:6px 0 0;padding-left:18px;max-height:160px;overflow:auto}
+.gl-sel{margin:4px 0}
+.gl-gh{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gl-tbl td .nm{overflow-wrap:anywhere}
+.gl-review{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--border);border-radius:10px}
+@container (max-width:760px){.gl-tools{grid-template-columns:minmax(0,1fr)}}
+/* ===== CR-11 §4.10 — Shipments ===== */
+.sh-tools{margin:8px 0;gap:8px;flex-wrap:wrap}
+.sh-tools .search{flex:1 1 220px;min-width:160px}
+.chipbtn{height:32px;padding:0 12px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:13px;cursor:pointer}
+.chipbtn:hover{background:var(--surface-2)}
+.chipbtn.on{background:var(--accent-soft, var(--info-soft));border-color:var(--accent, var(--info));color:var(--accent, var(--info));font-weight:600}
+.sh-cards{margin:4px 0 12px}
+.sh-cards .qcard.warn .n{color:var(--err)}
+.sh-bulk{gap:8px;flex-wrap:wrap;margin:0 0 8px}
+.sh-picks .menu-list{min-width:240px}
+.sh-wrap{max-height:calc(100vh - 300px)}
+.sh-tbl th.cb,.sh-tbl td.cb{width:40px;min-width:40px;max-width:40px;padding:0 0 0 12px;position:sticky;left:0;z-index:1;background:var(--surface)}
+.sh-tbl th.cb{z-index:3;background:var(--surface-2)}
+.sh-tbl .stk{position:sticky;left:40px;z-index:1;background:var(--surface);box-shadow:4px 0 6px -4px rgba(16,24,40,.18)}
+.sh-tbl .stk.at0{left:0}
+.sh-tbl th.stk{z-index:3;background:var(--surface-2)}
+.sh-tbl tbody tr.click:hover td.stk,.sh-tbl tbody tr.click:hover td.cb{background:var(--row-hover)}
+.sh-tbl td:not(.cb),.sh-tbl th:not(.cb){padding-left:8px;padding-right:8px}
+.sh-tbl td.sh-kol{white-space:normal;min-width:120px;max-width:190px}
+.sh-tbl td.sh-kol .kname{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+.sh-tbl td.sh-kol .kname b{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.sh-tbl td.sh-kol .muted{display:block}
+.sh-tbl td.sh-items{white-space:normal;min-width:90px;max-width:170px;overflow-wrap:anywhere}
+.sh-tbl td.sh-items .chip{white-space:normal;height:auto;min-height:24px;line-height:1.25;padding-top:2px;padding-bottom:2px}
+.sh-tbl .cph2{display:flex;flex-direction:column;min-width:110px;max-width:190px;white-space:normal}
+.sh-tbl .cph2 .c2{color:var(--muted);font-size:12px}
+.sh-tbl td.sh-act{width:36px}
+.sh-tbl tr.ghead td{background:var(--surface-2)}
+.chip.sh-purpose{white-space:nowrap}
+.sh-slow{color:var(--warn);font-weight:600}
+.sh-imp{margin:10px 0}
+.sh-sum{margin:12px 0 8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+.sh-sumh{margin-bottom:6px}
+.sh-sumchips{display:flex;flex-wrap:wrap;gap:6px}
+.sh-pllist{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto}
+.sh-plrow{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.sh-plbtns{margin:12px 0;gap:8px;flex-wrap:wrap}
+.sh-ma .fields{margin-bottom:12px}
+.sh-ma textarea{font-family:ui-monospace,Consolas,monospace;width:100%}
+.ns-qty{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px}
+.ns-qrow{display:inline-flex;align-items:center;gap:6px}
+.ns-qrow input{width:72px}
+.chip.sh-from{font-size:11px;background:var(--info-soft);color:var(--info);border-color:transparent}
+/* CR-11 §4.11 — Phase Planner › Default pillar · New deal chips */
+.pl-tbl select[data-k="default_pillar"]{width:132px;min-width:0}
+.cm-b .pl-tbl select[data-k="default_pillar"]{width:112px}
+.fill-apply{margin-top:8px}
+.alloc-note{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pl-tbl td.pl-per .drange-n{display:none}   /* the Days column says it (CR-11 §4.11: room for Default pillar) */
+/* ===== CR-11 §4.13 #1 — Deals: row 1 (scope · Filters · Clear all ··· views) · row 2 (state tabs · Group by · money) ===== */
+.dl-scope .dl-views{margin:0;border:1px solid var(--border);border-radius:10px;padding:2px;gap:2px;flex:none}
+.dl-scope .dl-views button{border-bottom:0;border-radius:8px;padding:6px 12px}
+.dl-scope .dl-views button.on{background:var(--surface-2);color:var(--text)}
+.dl-row3 .stabs{flex:0 1 auto}
+@media (max-width:767px){.dl-scope .dl-views{order:-1;width:100%;overflow-x:auto}.dl-scope .dl-views button{flex:1}}
+.tiph{cursor:help;text-decoration:underline dotted var(--border-strong);text-underline-offset:3px}
+/* CR-11 §4.13 #3 — the Posted lane sits right under Row 1 */
+.clane.plane{border-radius:0;margin-top:0}
+.clane.plane + .clane{margin-top:8px}
+/* ===== CR-11 §4.13 #4 — names break only after _ . - (the <wbr> of ui.nameHTML) or at spaces — never inside a word, never "…" ===== */
+.dcard .r1 b.nm,.kolname b,.kname b,.nd-kh b,.kollock .kl-n,.gl-tbl td .nm,.sh-tbl td.sh-kol .kname b,.pf-tbl td.pf-kol .kname b,.pm-tbl td.pm-kol .kname b,
+.bk-tbl td.bk-kol,.kolopt,.cp-table .nmw b,.gantt td.gn b,.gantt td.gn .pn,td.kn b{overflow-wrap:break-word;word-break:normal}
+.tbl td .kolname b,.tbl td.kn b{white-space:normal;overflow:visible;text-overflow:clip}
+.tbl td.kn{white-space:normal;min-width:110px}
+.tbl.km-tbl td.kphase{white-space:normal;text-overflow:clip;max-width:200px;min-width:120px}
+/* CR-11 §4.13 #5 — Timeline legend (the same marks as the bars) */
+.gt-legend{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin:8px 0 0;font-size:12px;color:var(--text-2)}
+.gt-legend .gl-i{display:inline-flex;align-items:center;gap:6px}
+.gt-legend i{display:inline-block;width:22px;height:10px;border-radius:2px;background:var(--st-prog)}
+.gt-legend i.gl-campaign{height:4px;background:var(--text-2)}
+.gt-legend i.gl-complete{background:var(--st-done);opacity:.55}
+.gt-legend i.gl-not_started{background:var(--muted);opacity:.5}
+.gt-legend i.gl-hold{background:repeating-linear-gradient(135deg,var(--warn) 0 4px,var(--warn-soft) 4px 8px)}
+.gt-legend i.gl-cancelled{background:var(--series-grey);opacity:.7;box-shadow:inset 0 5px 0 -4px var(--text-2)}
+.gt-legend i.gl-over{background:var(--st-prog);box-shadow:inset 0 0 0 2px var(--err)}
+.gt-legend i.gl-hatch{background:repeating-linear-gradient(135deg,rgba(0,0,0,.45) 0 2px,transparent 2px 5px),var(--st-prog)}
+:root[data-theme="dark"] .gt-legend i.gl-hatch{background:repeating-linear-gradient(135deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px),var(--st-prog)}
+.gt-legend i.gl-today{width:0;height:14px;border-radius:0;background:none;border-left:1.5px dashed var(--accent)}
+.corelock{font-size:12px;cursor:help;margin-left:4px}
+/* CR-11 §4.13 #8 — Role Management matrix: groups that fold · the header row stays on top */
+.perm-wrap{max-height:70vh;overflow:auto}
+.perm-tbl thead th{position:sticky;top:0;z-index:2;background:var(--surface-2)}
+.perm-tbl tr.ghead td{background:var(--surface-2)}
+.perm-tbl td:first-child{white-space:normal;max-width:none;min-width:260px}
+/* CR-11 §4.13 #9 — To pay: 13px at least · numbers right, tabular */
+.pm-tbl{font-size:14px}
+.pm-tbl td.cph2 .c2,.pm-tbl td .due,.pm-miss,.pm-holdr,.pm-tbl .pm-gh td{font-size:13px}
+.pm-tbl td.num,.pm-tbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+@media (min-width:1280px){#dl_camp + .combo{width:200px}#dl_phase + .combo{width:170px}.dl-scope .search{flex:1 1 150px;min-width:140px;max-width:260px}.dl-scope .dl-views button{padding:6px 10px}}
+/* CR-11 §4.13 #3 — Row 1 of the Pipeline shares the width (no side scroll at 1440 when the optional columns are empty) */
+.pipe .board .bgroup{flex:1 1 auto;min-width:0}
+.pipe .board .bcols{min-width:0}
+.pipe .board .bcol:not(.mini){flex:1 1 210px;width:auto;min-width:178px;max-width:240px}
+/* #9 — To pay: no text under 13px (status chips · the term mark) */
+.pm-tbl .st,.pm-tbl .chip,.pm-tbl td .chip.ok-chip,.pm-tbl td .chip.warn-chip,.pm-tbl td .chip.err-chip{font-size:13px}
+.pm-tbl .tns{width:17px;height:17px;font-size:13px}
+@media (min-width:1280px){#dl_camp + .combo{width:180px;min-width:0}#dl_phase + .combo{width:150px;min-width:0}.dl-scope #dl_pic{max-width:130px}.dl-scope .search{flex:1 1 140px;min-width:130px}
+  .dl-scope .dl-views button{padding:6px 8px}.dl-scope #dl_fmenu > summary{padding-left:10px;padding-right:10px}}
+@media (min-width:1280px){#dl_camp + .combo{width:170px}#dl_phase + .combo{width:140px}.dl-scope #dl_pic{max-width:115px}.dl-scope .search{flex:1 1 120px;min-width:120px}.dl-scope .dl-views button{padding:6px 7px}}
+/* the Campaign name is read in full (never cut) — the PIC box says "All PICs" / "Me (…)" by itself, so its label gives way below 1600px */
+@media (min-width:1280px) and (max-width:1599px){.dl-piclab .tl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
+@media (min-width:1280px){#dl_camp + .combo{width:205px}.dl-scope .search{flex:1 1 110px;min-width:110px}}
