@@ -141,10 +141,13 @@
   const tabOf = key => C.tabs.find(t => t.key === key);
   /* a route (or an old key) → the screen key; old routes are rewritten in place */
   function parseHash() {
-    const [seg, ...rest] = location.hash.slice(1).split('/'), id = rest.join('/') || null;
-    const byRoute = C.tabs.find(t => t.route === seg), byKey = !byRoute && C.tabs.find(t => t.key === seg);
-    if (byKey) history.replaceState(null, '', '#' + [byKey.route].concat(rest).join('/'));
-    return { tab: (byRoute || byKey || {}).key, id };
+    /* CR-13 §4.4 — a query (#deals?tab=needs_action) goes to the screen once as link params and leaves the address */
+    const raw = location.hash.slice(1), qi = raw.indexOf('?'), path = qi < 0 ? raw : raw.slice(0, qi);
+    const [seg, ...rest] = path.split('/'), id = rest.join('/') || null;
+    const byRoute = C.tabs.find(t => t.route === seg), byKey = !byRoute && C.tabs.find(t => t.key === seg), hit = byRoute || byKey;
+    if (hit && qi >= 0) KT.ui.linkParams(hit.key, Object.fromEntries(new URLSearchParams(raw.slice(qi + 1))));
+    if (byKey || (hit && qi >= 0)) history.replaceState(null, '', '#' + [hit.route].concat(rest).join('/'));
+    return { tab: (hit || {}).key, id };
   }
   const visibleTabs = () => C.tabs.filter(t => !KT.ui.canSeeTab || KT.ui.canSeeTab(t.key));
   function renderNav() {

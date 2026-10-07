@@ -12,7 +12,7 @@ KT.screens.overview = (function () {
   const TABS = ['all', 'campaign', 'ops'];
   const ov = {
     tab: TABS.includes(pref.get('dashtab', 'all')) ? pref.get('dashtab', 'all') : 'all',
-    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, inclCancel: false, tierMeasure: 'spend', tierView: 'chart', sort: null }, savedPreset()),
+    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, inclCancel: false, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', sort: null }, savedPreset()),
     camp: { campaign: '', phase: '', gran: 'day', measure: 'posts', colorBy: null, colorFor: null, view: 'chart' },
     ops: { campaign: '', pic: null, tier: '', queue: null, limit: 50, selected: new Set() },
   };
@@ -67,16 +67,11 @@ KT.screens.overview = (function () {
       `<span class="spacer"></span><button type="button" class="btn small ov-export" data-export="all" title="${esc(O.exportTip)}">${ICON.download}<span>${esc(O.exportTab)}</span></button>` +
       `<span class="hidden">${U.rangeHTML('id="ov_crange"', from, to, { label: O.presets.custom })}</span>`;   // CR-10 §4.8: Custom opens the range picker — nothing changes until Apply
     const k = R.portfolioKpis(s, from, to, td(), A.inclCancel);
-    $('ov_body').innerHTML = `<div class="kpis k5" id="ov_kpis">${kpiCards(k)}</div><div class="ov-r2">${swimCard()}${tierCard()}</div>` +
-      `<div class="card ov-full"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>`;
-    renderSwim(s, from, to); renderTier(s, from, to); renderPortfolio(); fitSwim();
-  }
-  /* Row 2 cards share one height (§4.1): when the KOL tier mix is the taller one the lanes grow into the room (no blank band under the chart) */
-  function fitSwim() {
-    const md = ov.lastSwim, box = $('ov_swimbox'), svg = $('ov_swim');
-    if (!md || ov.all.view !== 'chart' || !box || !md.lanes.length) return;
-    const free = box.clientHeight - svg.getBoundingClientRect().height;
-    if (free > 4) { md.laneExtra = Math.min(60, (md.laneExtra || 0) + free / md.lanes.length); drawSwim(svg, box, $('ov_swimtip'), md); }
+    /* CR-13 §4.1 — top to bottom: the totals → each Campaign → when → where the money went (Pillar · Tier) */
+    $('ov_body').innerHTML = `<div class="kpis k5" id="ov_kpis">${kpiCards(k)}</div>` +
+      `<div class="card ov-full ov-port"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>` +
+      `<div class="ov-r3">${swimCard()}</div><div class="ov-r4">${pillarCard()}${tierCard()}</div>`;
+    renderPortfolio(); renderSwim(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
   }
   /* what the export rows of this tab are worked out from (KT.export) — the same as the screen */
   const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), inclCancel: ov.all.inclCancel, measure: ov.all.measure, sort: ov.all.sort }; };
@@ -157,14 +152,18 @@ KT.screens.overview = (function () {
       `<tr class="total"><td>${esc(O.colTotal)}</td><td></td><td></td><td></td><td class="num">${t.budget == null ? '—' : R.baht(t.budget)}</td><td class="num">${R.baht(t.committed)}</td><td>${usedBar72(t.usedPct)}</td>` +
         `<td class="num">${remainingText(t.remaining)}</td><td class="num">${R.baht(t.pending)}</td><td class="num">${R.fmtNum(t.deals)}</td></tr></tbody></table></div>`;
   }
-  /* KOL tier mix (Row 2, right) — donut of committed deals by tier · Spend / Deals · total in the middle · legend table beside it */
+  /* KOL tier mix (CR-13 Row 4, right) — donut of committed deals by tier · Spend / Deals · total in the middle · legend table beside it */
   const TIER_VAR = { Mega: 'mega', Macro: 'macro', 'Mid-tier': 'mid', Micro: 'micro', Nano: 'nano' };
   const tierColor = t => (TIER_VAR[t] ? css(`--tier-${TIER_VAR[t]}`) : css('--series-grey'));
-  const tierCard = () => `<div class="card tmix"><div class="card-head"><h3>${U.labelInfo(O.tierTitle, O.tierTip, O.tierTitle)}</h3><div class="btns ov-ctl">
-      <button type="button" class="icon-btn" data-tact="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu('tiermix')}
-      <button type="button" class="icon-btn" data-tact="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>
-    <div class="tm-ctl"><div class="seg" data-tmix="measure"><button type="button" data-v="spend">${esc(O.mSpend)}</button><button type="button" data-v="deals">${esc(O.mDeals)}</button></div></div><div id="ov_tmix" class="tm-body"></div></div>`;
-  const tierHTML = id => `<div class="tm-wrap"><div class="tm-donut chartbox" id="${id}_box"><svg id="${id}_svg" role="img" aria-label="${esc(O.tierTitle)}"></svg><div class="tip" id="${id}_tip"></div></div><table class="tm-leg" id="${id}_leg"></table></div>`;
+  /* the two donut cards share one skeleton (CR-13 §4.2): head · table / download / expand · Spend | Deals · donut + legend table */
+  const mixCard = (cls, title, tip, act, seg, dl, bodyId) => `<div class="card ${cls}"><div class="card-head"><h3>${U.labelInfo(title, tip, title)}</h3><div class="btns ov-ctl">
+      <button type="button" class="icon-btn" data-${act}="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu(dl)}
+      <button type="button" class="icon-btn" data-${act}="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>
+    <div class="tm-ctl"><div class="seg" data-${seg}="measure"><button type="button" data-v="spend">${esc(O.mSpend)}</button><button type="button" data-v="deals">${esc(O.mDeals)}</button></div></div><div id="${bodyId}" class="tm-body"></div></div>`;
+  const tierCard = () => mixCard('tmix', O.tierTitle, O.tierTip, 'tact', 'tmix', 'tiermix', 'ov_tmix');
+  const pillarCard = () => mixCard('pmix', O.pillarTitle, O.pillarTip, 'pmixact', 'pmix', 'pillarmix', 'ov_pmix');
+  const donutHTML = (id, label) => `<div class="tm-wrap"><div class="tm-donut chartbox" id="${id}_box"><svg id="${id}_svg" role="img" aria-label="${esc(label)}"></svg><div class="tip" id="${id}_tip"></div></div><table class="tm-leg" id="${id}_leg"></table></div>`;
+  const tierHTML = id => donutHTML(id, O.tierTitle);
   function renderTier(s, from, to) {
     const A = ov.all, m = R.tierMix(s, from, to, td(), A.inclCancel);
     document.querySelectorAll('#ov_body [data-tmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.tierMeasure));
@@ -174,33 +173,34 @@ KT.screens.overview = (function () {
     $('ov_tmix').innerHTML = tierHTML('ov_tm');
     drawDonut('ov_tm', m, A.tierMeasure, 148);
   }
-  /* square-ended ring slices with a 2px surface gap · Unknown = grey texture · hover / focus = tier · ฿ · deals · % */
   function drawDonut(id, m, meas, S) {
-    const svg = $(id + '_svg'), tip = $(id + '_tip'), box = $(id + '_box'), cSurf = css('--surface');
     const val = x => (meas === 'spend' ? x.spend : x.deals), pctOf = x => (meas === 'spend' ? x.spendPct : x.dealsPct);
     const rows = m.rows.filter(x => val(x) > 0), total = meas === 'spend' ? m.total.spend : m.total.deals;
+    drawRing(id, rows.map(x => ({ value: val(x), tex: x.tier === R.UNKNOWN_TIER, fill: tierColor(x.tier), tip: O.tierSlice(x.tier, R.baht(x.spend), x.deals, pctOf(x).toFixed(1)) })), total, meas, S);
+    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.tierLabel)}</th><th>${esc(O.colFollowers)}</th><th class="num">${esc(meas === 'spend' ? O.mSpend : O.mDeals)}</th><th class="num">%</th></tr></thead><tbody>` +
+      rows.map(x => `<tr><td><span class="tn"><i class="sw${x.tier === R.UNKNOWN_TIER ? ' tex' : ''}" style="background-color:${tierColor(x.tier)}"></i>${esc(x.tier)}</span></td><td class="rg">${esc(KT.export.followers(x))}</td>` +
+        `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td></tr>`).join('') + `</tbody>`;
+  }
+  /* a donut: square-ended slices with a 2px surface gap · tex = grey texture (Unknown tier · Not set) · total in the middle · hover / focus = the slice in words */
+  function drawRing(id, slices, total, meas, S) {
+    const svg = $(id + '_svg'), tip = $(id + '_tip'), box = $(id + '_box'), cSurf = css('--surface');
     const cx = S / 2, cy = S / 2, ro = S / 2 - 2, ri = ro * 0.62;
     svg.setAttribute('viewBox', `0 0 ${S} ${S}`); svg.setAttribute('width', S); svg.setAttribute('height', S);
     const pt = (r, a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
     const arc = (a0, a1) => { const big = a1 - a0 > Math.PI ? 1 : 0; return `M${pt(ro, a0)} A${ro} ${ro} 0 ${big} 1 ${pt(ro, a1)} L${pt(ri, a1)} A${ri} ${ri} 0 ${big} 0 ${pt(ri, a0)} Z`; };
-    const fillOf = x => (x.tier === R.UNKNOWN_TIER ? `url(#${id}_tex)` : tierColor(x.tier));
-    const text = x => O.tierSlice(x.tier, R.baht(x.spend), x.deals, pctOf(x).toFixed(1));
     let a = -Math.PI / 2, paths = '';
-    rows.forEach((x, i) => {
-      const sweep = val(x) / total * Math.PI * 2, a1 = a + sweep;
+    slices.forEach((x, i) => {
+      const sweep = x.value / total * Math.PI * 2, a1 = a + sweep;
       const d = sweep >= Math.PI * 2 - 1e-6 ? arc(a, a + Math.PI) + arc(a + Math.PI, a + Math.PI * 2 - 1e-4) : arc(a, a1);
-      paths += `<path class="sl" data-i="${i}" data-a="${(a + a1) / 2}" d="${d}" fill="${fillOf(x)}" stroke="${cSurf}" stroke-width="2" tabindex="0" aria-label="${esc(text(x))}"/>`;
+      paths += `<path class="sl" data-i="${i}" data-a="${(a + a1) / 2}" d="${d}" fill="${x.tex ? `url(#${id}_tex)` : x.fill}" stroke="${cSurf}" stroke-width="2" tabindex="0" aria-label="${esc(x.tip)}"/>`;
       a = a1;
     });
     const defs = `<defs><pattern id="${id}_tex" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${css('--series-grey')}"/><rect width="2" height="6" fill="${cSurf}" opacity=".7"/></pattern></defs>`;
     const center = total ? `<text x="${cx}" y="${cy + 6}" text-anchor="middle" class="tm-c${S > 200 ? ' big' : ''}">${esc(meas === 'spend' ? bahtShort(total) : O.centerDeals(total))}</text>` : '';
-    svg.innerHTML = defs + (rows.length ? paths : `<circle cx="${cx}" cy="${cy}" r="${(ro + ri) / 2}" fill="none" stroke="${css('--surface-3')}" stroke-width="${ro - ri}"/>`) + center;
-    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.tierLabel)}</th><th>${esc(O.colFollowers)}</th><th class="num">${esc(meas === 'spend' ? O.mSpend : O.mDeals)}</th><th class="num">%</th></tr></thead><tbody>` +
-      rows.map(x => `<tr><td><span class="tn"><i class="sw${x.tier === R.UNKNOWN_TIER ? ' tex' : ''}" style="background-color:${tierColor(x.tier)}"></i>${esc(x.tier)}</span></td><td class="rg">${esc(KT.export.followers(x))}</td>` +
-        `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td></tr>`).join('') + `</tbody>`;
+    svg.innerHTML = defs + (slices.length ? paths : `<circle cx="${cx}" cy="${cy}" r="${(ro + ri) / 2}" fill="none" stroke="${css('--surface-3')}" stroke-width="${ro - ri}"/>`) + center;
     const show = el => {
-      const x = rows[+el.dataset.i], am = +el.dataset.a, r = (ro + ri) / 2, rect = box.getBoundingClientRect(), sc = rect.width ? Math.min(1, rect.width / S) : 1;
-      tip.textContent = ''; const t = document.createElement('div'); t.className = 'r tot'; t.textContent = text(x); tip.appendChild(t);
+      const x = slices[+el.dataset.i], am = +el.dataset.a, r = (ro + ri) / 2, rect = box.getBoundingClientRect(), sc = rect.width ? Math.min(1, rect.width / S) : 1;
+      tip.textContent = ''; const t = document.createElement('div'); t.className = 'r tot'; t.textContent = x.tip; tip.appendChild(t);
       tip.style.left = Math.max(0, (cx + r * Math.cos(am)) * sc + 8) + 'px'; tip.style.top = Math.max(0, (cy + r * Math.sin(am)) * sc - 10) + 'px'; tip.classList.add('show');
     };
     svg.querySelectorAll('.sl').forEach(el => {
@@ -214,6 +214,41 @@ KT.screens.overview = (function () {
       <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'mid');
     $('ovx_close').addEventListener('click', closeDialog);
     drawDonut('ovx_tm', m, ov.all.tierMeasure, 260);
+  }
+  /* ---------- CR-13 §4.2 — Pillar mix (Row 4, left): where the committed money went, by pillar, against the target ---------- */
+  const PILLAR_VAR = ['--pl-aw', '--pl-co', '--pl-cv'];
+  const pillarColor = k => (R.PILLARS.includes(k) ? css(PILLAR_VAR[R.PILLARS.indexOf(k)]) : css('--series-grey'));
+  const pctTxt = v => (v == null ? '—' : `${Math.round(v * 10) / 10 === Math.round(v) ? Math.round(v) : (Math.round(v * 10) / 10).toFixed(1)}%`);
+  function renderPillar(s, from, to) {
+    const A = ov.all, m = R.pillarMix(s, from, to, td(), A.inclCancel);
+    document.querySelectorAll('#ov_body [data-pmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.pillarMeasure));
+    $('ov_body').querySelector('[data-pmixact="table"]').classList.toggle('on', A.pillarView === 'table');
+    ov.lastPillar = m;
+    const note = pillarNote(m);
+    if (A.pillarView === 'table') { $('ov_pmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor('pillarmix', allX()))}</div>` + note; return; }
+    $('ov_pmix').innerHTML = donutHTML('ov_pm', O.pillarTitle) + note;
+    drawPillar('ov_pm', m, A.pillarMeasure, 148);
+  }
+  /* most of the money with no pillar: the chart cannot be trusted yet — say so, and where it is fixed once (CR-11 §4.11) */
+  const pillarNote = m => (m.notSetPct > 50 ? `<div class="check warn pm-note">! <span>${esc(O.noPillarLine((Math.round(m.notSetPct * 10) / 10).toFixed(1)))} ·</span>` +
+    (U.can('campaign.edit') && m.mostNoPillar ? `<button type="button" class="link" data-allocplan="${esc(m.mostNoPillar)}">${esc(O.setDefaults)}</button>` : `<span>${esc(O.setDefaults)}</span>`) + `</div>` : '');
+  function drawPillar(id, m, meas, S) {
+    const val = x => (meas === 'spend' ? x.spend : x.deals), pctOf = x => (meas === 'spend' ? x.spendPct : x.dealsPct), total = meas === 'spend' ? m.total.spend : m.total.deals;
+    const label = k => (k === R.NOT_SET ? O.notSet : k), rows = m.rows.filter(x => val(x) > 0);
+    drawRing(id, rows.map(x => ({ value: val(x), tex: x.pillar === R.NOT_SET, fill: pillarColor(x.pillar),
+      tip: O.pillarSlice(label(x.pillar), R.baht(x.spend), x.deals, pctOf(x).toFixed(1), x.ofSet[meas] == null ? null : x.ofSet[meas].toFixed(1), pctTxt(x.target).replace('%', '')) })), total, meas, S);
+    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.pillarLabel)}</th><th class="num">${esc(meas === 'spend' ? O.mSpend : O.mDeals)}</th><th class="num">${esc(O.pctTotal)}</th>` +
+      `<th class="num">${esc(O.target)}</th><th class="num" title="${esc(O.deltaTip)}"><span class="tiph">${esc(O.delta)}</span></th></tr></thead><tbody>` +
+      m.rows.map(x => `<tr><td><span class="tn"><i class="sw${x.pillar === R.NOT_SET ? ' tex' : ''}" style="background-color:${pillarColor(x.pillar)}"></i>${esc(label(x.pillar))}</span></td>` +
+        `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td>` +
+        `<td class="num">${esc(pctTxt(x.target))}</td><td class="num pm-d">${esc(U.ppText(x.gap[meas]))}</td></tr>`).join('') + `</tbody>`;
+  }
+  function expandPillar() {
+    const m = ov.lastPillar, [from, to] = allRange(); if (!m) return;
+    openDialog(`<div class="dlg-h">${esc(O.pillarTitle)} · ${esc(R.dmy(from))} – ${esc(R.dmy(to))}</div><div class="dlg-b tm-big">${donutHTML('ovx_pm', O.pillarTitle)}${pillarNote(m)}</div>
+      <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'mid');
+    $('ovx_close').addEventListener('click', closeDialog);
+    drawPillar('ovx_pm', m, ov.all.pillarMeasure, 260);
   }
   /* Activity by campaign — one swimlane per Campaign, a shared x axis and one y scale */
   const swimCard = () => `<div class="card swim"><div class="card-head"><h3>${esc(O.swimTitle)}</h3><div class="btns ov-ctl">
@@ -243,10 +278,12 @@ KT.screens.overview = (function () {
   }
   function drawSwim(svg, box, tip, md) {
     tip.classList.remove('show');
-    const LANE = 56 + (md.laneExtra || 0), LABEL = Math.min(170, Math.max(110, (box.clientWidth || 800) * 0.18)), W = Math.max(320, box.clientWidth || 800), m = { l: LABEL, r: 12, t: 8, b: 26 };
+    /* CR-13 §4.1 — a full row: 80px a lane (240px at least) · the names in a fixed 200px column (narrow screens: 40% of the width) */
+    const W = Math.max(320, box.clientWidth || 800), LANE = 80 + (md.laneExtra || 0), LABEL = Math.min(200, Math.round(W * 0.4)), m = { l: LABEL, r: 12, t: 8, b: 26 };
     /* a campaign name wraps onto more lines (never cut with …) and its lane grows to fit */
     /* CR-11 §4.13 #10 — a name longer than 2 lines: the Campaign code (CH · KS …), the full name on hover */
     const names = md.lanes.map(l => { const t = wrapText(l.campaign.campaign_name, LABEL - 14); return t.length > 2 ? [l.campaign.campaign_id] : t; }), LH = names.map(t => Math.max(LANE, 14 * t.length + 34));
+    const short = 240 - (LH.reduce((x, y) => x + y, 0) + m.t + m.b); if (short > 0 && LH.length) LH.forEach((x, i) => { LH[i] = x + short / LH.length; });
     const tops = LH.map((x, i) => m.t + LH.slice(0, i).reduce((a, y) => a + y, 0));
     const H = m.t + LH.reduce((a, y) => a + y, 0) + m.b, iw = W - m.l - m.r, cGrid = css('--grid'), cAxis = css('--muted'), cAcc = css('--accent');
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
@@ -384,6 +421,7 @@ KT.screens.overview = (function () {
     if (item.grey) return css('--series-grey');
     if (item.kind === 'tier') return tierColor(item.key);
     if (item.kind === 'pillar') return css(['--pl-aw', '--pl-co', '--pl-cv'][item.slot]);
+    if (item.kind === 'phase') return U.phaseColor(null, item.key);   // CR-13 §4.3: the ordinal grey of the Phase, never a data colour
     return item.slot >= 0 && item.slot < PALETTE_N ? css(`--ph${item.slot + 1}`) : css('--series-grey');
   }
   const keyLabel = k => (k === R.NEEDS ? O.needsPhase : k === R.UNSCHEDULED ? O.unscheduled : k === R.NOT_SET ? O.pillarNotSet : k);
@@ -431,11 +469,13 @@ KT.screens.overview = (function () {
       `<pattern id="ovHatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(135)"><rect width="2" height="5" fill="${css('--text')}" opacity=".55"/></pattern></defs>`;
     for (let v = 0; v <= yMax + 1e-9; v += yStep) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${cGrid}" stroke-width="1"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" class="axis">${esc(fmtV(v, md.measure))}</text>`;
     let strip = '';
-    const cBand = css('--band'), cSep = css('--muted');
+    const cSep = css('--muted');
+    /* CR-13 §4.3 — each Phase in its own grey (= its dot in Phase budget) · 6px · 2px apart · the name in the secondary ink after an 8px dot */
     md.strip.forEach(p => {
       const a = Math.max(m.l, xOf(p.from)), z = Math.min(W - m.r, xOf(R.addDays(p.to, 1))); if (z <= a) return;
-      strip += `<rect x="${a + 1}" y="${m.t - 12}" width="${Math.max(1, z - a - 2)}" height="6" fill="${cBand}"><title>${esc(`${p.label} · ${R.dmy(p.from)} – ${R.dmy(p.to)}`)}</title></rect>` +
-        (stripLabel(p.label, z - a - 4) ? `<text x="${a + 2}" y="${m.t - 16}" class="axis strip-l">${esc(stripLabel(p.label, z - a - 4))}</text>` : '');
+      const col = U.phaseColor(null, p.key), lab = stripLabel(p.label, z - a - 16);
+      strip += `<rect x="${a + 1}" y="${m.t - 12}" width="${Math.max(1, z - a - 2)}" height="6" fill="${col}"><title>${esc(`${p.label} · ${R.dmy(p.from)} – ${R.dmy(p.to)}`)}</title></rect>` +
+        (lab ? `<circle cx="${a + 6}" cy="${m.t - 20}" r="4" fill="${col}"/><text x="${a + 13}" y="${m.t - 16}" class="axis strip-l">${esc(lab)}</text>` : '');
       const xs = xOf(p.from);
       if (xs > m.l + 1 && xs < W - m.r) strip += `<line class="phase-sep" x1="${xs}" x2="${xs}" y1="${m.t - 12}" y2="${m.t + ih}" stroke="${cSep}" stroke-opacity=".55" stroke-dasharray="3 3"/>`;
     });
@@ -502,7 +542,7 @@ KT.screens.overview = (function () {
         `<td class="num" title="${esc(pct == null ? '' : O.pctOfCampaign(Math.round(pct)))}">${money(budget)}</td><td class="num"><span class="${m.remaining < 0 ? 'late' : ''}">${R.baht(committed)}</span></td>` +
         `<td>${budget != null ? usedBar(m.usedPct) : '<span class="muted">—</span>'}</td><td class="num">${remainingText(m.remaining)}</td><td class="num muted">${pending ? R.baht(pending) : '—'}</td><td class="num">${posts == null ? '' : R.fmtNum(posts)}</td></tr>`;
     };
-    const rows = pb.rows.map(r => row(R.phaseName(s, r.phase.phase_id), `<span class="dotc" style="background:${colorOf({ slot: r.slot, kind: 'phase' })}"></span>`, `${esc(dm(r.phase.start_date))}–${esc(dm(r.phase.end_date))}`,
+    const rows = pb.rows.map(r => row(R.phaseName(s, r.phase.phase_id), `<span class="dotc" style="background:${colorOf({ kind: 'phase', key: r.phase.phase_id })}"></span>`, `${esc(dm(r.phase.start_date))}–${esc(dm(r.phase.end_date))}`,
       r.budget, r.budgetPct, r.committed, r.shortlist, r.posts, r.phase.phase_id === ov.camp.phase ? 'selected' : '')).join('') +
       pb.extra.map(x => `<tr class="click extra${x.key === R.NEEDS ? ' warn' : ''}" data-godeals="${esc(x.key)}"><td class="pname"><span>${esc(x.key === R.NEEDS ? O.needsPhase : O.unscheduled)}</span></td><td></td><td></td><td class="num">${R.baht(x.committed)}</td><td></td><td></td><td></td><td class="num">${x.posts ? R.fmtNum(x.posts) : ''}</td></tr>`).join('');
     const t = pb.total;
@@ -516,14 +556,14 @@ KT.screens.overview = (function () {
     const lab = k => (k === R.NOT_SET ? O.pillarNotSet : k);
     /* CR-07 §4.2: every segment says its ฿ and % (Target ฿ = its % of what is committed) */
     const bar = (pct, money) => `<div class="abar">${keys.map(k => (pct[k] ? `<span class="${k === R.NOT_SET ? 'tex' : ''}" style="flex:${pct[k]};background-color:${col(k)}" title="${esc(`${lab(k)} · ${Math.round(pct[k])}% · ${R.baht(Math.round(money ? money[k] : pct[k] / 100 * a.actual.total))}`)}"></span>` : '')).join('')}</div>`;
-    const pp = v => (v == null ? '—' : `${v > 0 ? '+' : ''}${Math.round(v)}pp`);
+    const pp = U.ppText;   // CR-13: one gap formatter (+15.4pp) for Allocation and Pillar mix
     const gap = `<div class="agap">${R.PILLARS.map(p => `<span title="${esc(O.gapTip)}"><i style="background:${col(p)}"></i>${esc(p)} <b class="${Math.abs(a.actual.gap[p] || 0) >= 10 ? 'warn' : ''}">${esc(pp(a.actual.gap[p]))}</b></span>`).join('')}</div>`;
     const line = (label, body, cls) => `<div class="arow2${cls ? ' ' + cls : ''}"><div class="al">${label}</div>${body}</div>`;
     const camp = R.campaignOf(s, ov.camp.campaign) || {};
     $('ov_alloc').innerHTML = `<div class="slegend alegend">${keys.map(k => `<span><i class="${k === R.NOT_SET ? 'tex' : ''}" style="background-color:${col(k)}"></i>${esc(lab(k))}</span>`).join('')}</div>` +
       line(esc(O.target), bar(a.target.pct)) +
       line(`<b>${esc(O.actualOf(camp.campaign_name || ''))}</b>`, bar(a.actual.pct, a.actual.money) + gap) +
-      a.phases.map(p => line(esc(R.phaseName(s, p.phase.phase_id)), p.total ? bar(p.pct, p.money) : `<span class="muted small">${esc(O.noCommitted)}</span>`, p.phase.phase_id === ov.camp.phase ? 'sel' : '')).join('') +
+      a.phases.map(p => line(`<span class="dotc" style="background:${U.phaseColor(null, p.phase.phase_id)}"></span>${esc(R.phaseName(s, p.phase.phase_id))}`, p.total ? bar(p.pct, p.money) : `<span class="muted small">${esc(O.noCommitted)}</span>`, p.phase.phase_id === ov.camp.phase ? 'sel' : '')).join('') +
       /* CR-11 §4.11 — most of the spend has no pillar: say so, with the way to fix it once (a default pillar per Phase) */
       (R.mostSpendNoPillar(a.actual) ? `<div class="alloc-note check warn">! <span>${esc(C.fill.mostNoPillar)} ·</span>` +
         (U.can('campaign.edit') ? `<button type="button" class="link" data-allocplan="${esc(ov.camp.campaign)}">${esc(C.fill.setDefaults)}</button>` : `<span>${esc(C.fill.setDefaults)}</span>`) + `</div>` : '');
@@ -532,10 +572,10 @@ KT.screens.overview = (function () {
   /* CR-07 §4.2 — Workload by PIC of this Campaign (and Phase): most open deals first · Total · your row lit · a row opens Operations on that PIC */
   function renderCampaignWorkload(s, scope) {
     const rows = R.workloadByPic(s, scope, td()), sum = k => rows.reduce((a, r) => a + r[k], 0), mine = R.picName(U.me());
-    $('ov_cwork').innerHTML = !rows.length ? `<div class="hint">${esc(O.noActive)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm wl"><thead><tr><th>${esc(O.picLabel)}</th><th class="num">${esc(O.colOpen)}</th><th class="num">${esc(O.queues.overdue)}</th><th class="num">${esc(O.queues.unpaid)}</th><th class="num">${esc(O.colCommittedOpen)} ${info(MN.committed)}</th></tr></thead><tbody>` +
+    $('ov_cwork').innerHTML = !rows.length ? `<div class="hint">${esc(O.noActive)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm wl"><thead><tr><th>${esc(O.picLabel)}</th><th class="num">${esc(O.colOpen)}</th><th class="num">${esc(O.queues.overdue)}</th><th class="num">${esc(O.docsToCollect)}</th><th class="num">${esc(O.colCommittedOpen)} ${info(MN.committed)}</th></tr></thead><tbody>` +
       rows.map(r => `<tr class="click${r.pic && r.pic === mine ? ' selected' : ''}" tabindex="0" data-gopic="${esc(r.pic || '__none')}" title="${esc(O.workloadTip)}"><td>${r.pic ? `<span class="picplain"><span class="av sm">${esc(initials(r.pic))}</span><span class="nm">${esc(r.pic)}</span></span>` : `<span class="muted">${esc(O.noPic)}</span>`}</td>` +
-        `<td class="num">${R.fmtNum(r.open)}</td><td class="num${r.overdue ? ' late' : ''}">${R.fmtNum(r.overdue)}</td><td class="num">${R.fmtNum(r.unpaid)}</td><td class="num">${R.baht(r.committed)}</td></tr>`).join('') +
-      `<tr class="total"><td>${esc(O.colTotal)}</td><td class="num">${R.fmtNum(sum('open'))}</td><td class="num">${R.fmtNum(sum('overdue'))}</td><td class="num">${R.fmtNum(sum('unpaid'))}</td><td class="num">${R.baht(sum('committed'))}</td></tr></tbody></table></div>`;
+        `<td class="num">${R.fmtNum(r.open)}</td><td class="num${r.overdue ? ' late' : ''}">${R.fmtNum(r.overdue)}</td><td class="num">${R.fmtNum(r.docs)}</td><td class="num">${R.baht(r.committed)}</td></tr>`).join('') +
+      `<tr class="total"><td>${esc(O.colTotal)}</td><td class="num">${R.fmtNum(sum('open'))}</td><td class="num">${R.fmtNum(sum('overdue'))}</td><td class="num">${R.fmtNum(sum('docs'))}</td><td class="num">${R.baht(sum('committed'))}</td></tr></tbody></table></div>`;
   }
   function expand() {
     const md = ov.tab === 'all' ? ov.lastSwim : ov.lastModel; if (!md) return;
@@ -680,7 +720,9 @@ KT.screens.overview = (function () {
     const D2 = KT.screens.deals;
     const dl = e.target.closest('[data-dl]'); if (dl) { const d = dl.closest('details'); if (d) d.open = false; downloadWidget(dl.dataset.w, dl.dataset.dl); return; }
     const ps = e.target.closest('[data-psort]'); if (ps) { const k = ps.dataset.psort, so = ov.all.sort; ov.all.sort = so && so.key === k ? (so.dir === 'asc' ? { key: k, dir: 'desc' } : null) : { key: k, dir: 'asc' }; renderPortfolio(); return; }
-    const tm = e.target.closest('[data-tmix] button'); if (tm) { ov.all.tierMeasure = tm.dataset.v; renderTier(state(), ...allRange()); fitSwim(); return; }
+    const tm = e.target.closest('[data-tmix] button'); if (tm) { ov.all.tierMeasure = tm.dataset.v; renderTier(state(), ...allRange()); return; }
+    const pmx = e.target.closest('[data-pmix] button'); if (pmx) { ov.all.pillarMeasure = pmx.dataset.v; renderPillar(state(), ...allRange()); return; }
+    const pma = e.target.closest('[data-pmixact]'); if (pma) { if (pma.dataset.pmixact === 'table') { ov.all.pillarView = ov.all.pillarView === 'table' ? 'chart' : 'table'; renderPillar(state(), ...allRange()); } else expandPillar(); return; }
     const ta = e.target.closest('[data-tact]'); if (ta) { if (ta.dataset.tact === 'table') { ov.all.tierView = ov.all.tierView === 'table' ? 'chart' : 'table'; renderAll(); } else expandTier(); return; }
     const sw = e.target.closest('[data-swim] button'); if (sw) { ov.all.measure = sw.dataset.v; renderAll(); return; }
     const sa = e.target.closest('[data-sact]'); if (sa) { const a = sa.dataset.sact; if (a === 'table') { ov.all.view = ov.all.view === 'table' ? 'chart' : 'table'; renderAll(); } else if (a === 'csv') downloadActivity(); else expand(); return; }

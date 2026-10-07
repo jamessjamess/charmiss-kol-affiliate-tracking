@@ -1,6 +1,7 @@
 /* screen-deals.js — Deals (CR-06 §4.6): page header (+ New deal) · View tabs Table | Pipeline · Scope: Campaign (one) → Phase → PIC
    (Me by default for a PIC) → search → Filters (Tier, Pillar, CTA, Payment term, Sub-status) → ⋯ (Export · Compact | Template) or the
-   bulk bar · Group by → state tabs (Open · Needs action · Complete · Cancelled · All) → summary · Table or Pipeline,
+   bulk bar · state tabs (CR-13: All · List · In process · Complete · Cancelled = the Pipeline groups) · Group by → summary → attention chips ·
+   Table or Pipeline,
    and the Deal drawer: every section reads, ✎ opens one section as a form with its locks (CR-04 §4.5) · New deal · Move stage.
    → KT.screens.deals */
 KT.screens.deals = (function () {
@@ -19,7 +20,7 @@ KT.screens.deals = (function () {
   const readSet = k => { try { return new Set(JSON.parse(pref.get(k, '[]'))); } catch (e) { return new Set(); } };
   const dl = {
     view: VIEWS.includes(pref.get('dealview', 'table')) ? pref.get('dealview', 'table') : 'table', cols: pref.get('dealcols', 'compact') === 'template' ? 'template' : 'compact',
-    tab: 'open', reason: '', f: blankFilter(), pic: null, picUser: null, pf: R.blankPerfFilter(),
+    tab: 'all', tabUser: null, reason: '', why: new Map(), f: blankFilter(), pic: null, picUser: null, pf: R.blankPerfFilter(),
     sort: { key: 'due', dir: 'asc' }, limit: PAGE, openCols: new Set(), cancelOpen: false, rows: [], selected: new Set(), groupLimit: new Map(),
     collapsed: readSet('dealgroups2'), opened: readSet('dealgroupsopen'), groupKeys: [],
     mode: 'none', id: null, draft: null, posts: null, ticks: null, touched: new Set(), showDraft23: false, dirty: false,
@@ -56,7 +57,16 @@ KT.screens.deals = (function () {
     return dl.pic;
   }
   const choosePic = v => { picSel(); dl.pic = normPic(v); pref.set('dealpic_' + userId(), dl.pic); };
-  const filtersNow = () => Object.assign({}, dl.f, { pic: picSel(), reason: dl.view === 'table' && dl.tab === 'needs' ? dl.reason : '' });
+  /* CR-13 §4.4 — the state tab, remembered for each person (deals.stateTab.v2 · default All) */
+  function tabSel() {
+    const uid = userId();
+    if (dl.tabUser !== uid) { dl.tabUser = uid; dl.tab = R.dealTabPref(pref.get(R.DEAL_TAB_KEY, ''), uid); }
+    return dl.tab;
+  }
+  const chooseTab = t => { tabSel(); dl.tab = R.DEAL_TABS.includes(t) ? t : 'all'; pref.set(R.DEAL_TAB_KEY, R.setDealTabPref(pref.get(R.DEAL_TAB_KEY, ''), userId(), dl.tab)); };
+  /* the attention chip (§4.5) is a filter of the Table (the Pipeline has no tabs and no chips) */
+  const reasonNow = () => (dl.view === 'table' ? dl.reason : '');
+  const filtersNow = () => Object.assign({}, dl.f, { pic: picSel(), reason: reasonNow() });
   const picFilter = () => { const v = picSel(); return v === 'all' ? '' : v === 'me' ? myPic() : v; };
   const picLabel = v => (v === 'me' ? D.picMe(myPic()) : v === '__none' ? D.unassigned : v === 'all' ? D.allPics : v);
   /* one Campaign at a time: the last one used, else the first On going */
@@ -85,15 +95,17 @@ KT.screens.deals = (function () {
     const p = takeParams('deals');
     if (p) {
       if (p.filter) {
-        /* old links: Needs phase / overdue / unpaid → the Needs action tab with that reason · a PIC → the PIC box */
+        /* a link opens on All (CR-13) · old links: Needs phase / overdue → that chip · unpaid → Docs to collect (§4.5) · a PIC → the PIC box */
         const { scope, overdue, unpaid, pic, ...rest } = p.filter;
-        dl.f = Object.assign(blankFilter(), fromScope(scope), rest); dl.tab = 'open'; dl.reason = '';
-        if (dl.f.phaseSel === R.NEEDS) { dl.f.phaseSel = 'all'; dl.tab = 'needs'; dl.reason = 'needsPhase'; }
-        if (overdue) { dl.tab = 'needs'; dl.reason = 'overdue'; }
-        if (unpaid) { dl.tab = 'needs'; dl.reason = 'unpaid'; }
+        tabSel(); dl.f = Object.assign(blankFilter(), fromScope(scope), rest); dl.tab = 'all'; dl.reason = '';
+        if (dl.f.phaseSel === R.NEEDS) { dl.f.phaseSel = 'all'; dl.reason = 'needsPhase'; }
+        if (overdue) dl.reason = 'overdue';
+        if (unpaid) dl.reason = 'docs';
         if (pic !== undefined) choosePic(pic);
         dl.view = 'table'; dl.limit = PAGE; $('dl_q').value = dl.f.q || '';
       }
+      /* CR-13 §4.4 — an old link #deals?tab=open → All · ?tab=needs_action → All + the Overdue chip */
+      if (p.link && p.link.tab !== undefined) { const m = R.dealTabFromLink(p.link.tab); tabSel(); dl.tab = m.tab; dl.reason = m.reason; dl.view = 'table'; dl.limit = PAGE; }
       /* CR-10 §4.14: Operations › Samples to ship → Deals › Samples of that PIC */
       if (p.samples) { go('shipments', { tab: 'to-ship', campaign: p.samples.campaign || '', pic: p.samples.pic || 'all' }); return; }   // CR-11 §4.10
       /* CR-11 §4.12: Operations › Metrics due → Performance of that Campaign / PIC, status Due */
@@ -171,11 +183,14 @@ KT.screens.deals = (function () {
       renderLeft();
     });
     $('dl_row3').addEventListener('click', e => {
-      const t = e.target.closest('[data-tab]'); if (t) { dl.tab = t.dataset.tab; dl.reason = ''; dl.limit = PAGE; renderLeft(); return; }
+      const t = e.target.closest('[data-tab]'); if (t) { chooseTab(t.dataset.tab); dl.limit = PAGE; renderLeft(); return; }
       const ga = e.target.closest('[data-groupall]'); if (ga) setAllGroups(ga.dataset.groupall === 'collapse');
     });
     $('dl_row3').addEventListener('change', e => { if (e.target.id === 'dl_groupby') { pref.set('dealgroupby3', e.target.value); dl.groupLimit.clear(); renderLeft(); } });
-    $('dl_reasons').addEventListener('click', e => { const b = e.target.closest('[data-reason]'); if (b) { dl.reason = dl.reason === b.dataset.reason ? '' : b.dataset.reason; dl.limit = PAGE; renderLeft(); } });
+    $('dl_reasons').addEventListener('click', e => {
+      if (e.target.closest('[data-attnpay]')) { go('payments', { tab: 'topay', campaign: dl.f.campaign || '', pic: picFilter() || 'all', queue: 'missing' }); return; }   // §4.5 Open in Payments
+      const b = e.target.closest('[data-reason]'); if (b) { dl.reason = dl.reason === b.dataset.reason ? '' : b.dataset.reason; dl.limit = PAGE; renderLeft(); }
+    });
     $('dl_export').addEventListener('click', e => {
       const b = e.target.closest('[data-export]'); if (b) { exportFiltered(b.dataset.export); b.closest('details').open = false; return; }
       const c = e.target.closest('[data-cols]'); if (c) { dl.cols = c.dataset.cols; pref.set('dealcols', dl.cols); c.closest('details').open = false; renderLeft(); }
@@ -215,7 +230,7 @@ KT.screens.deals = (function () {
     body.addEventListener('dragover', dragOver); body.addEventListener('dragleave', dragLeave); body.addEventListener('drop', dropOn);
     sec.dataset.built = '1';
   }
-  /* CR-07 §4.4 — every filter back to empty in one go (Campaign, View, Group by, state tab and sort stay) · remembered: All PICs */
+  /* CR-07 §4.4 — every filter back to empty in one go, the attention chip too (Campaign, View, Group by, state tab and sort stay) · remembered: All PICs */
   function clearFilters() {
     const c = R.clearFilters(dl.f); choosePic(c.pic); dl.reason = c.reason; dl.pf = R.blankPerfFilter();
     delete c.pic; delete c.reason; dl.f = c; $('dl_q').value = '';
@@ -251,10 +266,12 @@ KT.screens.deals = (function () {
     const perf = dl.view === 'performance'; $('dl_q').placeholder = perf ? D.searchPerf : D.search;
     $('dl_more').classList.toggle('hidden', perf); $('dl_row3').classList.toggle('hidden', perf);
     if (perf) { $('dl_reasons').classList.add('hidden'); dl.selected.clear(); dl.rows = []; renderPerfView(s, ctx, td); bulkBar(); return; }
-    const cur = currentScope(s, td), scoped = R.filterDeals(s, cur.base, td, ctx).filter(d => !dl.f.sample || R.shipmentsOf(s, d.deal_id).some(x => R.sampleStatus(x, td) === dl.f.sample)), tabs = R.dealTabs(s, scoped, td, ctx);
+    const cur = currentScope(s, td), scoped = R.filterDeals(s, cur.base, td, ctx).filter(d => !dl.f.sample || R.shipmentsOf(s, d.deal_id).some(x => R.sampleStatus(x, td) === dl.f.sample));
+    const tab = tabSel(), reason = reasonNow(), tabs = R.dealTabs(s, scoped, td, ctx, { tab, reason });
     dl.scoped = scoped;   // the Stage popup (CR-09 §4.13) lists from the page's scope (Campaign · Phase · PIC · Filters), not the state tab
-    /* the tabs count the same scope · the Pipeline has no tabs (its columns are the stages) · Payments has due-state tabs */
-    const rows = dl.view === 'pipeline' ? scoped : scoped.filter(d => R.inDealTab(d, dl.tab, dl.reason, tabs.why));
+    dl.why = tabs.why;    // the ⚠ column = the reasons of the chips (CR-13 §4.5)
+    /* CR-13 §4.4 — the tabs count the same scope (with the chip, a filter) · the Pipeline has no tabs (its columns are the stages) */
+    const rows = dl.view === 'pipeline' ? scoped : scoped.filter(d => R.inDealTab(d, tab) && R.hasReason(d, reason, tabs.why));
     dl.rows = rows;
     renderRow3(s, scoped, tabs, td, cur.scope, ctx);
     if (dl.view === 'pipeline') renderPipeline(s, ctx, rows, td); else renderTable(s, ctx, rows, td);
@@ -265,7 +282,7 @@ KT.screens.deals = (function () {
     $('dl_camp').innerHTML = U.campaignOptionsHTML(f.campaign, null);
     $('dl_camp').value = f.campaign;
     $('dl_campSt').innerHTML = c ? phaseChip(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td)) : '';
-    /* the Phases of this Campaign only — posts that need a Phase are in the Needs action tab (CR-06 §4.6) */
+    /* the Phases of this Campaign only — posts that need a Phase are under the Needs phase chip (CR-13 §4.5) */
     const top = [['all', D.allPhases], ['ongoing', D.ongoingPhases]].map(([v, l]) => `<option value="${v}" data-special${f.phaseSel === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
     const own = R.sortPhases(s.phases.filter(p => p.campaign_id === f.campaign)).map(p => U.phaseOptionHTML(p, f.phaseSel)).join('');
     const link = special(f.phaseSel) ? `<option value="${f.phaseSel}" data-special selected>${esc(f.phaseSel === R.NEEDS ? D.needsPhase : D.unscheduled)}</option>` : '';
@@ -336,25 +353,33 @@ KT.screens.deals = (function () {
     if (f.outside) chips.push(['outside', D.chipOutside(R.dmy(f.outside.from), R.dmy(f.outside.to))]);
     const n = POP_KEYS.filter(k => f[k]).length + (f.tiers ? 1 : 0);
     $('dl_fbadge').textContent = `· ${n}`; $('dl_fbadge').classList.toggle('hidden', !n);
-    /* what the empty list names: Phase and Search sit in the toolbar, the Needs action reason in its own row */
+    /* what the empty list names: Phase and Search sit in the toolbar, the attention chip in its own row */
     const active = R.activeFilters(filtersNow()), ph = s.phases.find(p => p.phase_id === f.phaseSel);
     dl.used = [].concat(active.includes('phaseSel') ? [`${D.phase}: ${ph ? R.phaseName(s, ph.phase_id) : f.phaseSel === 'ongoing' ? D.ongoingPhases : f.phaseSel === R.NEEDS ? D.needsPhase : D.unscheduled}`] : [],
-      active.includes('q') ? [C.common.searchChip(R.trim(f.q))] : [], active.includes('pic') ? [`${D.pic}: ${picLabel(picSel())}`] : [], chips.map(c => c[1]), active.includes('reason') ? [D.reasons[dl.reason]] : []);
+      active.includes('q') ? [C.common.searchChip(R.trim(f.q))] : [], active.includes('pic') ? [`${D.pic}: ${picLabel(picSel())}`] : [], chips.map(c => c[1]), active.includes('reason') ? [D.attn[dl.reason]] : []);
     U.filterChips($('dl_chips'), chips, 0); $('dl_clearall').classList.toggle('hidden', !active.length);
   }
-  /* Row 3: Group by → state tabs → one line of money for the whole scope (CR-05 §4.5 words) · Needs action: a chip per reason */
+  /* Row 3: state tabs → Group by → one line of money for the whole scope (CR-05 §4.5 words) · below: the attention chips (CR-13 §4.5) */
+  const TAB_GROUP = { list: 'g-list', inprocess: 'g-prog', complete: 'g-done', cancelled: 'g-cancel' };   // the colours of the Pipeline groups (CR-09 §4.10)
   function renderRow3(s, scoped, tabs, td, scope, ctx) {
     const t = R.dealTiles(s, scoped, scope, td, ctx.phaseIdx), m = R.moneyOf(t.budget, t.committed, t.shortlist, t.paid), MN = C.money;
     const sum = `<span class="dl-sum">${esc(MN.committed.h)} ${U.info(MN.committed)} <b class="${m.remaining < 0 ? 'over' : ''}">${R.baht(m.committed)}</b>${m.budget == null ? '' : `<span class="muted"> / ${R.baht(m.budget)}</span>`}` +
       `<span class="sep">·</span>${esc(MN.pending.h)} ${U.info(MN.pending)} <b>${R.baht(m.pending)}</b><span class="sep">·</span>${esc(D.paidShort)} <b>${R.baht(m.paid)}</b></span>`;
     if (dl.view === 'pipeline') { $('dl_row3').innerHTML = `<span class="spacer"></span>${sum}`; $('dl_reasons').classList.add('hidden'); return; }
     const by = groupBy();
-    /* CR-11 §4.13 #1 — row 2: the state tabs · Group by · the money of the scope */
-    $('dl_row3').innerHTML = `<div class="stabs dl-tabs" role="tablist">${R.DEAL_TABS.map(k => `<button type="button" role="tab" data-tab="${k}" class="${dl.tab === k ? 'on' : ''}" aria-selected="${dl.tab === k}">${esc(D.tabs[k])}<span class="n">${R.fmtNum(tabs.counts[k])}</span></button>`).join('')}</div>` +
+    /* CR-11 §4.13 #1 — row 2: the state tabs · Group by · the money of the scope · CR-13 §4.4: a tab at 0 stays (faint) so none moves */
+    const tab = tabSel();
+    $('dl_row3').innerHTML = `<div class="stabs dl-tabs" role="tablist">${R.DEAL_TABS.map(k => `<button type="button" role="tab" data-tab="${k}" class="${[TAB_GROUP[k] || '', tab === k ? 'on' : '', tabs.counts[k] ? '' : 'zero'].filter(Boolean).join(' ')}" aria-selected="${tab === k}">` +
+      `${TAB_GROUP[k] ? '<span class="tdot" aria-hidden="true"></span>' : ''}${esc(D.tabs[k])}<span class="n">${R.fmtNum(tabs.counts[k])}</span></button>`).join('')}</div>` +
       `<label class="tlab">${esc(D.groupBy)} <select id="dl_groupby">${GROUP_BYS.map(v => `<option value="${v}"${v === by ? ' selected' : ''}>${esc(D.groupByOpt[v])}</option>`).join('')}</select></label><span id="dl_gall"></span><span class="spacer"></span>` + sum;
-    const rs = R.NEEDS_REASONS.filter(k => tabs.reasons[k] || dl.reason === k);
-    $('dl_reasons').innerHTML = rs.map(k => `<button type="button" class="tgl${dl.reason === k ? ' on' : ''}" data-reason="${k}" aria-pressed="${dl.reason === k}">${esc(D.reasons[k])} <b>${R.fmtNum(tabs.reasons[k])}</b></button>`).join('');
-    $('dl_reasons').classList.toggle('hidden', dl.tab !== 'needs' || !rs.length);
+    /* only the chips above 0 in this tab (and the one picked, so it can be taken off) · Docs to collect ends with Open in Payments */
+    const rs = R.ATTENTION.filter(k => tabs.chips[k] || dl.reason === k);
+    $('dl_reasons').innerHTML = rs.map(k => {
+      const chip = `<button type="button" class="tgl${dl.reason === k ? ' on' : ''}" data-reason="${k}" aria-pressed="${dl.reason === k}">${esc(D.attn[k])} <b>${R.fmtNum(tabs.chips[k])}</b></button>`;
+      return k !== 'docs' || !U.canSeeTab('payments') ? chip : `<span class="tglgrp">${chip}<button type="button" class="tgl tgl-go" data-attnpay>${esc(D.openInPayments)} ↗</button></span>`;
+    }).join('');
+    $('dl_reasons').setAttribute('aria-label', D.attnLabel);
+    $('dl_reasons').classList.toggle('hidden', !rs.length);
   }
   function bulkBar() {
     const n = dl.selected.size;
@@ -448,7 +473,8 @@ KT.screens.deals = (function () {
     const logsBy = new Map(); s.deal_status_log.forEach(l => { if (!logsBy.has(l.deal_id)) logsBy.set(l.deal_id, []); logsBy.get(l.deal_id).push(l); });
     logsBy.forEach(v => v.sort((a, b) => a.log_id - b.log_id));
     const th = (label, k, cls) => k ? `<th class="sort${cls ? ' ' + cls : ''}" data-sort="${k}">${esc(label)}${dl.sort.key === k ? `<span class="arr">${dl.sort.dir === 'asc' ? '▲' : '▼'}</span>` : ''}</th>` : `<th${cls ? ` class="${cls}"` : ''}>${label}</th>`;
-    const warnCell = d => { const w = R.rowWarnings(s, d, td, ctx); return w.length ? `<span class="wcount" title="${esc(w.map(x => x.msg).join('\n'))}">${w.length}</span>` : ''; };
+    /* CR-13 §4.5 — ⚠ = the number of reasons from the chips · hover lists them ("Metrics due · 1 post") · none = empty */
+    const warnCell = d => { const w = dl.why.get(d.deal_id) || []; return w.length ? `<span class="wcount" title="${esc(w.map(attnTip).join('\n'))}">${w.length}</span>` : ''; };
     /* CR-09 TC-54: no row ticks for Viewer / Accounting (nothing to do in bulk) — Export stays in ⋯ */
     const pick = can('deal.edit'); if (!pick && dl.selected.size) { dl.selected.clear(); bulkBar(); }
     const allSel = rows.length > 0 && rows.every(d => dl.selected.has(d.deal_id));
@@ -650,12 +676,14 @@ KT.screens.deals = (function () {
   const platformsOf = (ctx, d) => [...new Set(R.postsOfCtx(ctx, d.deal_id).map(p => R.postPlatform(ctx, p)).filter(Boolean))];
   function popItems(s, key, ctx, td) {
     return (dl.scoped || []).filter(d => R.stageKey(s.lookups, d) === key).map(d => {
-      const k = ctx.kols.get(d.kol_id) || {}, p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), since = R.stageSince(s, d), w = R.rowWarnings(s, d, td, ctx);
+      const k = ctx.kols.get(d.kol_id) || {}, p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), since = R.stageSince(s, d), w = dl.why.get(d.deal_id) || [];
       return { d, kol: k.display_name || d.kol_id, tier: (ctx.tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER, phase: p ? R.phaseName(s, p.phase_id) : '', platforms: platformsOf(ctx, d).join(', '),
         pic: d.pic || '', total: R.totalCost(d), payment: `${C.termShort[R.termOf(d) || 'none']} · ${C.payState[R.paymentState(d, td)] || ''}`, days: since ? R.dayDiff(td, since) : null,
-        due: R.dueDate(s, d) || null, warn: w.length, warnText: w.map(x => x.msg).join('\n') };
+        due: R.dueDate(s, d) || null, warn: w.length, warnText: w.map(attnTip).join('\n') };
     });
   }
+  /* one reason of the ⚠ column in words */
+  const attnTip = x => (x.key === 'overdue' ? D.attnTip.overdue(x.step, x.due ? R.dmy(x.due) : '') : D.attnTip[x.key](x.n));
   /* Staff move / reassign the deals they are the PIC of (CR-05) · Viewer / Accounting only look and export */
   const popCan = (s, d) => can('deal.edit') && !R.campaignCancelled(s, d.campaign_id) && (U.actor().role !== 'staff' || (!!myPic() && d.pic === myPic()));
   function openStagePop(key, keep) {

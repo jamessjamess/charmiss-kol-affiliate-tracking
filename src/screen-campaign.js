@@ -205,7 +205,7 @@ KT.screens.campaign = (function () {
         /* the % of the Campaign budget is in the Budget popover (CR-05 §4.7), not floating in the table */
         const bcell = y.budget == null ? `<span class="muted">${esc(K.noBudget)}</span>`
           : `<button type="button" class="info cellinfo" data-info-h="${esc(R.phaseName(s, p.phase_id))}" data-info-d="${esc(pct == null ? K.phaseBudgetNoCampaign : K.pctOfCampaign(Math.round(pct), R.baht(m.budget)))}" aria-label="${esc(K.budgetOfPhase(R.phaseName(s, p.phase_id)))}">${R.baht(y.budget)}</button>`;
-        rows.push(`<tr class="click child" tabindex="0" data-kind="phase" data-id="${esc(p.phase_id)}"><td class="nm"><span class="pn">${esc(R.phaseName(s, p.phase_id))}</span></td>` +
+        rows.push(`<tr class="click child" tabindex="0" data-kind="phase" data-id="${esc(p.phase_id)}"><td class="nm"><span class="pn"><span class="dotc" style="background:${U.phaseVar(p.phase_id)}"></span>${esc(R.phaseName(s, p.phase_id))}</span></td>` +
           `<td>${held ? chip(status, true) : chip(R.phaseStatus(p, td))}</td><td>${period(p.start_date, p.end_date)}</td><td class="num">${daysHTML(R.daysLeft(held ? { status } : { status: R.phaseStatus(p, td), from: p.start_date, to: p.end_date }, td))}</td><td class="num">${bcell}</td>` +
           `<td class="num"><span class="${pm.remaining < 0 ? 'late' : ''}">${R.baht(pm.committed)}</span></td><td>${usedHTML(pm)}</td><td class="num">${remainingHTML(pm)}</td><td class="num">${pendingHTML(pm.pending)}</td><td class="num">${R.fmtNum(y.activeCount)}</td></tr>`);
       });

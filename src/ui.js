@@ -111,8 +111,19 @@ KT.ui = (function () {
     const tip = payTicks(d).map(x => `${x.label}: ${x.on ? R.dmy(x.date) || '✓' : '—'}`).join('\n') || C.payState[st];
     return `<span class="pay" title="${esc(tip)}"><span class="t">${esc(C.termShort[term || 'none'])}</span>${st === 'free' ? '' : ` · <b class="${PAY_CLS[st]}">${esc(C.payState[st])}</b>`}</span>`;
   }
+  /* CR-13 §4.3 — the colour of a Phase: an ordinal grey ramp, the step from its place by start date in its Campaign (R.phaseStep) ·
+     the same Phase is the same grey everywhere (By campaign band · Phase budget · Allocation · Phase Planner · Campaign & Phase table) ·
+     mode 'light' | 'dark' (default: the theme on screen) · phaseVar = the same as a CSS token, for HTML that follows a theme switch by itself */
+  const PHASE_RAMP = { light: ['#a3a19a', '#8a8881', '#72716b', '#5b5a55', '#4a4945', '#3a3936'], dark: ['#5f5e58', '#75736d', '#8b8982', '#a2a098', '#bbb9b1', '#d6d4cc'] };
+  const themeMode = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+  const phaseColorAt = (step, mode) => PHASE_RAMP[mode || themeMode()][Math.min(6, Math.max(1, step || 4)) - 1];
+  const phaseColor = (campaignId, phaseId, mode) => phaseColorAt(R.phaseStep(state(), phaseId), mode);
+  const phaseVarAt = step => `var(--phs${Math.min(6, Math.max(1, step || 4))})`;
+  const phaseVar = phaseId => phaseVarAt(R.phaseStep(state(), phaseId));
   /* CR-11 §4.13 #4 — a KOL name / @handle may break only after _ . - (and at spaces), never inside a word: "thapear.<wbr>thapear" */
   const nameHTML = n => esc(n == null ? '' : n).replace(/([._-])(?=[^._\-\s])/g, '$1<wbr>');
+  /* a gap in percentage points, one way everywhere (Allocation vs target · Pillar mix): +15.4pp · −36.5pp · ±0.0pp */
+  const ppText = v => (v == null || isNaN(v) ? '—' : `${v > 0.05 ? '+' : v < -0.05 ? '−' : '±'}${Math.abs(v).toFixed(1)}pp`);
   /* ⓘ (CR-05 §4.6): a button that opens a small popover — heading, what the number means and how it is worked out.
      info(body, heading) · or info(C.money.committed) for the money words of §4.5 ({h, d, f}) */
   const info = (body, heading) => {
@@ -944,16 +955,18 @@ KT.ui = (function () {
     if (api.currentTab() === tab) api.refresh(); else location.hash = toRoute(tab);
   }
   function takeParams(tab) { const p = pending[tab]; pending[tab] = null; return p; }
+  /* the query of an address (#deals?tab=open) → { link: {tab: 'open'} } for that screen, read once like go() params */
+  function linkParams(tab, q) { pending[tab] = Object.assign({}, pending[tab] || {}, { link: q || {} }); }
 
   const api = {
     C, R, S, $, esc, today, store, state, pref, commit, toast, me, userId, filterChips, noMatchHTML, sizeDrawer, priceRefHTML, priceRefFree, priceRefSummary, costInput, journeyHTML, payTrackHTML, fitJourney, copyText, copyBtnHTML, actor, viewingAs, roleOverride, can, guard, picList, canSeeTab, toastAction, download, downloadCSV, checksHTML, kv, field, range, stChip, stageChip, stageText,
     stageLabel, stageCell, planTip, PAY_CLS, payTicks, payCell, STATUS_CLS, PHASE_CLS, phaseChip,
-    shortNum, bahtShort, dm, initials, nameHTML, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
+    shortNum, bahtShort, dm, initials, nameHTML, PHASE_RAMP, phaseColor, phaseColorAt, phaseVar, phaseVarAt, ppText, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
     dateHTML, setDate, setDateDisabled, parseDmy,
     enhanceCombo, enhanceCombos, phaseOptionHTML, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
     kolCreateHTML, kolCreateCheck, wireKolCreate, accountFieldsHTML, accountCheck, wireAccount,
     dlg, openDialog, closeDialog, confirmDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
-    renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams,
+    renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams, linkParams,
     currentTab: () => null,          // set by app.js
     refresh: () => {},               // set by app.js: re-render the current tab
     afterDataReplaced: () => {},     // set by app.js

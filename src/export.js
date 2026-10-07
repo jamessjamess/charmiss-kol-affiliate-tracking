@@ -46,6 +46,14 @@ KT.export = (function (R, C) {
       rows: m.rows.filter(t => t.deals).map(t => [t.tier, followers(t), r2(t.spend), dec(t.spendPct), t.deals, dec(t.dealsPct)]),
       total: [O.colTotal, '', r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0] };
   }
+  /* CR-13 §4.2 — Pillar mix: the rows of the card (Not set last) · % of total · Target and the gap of the share within the deals with a pillar (Spend) */
+  function pillarmix(x) {
+    const m = R.pillarMix(x.state, x.from, x.to, x.today, x.inclCancel), lab = k => (k === R.NOT_SET ? O.notSet : k);
+    return { key: 'pillarmix', name: O.sheet.pillarmix,
+      header: [O.pillarLabel, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`, `${O.target} %`, `${O.delta} (pp)`],
+      rows: m.rows.map(p => [lab(p.pillar), r2(p.spend), dec(p.spendPct), p.deals, dec(p.dealsPct), p.target == null ? '' : dec(p.target), p.gap.spend == null ? '' : Math.round(p.gap.spend * 10) / 10]),
+      total: [O.colTotal, r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0, '', ''] };
+  }
   /* Activity by campaign (§4.2): a row per bar (week or day), a column per Campaign */
   function activity(x) {
     const ax = R.timeAxis(x.from, x.to), m = R.swimlanes(x.state, x.from, x.to, ax.gran, x.measure, x.today, x.inclCancel);
@@ -114,8 +122,8 @@ KT.export = (function (R, C) {
   }
   function workload(x) {
     const rows = R.workloadByPic(x.state, campScope(x), x.today), sum = k => rows.reduce((a, r) => a + r[k], 0);
-    return { key: 'workload', name: O.sheet.workload, header: [O.picLabel, O.colOpen, O.queues.overdue, O.queues.unpaid, O.colCommittedOpen],
-      rows: rows.map(r => [r.pic || O.noPic, r.open, r.overdue, r.unpaid, r2(r.committed)]), total: [O.colTotal, sum('open'), sum('overdue'), sum('unpaid'), r2(sum('committed'))] };
+    return { key: 'workload', name: O.sheet.workload, header: [O.picLabel, O.colOpen, O.queues.overdue, O.docsToCollect, O.colCommittedOpen],
+      rows: rows.map(r => [r.pic || O.noPic, r.open, r.overdue, r.docs, r2(r.committed)]), total: [O.colTotal, sum('open'), sum('overdue'), sum('docs'), r2(sum('committed'))] };
   }
 
   /* ===================== Operations (§4.6) ===================== */
@@ -181,11 +189,12 @@ KT.export = (function (R, C) {
     return { key: 'performance', name: P.sheet, header, rows, total: cols.flatMap(k => (k === 'kol' ? [P.total, P.postsN(x.rows.length)] : [tot(k)])).concat(['', '']) };
   }
 
-  const WIDGETS = { performance, summary, activity, tiermix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
+  const WIDGETS = { performance, summary, activity, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
     summary_ops: summaryOps, queue, pipeline, due };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
-  const TABS = { all: ['summary', 'activity', 'tiermix', 'portfolio'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'allocation', 'workload'], ops: ['summary_ops', 'queue', 'pipeline', 'due'] };
+  /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
+  const TABS = { all: ['summary', 'portfolio', 'activity', 'pillarmix', 'tiermix'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'allocation', 'workload'], ops: ['summary_ops', 'queue', 'pipeline', 'due'] };
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */

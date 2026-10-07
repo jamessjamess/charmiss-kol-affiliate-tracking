@@ -126,13 +126,15 @@ KT.planner = (function () {
   }
   /* "Phase n" of each row by its start date (CR-06 §4.2) */
   const rowNames = () => { const seqs = R.planSeqs(planRows()); return pl.rows.map((r, i) => R.phaseTitle(seqs[i], '')); };
+  /* CR-13 §4.3 — the grey of a row: its place by date among the rows of the plan (the same ramp as everywhere) */
+  const phaseVarOf = key => { const order = sortedKeys(); return U.phaseVarAt(R.phaseSteps(order.length)[order.indexOf(key)]); };
   const rowTitle = (r, i) => { const seqs = R.planSeqs(planRows()); return R.phaseTitle(seqs[i], r.label); };
 
   /* ===================== draw ===================== */
   const sec = (title, body, extra, id) => `<section class="sec"${id ? ` id="${id}"` : ''}><div class="sec-h"><span>${esc(title)}</span>${extra || ''}</div>${body}</section>`;
   function rowHTML(r, i) {
     const s = state(), canDel = !r.phase_id || R.canDeletePhase(s, r.phase_id), inp = pl.unit === 'pct' ? 'pct' : 'amount';
-    return `<tr data-row="${i}"${r.key === pl.moved ? ' class="moved"' : ''}><td class="pl-seq" data-seqname>${esc(rowNames()[i])}</td>
+    return `<tr data-row="${i}"${r.key === pl.moved ? ' class="moved"' : ''}><td class="pl-seq"><span class="dotc" style="background:${phaseVarOf(r.key)}"></span><span data-seqname>${esc(rowNames()[i])}</span></td>
       <td><input data-k="label" data-key="row${i}_label" value="${esc(r.label)}" placeholder="${esc(K.labelPh)}" aria-label="${esc(K.colLabel)}" autocomplete="off"></td>
       <td class="pl-per">${U.rangeHTML(`data-range="row" data-key="row${i}_start" data-key2="row${i}_end"`, R.isISODate(r.start_date) ? r.start_date : '', R.isISODate(r.end_date) ? r.end_date : '', { label: `${rowNames()[i]} · ${K.colPeriod}` })}</td>
       <td class="num" data-days></td>
@@ -182,7 +184,7 @@ KT.planner = (function () {
     U.wireProductPicker($('pl_products'), { get: () => pl.camp.products, set: codes => { pl.camp.products = codes; pl.dirty = true; pl.touched.add('products'); refresh(); },
       locked: code => (pl.campaignId ? R.productDealsInCampaign(state(), pl.campaignId, code).length : 0), canNew: U.can('campaign.edit'), askUsed: true });
     /* CR-10 §4.8 — what each date range picker shows: the Campaign period in grey, the other Phases underlined in their colours */
-    const marks = () => { const order = sortedKeys(); return pl.rows.map((r, i) => (okRow(r) ? { key: r.key, from: r.start_date, to: r.end_date, color: `var(--ph${(order.indexOf(r.key) % 8) + 1})`, title: rowTitle(r, i) } : null)).filter(Boolean); };
+    const marks = () => pl.rows.map((r, i) => (okRow(r) ? { key: r.key, from: r.start_date, to: r.end_date, color: phaseVarOf(r.key), title: rowTitle(r, i) } : null)).filter(Boolean);
     const band = () => (R.isISODate(pl.period.start) && R.isISODate(pl.period.end) ? { from: pl.period.start, to: pl.period.end } : null);
     b.querySelectorAll('.drange[data-range="row"]').forEach(el => { const key = pl.rows[+el.closest('[data-row]').dataset.row].key; el._rangeOpts = () => ({ band: band(), marks: marks().filter(m => m.key !== key) }); });
     const pe = b.querySelector('.drange[data-range="period"]'); if (pe) pe._rangeOpts = () => ({ marks: marks() });
@@ -215,8 +217,8 @@ KT.planner = (function () {
   /* the budget bar: one square bar split by Phase colour against the Campaign budget, the part over it in red */
   function barHTML() {
     const t = R.planTotals(campDraft(), planRows()), scale = Math.max(t.budget || 0, t.allocated) || 1;
-    const order = sortedKeys(), seg = pl.rows.map((r, i) => ({ r, i, v: num(r.amount) || 0 })).filter(x => x.v > 0);
-    const segs = seg.map(x => `<span style="width:${x.v / scale * 100}%;background:var(--ph${(order.indexOf(x.r.key) % 8) + 1})" title="${esc(`${rowTitle(x.r, x.i)} · ${R.baht(x.v)}`)}"></span>`).join('');
+    const seg = pl.rows.map((r, i) => ({ r, i, v: num(r.amount) || 0 })).filter(x => x.v > 0);
+    const segs = seg.map(x => `<span style="width:${x.v / scale * 100}%;background:${phaseVarOf(x.r.key)}" title="${esc(`${rowTitle(x.r, x.i)} · ${R.baht(x.v)}`)}"></span>`).join('');
     const over = t.budget != null && t.diff < 0, mark = t.budget != null ? `<i class="pl-cap" style="left:${t.budget / scale * 100}%"></i>` : '';
     const overlay = over ? `<b class="pl-over" style="left:${t.budget / scale * 100}%;width:${-t.diff / scale * 100}%"></b>` : '';
     const text = t.budget == null ? `<span class="muted">${esc(K.allocatedNoBudget(R.baht(t.allocated)))}</span>`
@@ -231,7 +233,7 @@ KT.planner = (function () {
     const rows = pl.rows.filter(okRow); if (!rows.length) return `<div class="hint">${esc(K.noDates)}</div>`;
     const from = rows.map(r => r.start_date).sort()[0], to = rows.map(r => r.end_date).sort().pop(), span = R.dayDiff(to, from) + 1;
     const x = iso => R.dayDiff(iso, from) / span * 100, w = (a, b) => (R.dayDiff(b, a) + 1) / span * 100, order = sortedKeys();
-    const color = r => `var(--ph${(order.indexOf(r.key) % 8) + 1})`;
+    const color = r => phaseVarOf(r.key);
     let months = '', d = from.slice(0, 8) + '01';
     while (d <= to) { if (d >= from) months += `<span class="pl-m" style="left:${x(d)}%">${esc(C.overview.months[+d.slice(5, 7) - 1])}</span>`; d = R.addDays(d.slice(0, 8) + '28', 7).slice(0, 8) + '01'; }
     const ov = R.phaseOverlaps(rows.map(r => Object.assign({}, r, { phase_id: r.key })));

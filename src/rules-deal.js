@@ -361,7 +361,7 @@ Object.assign(KT.rules, (function (R, C) {
     if (d.status !== 'Cancel' && isBlank(d.pillar) && step && R.pillarStepReached(L, d.sub_status) && !R.isImportedClosed(d)) infos.push(issue('pillar', M.pillarNotSetInfo));   // CR-11 §4.6
     return { errs, warns, infos, strict };
   }
-  /* warnings shown in the ⚠ column: everything except the Phase budget (that one lives on the Phase) */
+  /* the deal's warnings except the Phase budget (that one lives on the Phase) — the ⚠ column shows the attention reasons since CR-13 §4.5 */
   const rowWarnings = (state, deal, today, ctx) => validateDeal(state, deal, postsOfCtx(ctx, deal.deal_id), today, ctx).warns.filter(w => w.kind !== 'phase');
 
   /* ===================== Template layout (KOL Template.xlsx, 36 columns) ===================== */
@@ -480,28 +480,72 @@ Object.assign(KT.rules, (function (R, C) {
     return { kind: 'dialog' };
   }
 
-  /* ===================== CR-06 §4.6 — Deals: state tabs · Needs action · the Campaign it opens with ===================== */
-  const DEAL_TABS = ['open', 'needs', 'complete', 'cancelled', 'all'];
-  const NEEDS_REASONS = ['overdue', 'unpaid', 'payOverdue', 'needsPhase'];
-  /* why a deal needs action: a step is late · posted but not paid · Prepaid / 50-50 not paid after the brief · a post needs a Phase */
-  function needsReasons(state, d, today, ctx) {
-    const out = [], term = R.termOf(d);
-    if (R.isOverdue(state, d, today)) out.push('overdue');
-    if (isUnpaid(d)) out.push('unpaid');
-    if ((term === 'prepaid' || term === 'split_50') && R.paymentState(d, today) === 'overdue') out.push('payOverdue');
-    if (d.status !== 'Cancel' && ((ctx.phaseIdx.deal.get(d.deal_id) || {}).needsPosts || 0) > 0) out.push('needsPhase');
+  /* ===================== CR-13 §4.4 — Deals: state tabs = the groups of the Pipeline (CR-09 §4.10) · §4.5 attention chips ===================== */
+  /* All (default) · List (Shortlist · Contacted · Confirm QT) · In process (Brief … Approve Draft 3) · Complete (Post) · Cancelled */
+  const DEAL_TABS = ['all', 'list', 'inprocess', 'complete', 'cancelled'];
+  const TAB_OF_STATUS = { List: 'list', Inprocess: 'inprocess', Complete: 'complete', Cancel: 'cancelled' };
+  const dealTabOf = d => TAB_OF_STATUS[d.status] || 'list';
+  const inDealTab = (d, tab) => !tab || tab === 'all' || dealTabOf(d) === tab;
+  /* what a deal needs done — the words of Dashboard › Operations › To do (CR-11 §4.8) · paying is the work of Payments, not of the deal (no Unpaid after posting) */
+  const ATTENTION = ['overdue', 'needsPhase', 'shipOverdue', 'metricsDue', 'docs'];
+  /* deal_id → the instalments owed now that miss a document (Payments › To pay, status Missing docs) */
+  function docsByDeal(state, today) {
+    const m = new Map();
+    R.payQueue(state, today).items.forEach(x => { if (x.status === 'missing_docs' && x.deal_id) m.set(x.deal_id, (m.get(x.deal_id) || 0) + 1); });
+    return m;
+  }
+  /* once a screen: posts at Metrics due (CR-11 §4.12) · instalments at Missing docs · shipments past Ship by (CR-11 §4.10), each by deal */
+  function attentionContext(state, today) {
+    const metrics = new Map(), ship = new Map();
+    R.metricsDue(state, {}, today).forEach(x => metrics.set(x.deal.deal_id, (metrics.get(x.deal.deal_id) || 0) + 1));
+    (state.sample_shipments || []).forEach(sh => { if (sh.deal_id && R.sampleStatus(sh, today) === 'overdue') ship.set(sh.deal_id, (ship.get(sh.deal_id) || 0) + 1); });
+    return { metrics, ship, docs: docsByDeal(state, today) };
+  }
+  /* → [{key, n, …}] in chip order · Overdue: the next step is late (CR-02 · List / In process) {step, due} · Needs phase: posts whose Phase the date
+     cannot decide (CR-03) · Shipment overdue: shipments · Metrics due: posts · Docs to collect: instalments · a cancelled deal has none */
+  function attentionReasons(state, d, today, ctx, actx) {
+    if (d.status === 'Cancel') return [];
+    const out = [], a = actx || attentionContext(state, today);
+    if (R.isOverdue(state, d, today)) { const st = R.nextStep(state.lookups, d).step; out.push({ key: 'overdue', n: 1, step: st ? R.stageName(st) : '', due: R.dueDate(state, d) }); }
+    const np = ((ctx || dealContext(state)).phaseIdx.deal.get(d.deal_id) || {}).needsPosts || 0;
+    if (np > 0) out.push({ key: 'needsPhase', n: np });
+    [['shipOverdue', a.ship], ['metricsDue', a.metrics], ['docs', a.docs]].forEach(([k, m]) => { const n = m.get(d.deal_id) || 0; if (n) out.push({ key: k, n }); });
     return out;
   }
-  /* Open = List + In process · Complete · Cancelled (Needs action and All cut across them) */
-  const dealTabOf = d => (d.status === 'Complete' ? 'complete' : d.status === 'Cancel' ? 'cancelled' : 'open');
-  /* the numbers on the tabs (every tab counts the same scope) + the reasons of Needs action */
-  function dealTabs(state, deals, today, ctxIn) {
-    const ctx = ctxIn || dealContext(state), counts = { open: 0, needs: 0, complete: 0, cancelled: 0, all: deals.length };
-    const reasons = Object.fromEntries(NEEDS_REASONS.map(k => [k, 0])), why = new Map();
-    deals.forEach(d => { counts[dealTabOf(d)]++; const r = needsReasons(state, d, today, ctx); if (r.length) { counts.needs++; why.set(d.deal_id, r); r.forEach(k => { reasons[k]++; }); } });
-    return { counts, reasons, why };
+  /* the numbers of a Deals screen · deals = the scope (Campaign · Phase · PIC · Filters · Search) · o = {tab, reason, actx}:
+     counts = per tab, the scope with the chosen chip (a filter) · chips = per reason, the deals of the chosen tab (the chip itself left out, so
+     each chip says what it would show) · why = deal_id → its reasons (the ⚠ column) */
+  function dealTabs(state, deals, today, ctxIn, o) {
+    const ctx = ctxIn || dealContext(state), opt = o || {}, actx = opt.actx || attentionContext(state, today), why = new Map();
+    deals.forEach(d => { const r = attentionReasons(state, d, today, ctx, actx); if (r.length) why.set(d.deal_id, r); });
+    const counts = Object.fromEntries(DEAL_TABS.map(k => [k, 0])), chips = Object.fromEntries(ATTENTION.map(k => [k, 0]));
+    deals.forEach(d => {
+      if (hasReason(d, opt.reason, why)) { counts.all++; counts[dealTabOf(d)]++; }
+      if (inDealTab(d, opt.tab)) (why.get(d.deal_id) || []).forEach(x => { chips[x.key]++; });
+    });
+    return { counts, chips, why };
   }
-  const inDealTab = (d, tab, reason, why) => (tab === 'all' ? true : tab === 'needs' ? (reason ? (why.get(d.deal_id) || []).includes(reason) : why.has(d.deal_id)) : dealTabOf(d) === tab);
+  const hasReason = (d, reason, why) => !reason || (why.get(d.deal_id) || []).some(x => x.key === reason);
+  /* §4.4 — the tab remembered for each person: one JSON {userId: tab} under deals.stateTab.v2 (the old open / needs values are not read) */
+  const DEAL_TAB_KEY = 'deals.stateTab.v2';
+  function dealTabPref(json, uid) {
+    let m = {}; try { m = JSON.parse(json || '{}') || {}; } catch (e) { m = {}; }
+    const v = m[uid || ''];
+    return DEAL_TABS.includes(v) ? v : 'all';
+  }
+  function setDealTabPref(json, uid, tab) {
+    let m = {}; try { m = JSON.parse(json || '{}') || {}; } catch (e) { m = {}; }
+    if (typeof m !== 'object' || Array.isArray(m)) m = {};
+    m[uid || ''] = DEAL_TABS.includes(tab) ? tab : 'all';
+    return JSON.stringify(m);
+  }
+  /* an old link #deals?tab=… → { tab, reason }: open → All · needs_action → All + Overdue · a tab of today → that tab */
+  function dealTabFromLink(v) {
+    const t = String(v == null ? '' : v).toLowerCase().replace(/[\s_-]/g, '');
+    if (DEAL_TABS.includes(t)) return { tab: t, reason: '' };
+    if (t === 'needsaction' || t === 'needs') return { tab: 'all', reason: 'overdue' };
+    return { tab: 'all', reason: '' };
+  }
   /* the Campaign Deals opens with: the last one used (if it still exists) → the first On going in §4.7 order → the first */
   function defaultDealsCampaign(state, today, last) {
     if (last && state.campaigns.some(c => c.campaign_id === last)) return last;
@@ -650,7 +694,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== CR-07 §4.4 — filters in use · Clear all filters ===================== */
   /* Deals: the Campaign (always one), View, Group by, state tab and sort are never filters */
   function blankDealFilter() { return { campaign: '', phaseSel: 'all', q: '', sub: '', pillar: '', cta: '', payState: '', term: '', open: false, noDate: false, outside: null, tiers: null }; }
-  /* f = the Deals filter + pic ('all' · 'me' · a name · '__none') + reason (a Needs action chip) → the keys that differ from empty */
+  /* f = the Deals filter + pic ('all' · 'me' · a name · '__none') + reason (an attention chip, CR-13 §4.5) → the keys that differ from empty */
   function activeFilters(f) {
     const out = [];
     if (f.phaseSel && f.phaseSel !== 'all') out.push('phaseSel');
@@ -699,7 +743,7 @@ Object.assign(KT.rules, (function (R, C) {
     MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, CORE_STEPS, isCoreStep, validateTiers,
     dealContext, postsOfCtx, postPlatform, PAY_FLAGS, togglePayment, isUnpaid, validateDeal, rowWarnings,
     PAY_TABS, PAY_GROUPS, payTabOf, outstandingOf, paymentsView, payGroupOf, payGroupTotals, payFlags,
-    dropPlan, DEAL_TABS, NEEDS_REASONS, needsReasons, dealTabOf, dealTabs, inDealTab, defaultDealsCampaign,
+    dropPlan, DEAL_TABS, dealTabOf, inDealTab, ATTENTION, docsByDeal, attentionContext, attentionReasons, dealTabs, hasReason, DEAL_TAB_KEY, dealTabPref, setDealTabPref, dealTabFromLink, defaultDealsCampaign,
     TEMPLATE_HEADERS, TEMPLATE_PLATFORMS, platformMark, dealPostSummary, templateRow, filterDeals, dealTiles,
     pipeline, overviewWindow, postBins, overviewTiles, paymentAttention, phaseAttention, funnel, niceStep, dataIssues, newDeal, blankPost,
     blankDealFilter, activeFilters, clearFilters, KOL_FILTER_KEYS, activeKolFilters, kolDrawerWidth, dealDrawerWidth, wideDrawerWidth, drawerWidth, stageSince,

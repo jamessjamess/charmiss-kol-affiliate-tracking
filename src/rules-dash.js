@@ -55,6 +55,42 @@ Object.assign(KT.rules, (function (R, C) {
     return { rows, total };
   }
 
+  /* ===================== CR-13 §4.2 — Pillar mix: where the committed money went, by pillar ===================== */
+  /* the target of a portfolio: each Campaign's pillar target (its own, else Settings' default) weighted by its budget ·
+     no Campaign with a budget → a plain average · none → the default */
+  function portfolioPillarTarget(state, campaigns) {
+    const keys = ['awareness', 'consideration', 'conversion'], list = campaigns || [];
+    if (!list.length) return Object.assign({}, R.pillarTargetOf(state, null));
+    const w = c => (Number(c.budget_kol) > 0 ? Number(c.budget_kol) : 0), sumW = list.reduce((a, c) => a + w(c), 0);
+    const weightOf = c => (sumW ? w(c) / sumW : 1 / list.length);
+    return Object.fromEntries(keys.map(k => [k, list.reduce((a, c) => a + Number(R.pillarTargetOf(state, c.campaign_id)[k]) * weightOf(c), 0)]));
+  }
+  /* the same scope as the KPI cards and the KOL tier mix: committed deals (Confirm QT on, not cancelled) of the Campaigns whose dates touch the range ·
+     rows Awareness → Consideration → Conversion → Not set (always last) · % of total · % of the money that has a pillar and its gap to the target
+     (R.pillarShares — the same as Allocation vs target) · Not set has no target · mostNoPillar: the Campaign with the most spend without a pillar */
+  function pillarMix(state, from, to, today, includeCancelled) {
+    const camps = R.campaignsInRange(state, from, to, today, includeCancelled), ids = new Set(camps.map(c => c.campaign_id));
+    const keys = R.PILLARS.concat([R.NOT_SET]), by = new Map(keys.map(k => [k, { pillar: k, deals: 0, spend: 0 }])), noneBy = new Map();
+    state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(state.lookups, d)).forEach(d => {
+      const k = R.PILLARS.includes(d.pillar) ? d.pillar : R.NOT_SET, x = by.get(k);
+      x.deals++; x.spend = round2(x.spend + totalCost(d));
+      if (k === R.NOT_SET) noneBy.set(d.campaign_id, (noneBy.get(d.campaign_id) || 0) + totalCost(d));
+    });
+    const rows = [...by.values()], total = { deals: rows.reduce((a, x) => a + x.deals, 0), spend: round2(rows.reduce((a, x) => a + x.spend, 0)) };
+    const target = portfolioPillarTarget(state, camps), money = k => Object.fromEntries(rows.map(x => [x.pillar, x[k]]));
+    const sh = { spend: R.pillarShares(money('spend'), target), deals: R.pillarShares(money('deals'), target) };
+    rows.forEach(x => {
+      x.spendPct = total.spend ? x.spend / total.spend * 100 : 0; x.dealsPct = total.deals ? x.deals / total.deals * 100 : 0;
+      const set = x.pillar !== R.NOT_SET;
+      x.target = set ? Number(target[R.PILLAR_KEY[x.pillar]]) : null;
+      x.ofSet = { spend: set ? sh.spend.pct[x.pillar] : null, deals: set ? sh.deals.pct[x.pillar] : null };
+      x.gap = { spend: set ? sh.spend.gap[x.pillar] : null, deals: set ? sh.deals.gap[x.pillar] : null };
+    });
+    const none = by.get(R.NOT_SET), worst = [...noneBy.entries()].sort((a, b) => b[1] - a[1])[0];
+    return { rows, total, target, set: { spend: round2(sh.spend.set), deals: sh.deals.set }, notSetPct: total.spend ? none.spend / total.spend * 100 : 0,
+      mostNoPillar: worst ? worst[0] : null };
+  }
+
   /* ===================== Time axis (§4.2) — one row, one format for the range shown ===================== */
   /* gran (the bars) given or worked out: longer than 92 days = weeks (from Monday) · else days.
      ticks (and their grid lines): > 92 days = the 1st of each month "Jan" (a range that crosses a year says "Jan 27" on January) ·
@@ -103,5 +139,5 @@ Object.assign(KT.rules, (function (R, C) {
     return from && to ? { from: addDays(from, -7), to: addDays(to, 7) } : null;
   }
 
-  return { daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
+  return { portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

@@ -100,12 +100,12 @@
         ['phaseSel', 'q', 'tiers', 'pillar', 'cta', 'term', 'payState', 'open', 'noDate', 'outside', 'reason']);
       assert.deepEqual(R.activeFilters(Object.assign(blank(), { q: '   ' })), [], 'blank search');
     });
-    test('TC-15: Clear all filters keeps the Campaign · Phase All · PIC All · no chips · empty search → Charming Open 14 · All 101', () => {
-      const c = R.clearFilters(Object.assign(blank(), { phaseSel: 'CH-P1', pic: 'Amp', sub: 'Brief', q: 'abc', tiers: ['Nano'], reason: 'unpaid' }));
+    test('TC-15: Clear all filters keeps the Campaign · Phase All · PIC All · no chips · empty search → Charming open 14 (CR-13: List 3 + In process 11) · All 101', () => {
+      const c = R.clearFilters(Object.assign(blank(), { phaseSel: 'CH-P1', pic: 'Amp', sub: 'Brief', q: 'abc', tiers: ['Nano'], reason: 'overdue' }));
       assert.equal(c.campaign, 'CH'); assert.equal(c.phaseSel, 'all'); assert.equal(c.pic, 'all'); assert.equal(c.q, ''); assert.equal(c.reason, '');
       assert.deepEqual(R.activeFilters(c), []);
       const s = fresh(), t = R.dealTabs(s, R.filterDeals(s, Object.assign({}, c, { pic: '' }), TD, R.dealContext(s)), TD);
-      assert.deepEqual([t.counts.open, t.counts.all], [14, 101]);
+      assert.deepEqual([t.counts.list + t.counts.inprocess, t.counts.all], [14, 101]);
     });
     test('TC-19: KOL Master filters in use · cleared = 911 KOLs', () => {
       const f = { q: 'ka', platform: '', tier: 'Nano', lastWorked: '', category: '', type: 'Beauty', pic: '', status: '', term: '', history: '', source: '' };

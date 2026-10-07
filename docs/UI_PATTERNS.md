@@ -63,3 +63,27 @@ How screens are built so every page behaves the same. Labels are English in `src
 - **Chips under a toolbar** show only what the Filters panel set — a value already visible in a dropdown (PIC · Phase) gets no chip · *Clear all* sits in the toolbar.
 - **Prefilled values** say where they came from with a small chip (*From phase* · *From campaign* · *Only product in campaign*) · a value the person picked is never overwritten.
 
+## 8. Phase colours — an ordinal grey ramp (CR-13 §4.3)
+
+A Phase is a step in time, not a category → one hue (grey), light → strong in Phase order (start date within its Campaign).
+`ui.phaseColor(campaignId, phaseId, mode)` (SVG) · `ui.phaseVar(phaseId)` (= CSS `var(--phs1…6)`, follows the theme by itself).
+
+| Step | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| Light | `#a3a19a` | `#8a8881` | `#72716b` | `#5b5a55` | `#4a4945` | `#3a3936` |
+| Dark | `#5f5e58` | `#75736d` | `#8b8982` | `#a2a098` | `#bbb9b1` | `#d6d4cc` |
+
+- n Phases → steps `round(linspace(1, 6, n))` (`rules.phaseSteps`): 1 → [4] · 2 → [1, 6] · 3 → [1, 4, 6] · 4 → [1, 3, 4, 6] · 5 → [1, 2, 4, 5, 6] · 7+ → 1–6 then 6.
+- The step belongs to the Phase in its Campaign (`rules.phaseStep`) — a filter that shows fewer Phases never repaints them.
+- The Phase **name** is the identifier (next to the dot / above the band, in secondary ink) — the colour only says early vs late.
+- **Data colours are never used for a Phase**: Tier (`--tier-*`), Pillar (`--pl-*`), Campaign (`--ph1…8`, categorical) and status colours stay with their own data.
+- Not changed: Campaign & Phase › Timeline bars (status colours) · All campaigns › Activity by campaign (one categorical colour per Campaign).
+- Validated (ordinal) on `#fcfcfb` and `#1a1a19` — do not change a value without running the validator again.
+
+## 9. Deals — state tabs = the Pipeline groups · attention chips (CR-13 §4.4–4.5)
+
+- **Tabs say where a deal is**: All (default, first) · List · In process · Complete · Cancelled — the names and the colours (dot · underline) of the Pipeline groups (`--g-list` · `--g-prog` · `--g-done` · `--g-cancel`). A tab at 0 stays (faint) so none moves · on a phone the tabs wrap, none is cut.
+- The numbers count the scope (Campaign · Phase · PIC · Filters · Search · the chip). The Pipeline view has no tabs (its columns are the stages).
+- The tab is remembered for each person: localStorage `charmiss_kol_tracker_deals.stateTab.v2` = `{userId: tab}` · old links `#deals?tab=open` → All · `?tab=needs_action` → All + Overdue.
+- **Chips say what needs doing** (under the tabs · only those above 0 in the chosen tab · one at a time · a filter, so *Clear all* takes it off): Overdue · Needs phase · Shipment overdue · Metrics due · Docs to collect (+ *Open in Payments*) — the same words as Dashboard › Operations › To do.
+- Paying is the work of Payments, not of the deal: no *Unpaid after posting* / *Payment overdue* in Deals. The **⚠ column** = how many chip reasons a deal has · hover lists them ("Metrics due · 1 post") · a cancelled deal has none. Other checks of a deal (late draft · post link …) stay in its drawer.

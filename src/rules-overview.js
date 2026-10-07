@@ -15,6 +15,20 @@ Object.assign(KT.rules, (function (R, C) {
     const p = state.phases.find(x => x.phase_id === phaseId); if (!p) return -1;
     return R.sortPhases(state.phases.filter(x => x.campaign_id === p.campaign_id)).findIndex(x => x.phase_id === phaseId);
   }
+  /* CR-13 §4.3 — Phase colours are an ordinal ramp of 6 greys: n Phases of a Campaign take the steps round(linspace(1, 6, n)) ·
+     1 Phase → step 4 · more than 6 → steps 1–6, then 6 for the rest (the name tells them apart) */
+  function phaseSteps(n) {
+    if (!(n > 0)) return [];
+    if (n === 1) return [4];
+    if (n > 6) return [1, 2, 3, 4, 5, 6].concat(Array(n - 6).fill(6));
+    return Array.from({ length: n }, (_, i) => Math.round(1 + i * 5 / (n - 1)));
+  }
+  /* the step of a Phase: its place by start date among the Phases of its Campaign (not the Phases shown — a filter never changes it) */
+  function phaseStep(state, phaseId) {
+    const p = state.phases.find(x => x.phase_id === phaseId); if (!p) return null;
+    const list = R.sortPhases(state.phases.filter(x => x.campaign_id === p.campaign_id));
+    return phaseSteps(list.length)[list.findIndex(x => x.phase_id === phaseId)] || null;
+  }
   const campaignSlot = (state, campaignId, today) => R.sortCampaigns(state.campaigns, state.phases, today).findIndex(c => c.campaign_id === campaignId);
 
   /* the date range of a scope: the Phase, else the Campaign (first start → last end) */
@@ -128,6 +142,13 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ---------- Allocation vs target (Row 3) ---------- */
   const DEFAULT_TARGET = { awareness: 10, consideration: 20, conversion: 70 };
+  /* CR-13 §4.2 — the share of each pillar within the money that has a pillar, and its gap to the target (pp) ·
+     one function for Allocation vs target (By campaign) and Pillar mix (All campaigns) · money {Awareness, …} · target {awareness, …} */
+  function pillarShares(money, target) {
+    const set = PILLARS.reduce((a, p) => a + (Number(money[p]) || 0), 0);
+    const pct = Object.fromEntries(PILLARS.map(p => [p, set ? (Number(money[p]) || 0) / set * 100 : null]));
+    return { set, pct, gap: Object.fromEntries(PILLARS.map(p => [p, set ? pct[p] - Number(target[PILLAR_KEY[p]]) : null])) };
+  }
   const pillarTargetOf = (state, campaignId) => { const c = R.campaignOf(state, campaignId); return (c && c.pillar_target) || state.lookups.pillar_target_default || DEFAULT_TARGET; };
   /* targets are whole numbers 0–100 that add up to 100 */
   function validatePillarTarget(t) {
@@ -148,8 +169,7 @@ Object.assign(KT.rules, (function (R, C) {
       info.share.forEach((v, key) => { actual[k] += v; if (byPhase.has(key)) byPhase.get(key)[k] += v; });
     });
     const row = m => { const total = Object.values(m).reduce((a, b) => a + b, 0); return { money: m, total, pct: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, total ? v / total * 100 : 0])) }; };
-    const a = row(actual), set = PILLARS.reduce((x, p) => x + actual[p], 0);
-    const gap = Object.fromEntries(PILLARS.map(p => [p, set ? actual[p] / set * 100 - Number(target[PILLAR_KEY[p]]) : null]));
+    const a = row(actual), gap = pillarShares(actual, target).gap;
     return {
       target: { pct: Object.fromEntries(PILLARS.map(p => [p, Number(target[PILLAR_KEY[p]])])) },
       actual: Object.assign(a, { gap }),
@@ -281,7 +301,7 @@ Object.assign(KT.rules, (function (R, C) {
       .filter(x => x.due && x.due >= today && x.due <= end)
       .sort((a, b) => a.due.localeCompare(b.due) || a.deal.deal_id.localeCompare(b.deal.deal_id));
   }
-  /* Workload by PIC: open deals · overdue · unpaid after posting · committed of the open deals (no PIC = its own row) */
+  /* Workload by PIC: open deals · overdue · Docs to collect (deals with an instalment at Missing docs, CR-13 §4.5) · committed of the open deals (no PIC = its own row) */
   function workload(state, f, today, ctxIn) {
     const ctx = ctxIn || R.dealContext(state);
     return workloadOf(state, opsDeals(state, Object.assign({}, f, { pic: '' }), ctx), today);
@@ -289,17 +309,18 @@ Object.assign(KT.rules, (function (R, C) {
   /* CR-07 §4.2 — the same table for one Campaign (and its chosen Phases): scope {campaignId, phaseIds} */
   const workloadByPic = (state, scope, today, idx) => workloadOf(state, R.scopeDeals(state, scope, idx || R.phaseIndex(state)), today);
   function workloadOf(state, deals, today) {
-    const by = new Map();
+    const by = new Map(), docs = R.docsByDeal(state, today);
     deals.forEach(d => {
-      const k = d.pic || '', w = by.get(k) || { pic: k || null, open: 0, overdue: 0, unpaid: 0, committed: 0 }; by.set(k, w);
+      const k = d.pic || '', w = by.get(k) || { pic: k || null, open: 0, overdue: 0, docs: 0, committed: 0 }; by.set(k, w);
       if (R.isOpenDeal(d)) { w.open++; if (!R.isShortlist(state.lookups, d)) w.committed += totalCost(d); }
       if (R.isOverdue(state, d, today)) w.overdue++;
-      if (R.isUnpaid(d)) w.unpaid++;
+      if (d.status !== 'Cancel' && docs.has(d.deal_id)) w.docs++;
     });
-    return [...by.values()].filter(w => w.open || w.overdue || w.unpaid).sort((a, b) => b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
+    return [...by.values()].filter(w => w.open || w.overdue || w.docs).sort((a, b) => b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
   }
 
   return { PILLARS, PILLAR_KEY, NOT_SET, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
     activityRange, autoGran, activityBins, activitySeries, DEFAULT_TARGET, pillarTargetOf, validatePillarTarget, pillarAllocation: allocation,
+    phaseSteps, phaseStep, pillarShares,
     moneyOf, campaignMoney, moneyTotal, PRESETS, dateRangePreset, presetRange, workloadByPic, campaignsInRange, portfolio, allKpis, swimlanes, QUEUES, opsDeals, opsQueues, queueRows, upcomingDues, workload };
 })(KT.rules, KT.content));

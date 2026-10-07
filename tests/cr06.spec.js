@@ -264,26 +264,28 @@
       assert.equal(R.defaultDealsCampaign(s, TD, 'PH'), 'PH');
       assert.equal(R.defaultDealsCampaign(s, TD, 'GONE'), 'CH', 'a Campaign that is gone is ignored');
     });
-    test('TC-26: Charming, All PICs — Open 14 · Needs action 65 (Overdue 3 · Unpaid after posting 62) · Complete 87 · Cancelled 0 · All 101', () => {
-      const s = fresh(), t = R.dealTabs(s, scoped(s, ''), TD);
-      assert.deepEqual(R.DEAL_TABS.map(k => t.counts[k]), [14, 65, 87, 0, 101]);
-      assert.deepEqual(t.reasons, { overdue: 3, unpaid: 62, payOverdue: 0, needsPhase: 0 });
+    /* CR-13 §4.4 supersedes the tabs Open · Needs action · Complete · Cancelled · All → All · List · In process · Complete · Cancelled
+       (Open = List + In process) · Needs action → attention chips without Unpaid after posting (cr13.spec.js TC-13 / TC-15) */
+    test('TC-26 (CR-13): Charming, All PICs — All 101 · List 3 + In process 11 (= the 14 open) · Complete 87 · Cancelled 0 · Overdue 3', () => {
+      const s = fresh(), t = R.dealTabs(s, scoped(s, ''), TD, null, { tab: 'all' });
+      assert.deepEqual(R.DEAL_TABS.map(k => t.counts[k]), [101, 3, 11, 87, 0]);
+      assert.equal(t.chips.overdue, 3);
       const rows = scoped(s, '');
-      assert.equal(rows.filter(d => R.inDealTab(d, 'needs', 'overdue', t.why)).length, 3);
-      assert.equal(rows.filter(d => R.inDealTab(d, 'open', '', t.why)).every(d => d.status === 'List' || d.status === 'Inprocess'), true);
+      assert.equal(rows.filter(d => R.hasReason(d, 'overdue', t.why)).length, 3);
+      assert.equal(rows.filter(d => R.inDealTab(d, 'list') || R.inDealTab(d, 'inprocess')).every(d => d.status === 'List' || d.status === 'Inprocess'), true);
     });
-    test('TC-23 / TC-24: Me (Ja) Open 9 · Pang Open 3 · Unassigned Open 1', () => {
-      const s = fresh(), open = pic => R.dealTabs(s, scoped(s, pic), TD).counts.open;
+    test('TC-23 / TC-24 (CR-13): Me (Ja) open 9 · Pang open 3 · Unassigned open 1 (List + In process)', () => {
+      const s = fresh(), open = pic => { const c = R.dealTabs(s, scoped(s, pic), TD).counts; return c.list + c.inprocess; };
       assert.deepEqual([open('Ja'), open('Pang'), open('__none')], [9, 3, 1]);
     });
-    test('TC-27: Group by KOL Tier inside Open keeps the 14 open deals · Group by PIC ends with Unassigned', () => {
-      const s = fresh(), ctx = R.dealContext(s), rows = scoped(s, ''), t = R.dealTabs(s, rows, TD, ctx), open = rows.filter(d => R.inDealTab(d, 'open', '', t.why));
+    test('TC-27: Group by KOL Tier inside the open deals keeps the 14 · Group by PIC ends with Unassigned', () => {
+      const s = fresh(), ctx = R.dealContext(s), rows = scoped(s, ''), open = rows.filter(d => R.inDealTab(d, 'list') || R.inDealTab(d, 'inprocess'));
       const byTier = R.groupDeals(s, open, 'tier', ctx, TD);
       assert.equal(byTier.reduce((a, g) => a + g.rows.length, 0), 14);
       const byPic = R.groupDeals(s, open, 'pic', ctx, TD);
       assert.equal(byPic.reduce((a, g) => a + g.rows.length, 0), 14);
       assert.equal(byPic[byPic.length - 1].key, '', 'Unassigned last');
-      assert.deepEqual(R.needsReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx), ['overdue']);
+      assert.deepEqual(R.attentionReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx).map(x => x.key), ['overdue', 'shipOverdue'], 'CR-13 §4.5: its sample is past Ship by too');
     });
     test('summary of the scope: Committed ฿863,700 / ฿850,000 · Pending ฿5,100 · Paid ฿233,500', () => {
       const s = fresh(), ctx = R.dealContext(s), t = R.dealTiles(s, scoped(s, ''), { campaignId: 'CH', phaseIds: null }, TD, ctx.phaseIdx);

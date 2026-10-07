@@ -61,20 +61,21 @@
       assert.equal(E.fileName('Campaign_portfolio', E.scopeName('this_year', from, to), TD, 'xlsx'), 'Campaign_portfolio_This-year_2026-10-06.xlsx');
       assert.equal(E.scopeName('custom', '2026-09-01', '2026-09-30'), '2026-09-01_2026-09-30');
     });
-    test('TC-08: Export the tab — one workbook, 4 sheets (Summary · Activity · KOL tier mix · Campaign portfolio) · Summary starts with the tab, scope, date and who', () => {
+    /* CR-13 §4.1: the sheets follow the new order of the screen and Pillar mix is added */
+    test('TC-08: Export the tab — one workbook, 5 sheets (CR-13: Summary · Campaign portfolio · Activity · Pillar mix · KOL tier mix) · Summary starts with the tab, scope, date and who', () => {
       const s = fresh(), [from, to] = thisYear(), x = { state: s, from, to, today: TD, inclCancel: false, measure: 'posts' };
       const tables = E.tabTables('all', x), meta = { tab: 'All campaigns', scope: 'This year · 01/01/2026 – 31/12/2026', at: '06/10/2026 10:00', by: 'Admin' };
-      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Activity', 'KOL tier mix', 'Campaign portfolio']);
+      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Campaign portfolio', 'Activity', 'Pillar mix', 'KOL tier mix']);
       const sheets = tables.map((t, i) => E.sheetOf(t, i ? null : meta));
       assert.deepEqual(sheets[0].rows.slice(0, 4).map(r => [r[0].v, r[1]]), [['Tab', 'All campaigns'], ['Scope', meta.scope], ['Exported', '06/10/2026 10:00'], ['Exported by', 'Admin']]);
       const val = metric => tables[0].rows.find(r => r[1] === metric)[2];
       assert.deepEqual([val('Campaigns'), val('Deals'), val('Committed'), val('Paid'), val('Outstanding'), val('KOLs engaged'), val('Avg per deal')], [4, 300, 1783579, 774579, 1009000, 237, 6782]);
-      const act = tables[1];
+      const act = tables[2];
       assert.equal(act.header[0], 'Week starting');
       assert.equal(act.rows.length, 53);
       assert.equal(act.total[act.total.length - 1], act.rows.reduce((a, r) => a + r[r.length - 1], 0), 'the Total row adds the weeks up');
       const bytes = X.workbook(sheets), td = new TextDecoder(), text = td.decode(bytes);
-      ['Summary', 'Activity', 'KOL tier mix', 'Campaign portfolio'].forEach(n => assert.ok(text.includes(`name="${n}"`), n));
+      ['Summary', 'Campaign portfolio', 'Activity', 'Pillar mix', 'KOL tier mix'].forEach(n => assert.ok(text.includes(`name="${n}"`), n));
       assert.ok(!/Payee|account_no|full_name/.test(JSON.stringify(tables)), 'nothing from the Payee vault');
     });
     test('TC-02 / anchors: the numbers of the cards are those of the portfolio and of CR-05 §5.0', () => {

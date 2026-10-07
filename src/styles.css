@@ -2,11 +2,14 @@
    Spacing 4/8/12/16/24 · cards radius 12 + 1px border · primary colour only for the one primary button and the active tab. */
 :root{
   color-scheme:light;
+  /* CR-13 §4.3 — Phase = an ordinal grey ramp (step 1 light … 6 strong) · never a data colour (Tier / Pillar / Campaign) */
+  --phs1:#a3a19a; --phs2:#8a8881; --phs3:#72716b; --phs4:#5b5a55; --phs5:#4a4945; --phs6:#3a3936;
   --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f2f4f7; --surface-3:#e9ecf1; --border:#e4e7ec; --border-strong:#d0d5dd; --grid:#eaecf0;
   --text:#101828; --text-2:#344054; --muted:#667085;
   --accent:#c2185b; --accent-hover:#a3144c; --accent-soft:#fdeef4; --accent-text:#ffffff;
   --ok:#067647; --ok-soft:#ecfdf3; --warn:#b54708; --warn-soft:#fffaeb; --err:#b42318; --err-soft:#fef3f2; --info:#175cd3; --info-soft:#eff8ff;
   --st-list-bg:#f2f4f7; --st-list:#344054; --st-prog-bg:#eff8ff; --st-prog:#175cd3; --st-done-bg:#ecfdf3; --st-done:#067647; --st-cancel-bg:#fef3f2; --st-cancel:#b42318;
+  /* --ph1…8 = the categorical order for Campaigns (CR-13: Phases use --phs1…6) */
   --ph1:#2a78d6; --ph2:#eb6834; --ph3:#1baf7a; --ph4:#eda100; --ph5:#e87ba4; --ph6:#008300; --ph7:#4a3aa7; --ph8:#e34948;
   --pl-aw:#2a78d6; --pl-co:#e87ba4; --pl-cv:#eda100; --series-grey:#B4B2A9;
   --band:#8d95a3; --g-list:#5F5E5A; --g-list-bg:#F1EFE8; --g-prog:#2a78d6; --g-prog-bg:#E6F0FB; --g-done:#0f7a52; --g-done-bg:#E3F5EC; --g-cancel:#c23b3a; --g-cancel-bg:#FCE9E9;
@@ -15,6 +18,7 @@
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
+  --phs1:#5f5e58; --phs2:#75736d; --phs3:#8b8982; --phs4:#a2a098; --phs5:#bbb9b1; --phs6:#d6d4cc;
   --bg:#0f1217; --surface:#171b22; --surface-2:#1f242d; --surface-3:#2a303b; --border:#2c333f; --border-strong:#3b4452; --grid:#262c36;
   --text:#eef0f3; --text-2:#c9ced6; --muted:#98a2b3;
   --accent:#f06292; --accent-hover:#f48fb1; --accent-soft:#3a1f2b; --accent-text:#171b22;
@@ -141,6 +145,15 @@ details.menu > summary::-webkit-details-marker{display:none}
 .tgl{border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2);font:inherit;font-size:13px;border-radius:999px;padding:2px 10px;cursor:pointer}
 .tgl b{color:inherit}
 .tgl.on{background:var(--text);border-color:var(--text);color:var(--surface)}
+/* CR-13 §4.4 — Deals state tabs: a dot and, when chosen, an underline in the colour of the Pipeline group · a tab at 0 stays, faint */
+.dl-tabs button .tdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc);margin-right:6px;vertical-align:1px}
+.dl-tabs button.on[class*="g-"]{border-bottom-color:var(--gc)}
+.dl-tabs button.zero:not(.on){opacity:.5}
+@media (max-width:767px){.dl-row3 .dl-tabs{flex-wrap:wrap;overflow-x:visible}.dl-row3 .dl-tabs button{padding:8px}}   /* every tab whole on a phone (no strip to scroll) */
+/* §4.5 — Docs to collect + Open in Payments read as one pill */
+.tglgrp{display:inline-flex}
+.tglgrp .tgl:first-child{border-radius:999px 0 0 999px}
+.tglgrp .tgl-go{border-left:0;border-radius:0 999px 999px 0;color:var(--info);font-size:12px}
 
 /* ---------- cards, KPI ---------- */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
@@ -1610,3 +1623,14 @@ dialog.cmodal.cm-l .cm-root{height:100%}
 /* the Campaign name is read in full (never cut) — the PIC box says "All PICs" / "Me (…)" by itself, so its label gives way below 1600px */
 @media (min-width:1280px) and (max-width:1599px){.dl-piclab .tl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 @media (min-width:1280px){#dl_camp + .combo{width:205px}.dl-scope .search{flex:1 1 110px;min-width:110px}}
+/* ===== CR-13 §4.1 — All campaigns: KPI → Campaign portfolio → Activity by campaign (full row) → Pillar mix · KOL tier mix (1 : 1) ===== */
+.ov-r3{margin-top:16px}
+.ov-r3>.card{margin:0}
+.ov-r4{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:16px;align-items:stretch}
+.ov-r4>.card{margin:0;min-width:0;display:flex;flex-direction:column}
+@media (max-width:1023px){.ov-r4{grid-template-columns:minmax(0,1fr)}}
+.pm-note{margin-top:12px;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:baseline}
+.tm-leg td.pm-d{color:var(--text-2)}   /* Δ: secondary ink — above or below the target is not good or bad by itself */
+.pmix .tm-leg{max-width:420px}
+/* CR-13 §4.3 — a Phase dot before its name */
+.pn .dotc,.pl-seq .dotc,.arow2 .al .dotc{width:8px;height:8px;margin-right:6px;flex:none}
