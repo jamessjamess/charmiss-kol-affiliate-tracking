@@ -1,15 +1,16 @@
-/* screen-settings.js — Settings: Lists (Journey steps, Pillar, CTA, Platform, Tier rules, Pillar targets, Products) edited inline,
+/* screen-settings.js — Settings: Lists (Journey steps, Pillar, CTA, Platform, Tier rules, Products) edited inline (CR-19: no Pillar targets),
    and Data (backup info, Backup / Restore / Reset, Data issues). The PIC list lives in Role Management (CR-04 §4.4). → KT.screens.settings */
 KT.screens.settings = (function () {
   'use strict';
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['targets', K.navTargets], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['data', K.navData], ['golive', C.golive.nav]];
-  const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive');
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
+  const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive' && x[0] !== 'opsmode');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
   function render(id) {
+    if (!SECTIONS.some(([k]) => k === st.section)) st.section = SECTIONS[0][0];   // (CR-19: Pillar targets is gone)
     const sec = $('tab-settings');
     if (id && SECTIONS.some(x => x[0] === id)) st.section = id;
     if (!sec.dataset.built) {
@@ -41,14 +42,13 @@ KT.screens.settings = (function () {
     }
     $('set_nav').innerHTML = `<div class="grp">${esc(K.lists)}</div>` + LIST_SECTIONS.map(navBtn).join('') +
       (can('roles') ? `<button type="button" class="link small set-piclink" data-goroles>${esc(C.roles.managePic)}</button>` : '') +
-      `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7
+      `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'opsmode')) + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7 · CR-17
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'targets' ? targetsHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : listHTML(st.section);
     if (st.section === 'perf') perfCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
-    if (st.section === 'targets') targetsCheck();
     /* CR-04 §4.4 — Lists and Pillar targets are read-only for everyone but an admin */
     if (st.section !== 'data' && st.section !== 'golive' && !can(editAction())) {
       $('set_body').querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = true; });
@@ -58,9 +58,20 @@ KT.screens.settings = (function () {
     }
   }
   /* CR-05 §4.1: Tier rules — admin · the other Lists, Pillar targets and Products (CR-06) — admin and KOL Manager */
-  const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : st.section === 'samples' ? 'shipment.settings' : 'settings.lists');
+  const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : st.section === 'samples' ? 'shipment.settings' : st.section === 'opsmode' ? 'settings.ops' : 'settings.lists');
   const navBtn = ([k, l]) => `<button type="button" data-sec="${k}" class="${k === st.section ? 'on' : ''}">${esc(l)}</button>`;
   function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; st.smp = null; render(); }
+
+  /* ===================== CR-17 §4.1 — Operations mode (Admin): Payments · Shipments, Simple / Full · the data stays the same ===================== */
+  function opsModeHTML() {
+    const s = state(), O = K.ops;
+    const row = kind => { const now = R.opsMode(s, kind);
+      return `<div class="ops-row"><div class="ops-k"><b>${esc(O.kind[kind])}</b><span class="hint">${esc(O.hint[kind][now])}</span></div>` +
+        `<div class="seg" role="group" aria-label="${esc(O.kind[kind])}">${R.OPS_MODES.map(m => `<button type="button" data-opsm="${kind}:${m}" class="${now === m ? 'on' : ''}" aria-pressed="${now === m}">${esc(O.mode[m])}</button>`).join('')}</div></div>`; };
+    return `<div class="card"><div class="card-head"><h3>${esc(K.navOpsMode)}</h3></div><p class="hint" style="margin-top:0">${esc(O.lead)}</p>` +
+      `<dl class="ops-def"><dt>${esc(O.mode.simple)}</dt><dd>${esc(O.simple)}</dd><dt>${esc(O.mode.full)}</dt><dd>${esc(O.full)}</dd></dl>` +
+      row('payments') + row('shipments') + `<p class="hint">${esc(O.safe)}</p></div>`;
+  }
 
   /* ===================== Data ===================== */
   function dataHTML() {
@@ -70,6 +81,7 @@ KT.screens.settings = (function () {
         ${ok ? '' : `<div class="check err" style="margin-bottom:12px">✕ <span>${esc(C.banner.cannotSave)}</span></div>`}
         ${kv(K.lastBackup, s.local.last_backup_at ? R.fmtDateTime(s.local.last_backup_at) : K.never, s.local.last_backup_at ? '' : 'over')}
         ${kv(K.dataSize, K.sizeOf(mb.toFixed(2), S.QUOTA_MB))}
+        ${kv(K.photos, KT.photos.available() ? K.photosLine(R.fmtNum(KT.photos.totals().n), (KT.photos.totals().bytes / 1048576).toFixed(2)) : C.profile.photoOff)}
         <div class="btns" style="margin-top:16px"><button type="button" class="btn primary" data-act="backup">${esc(K.backupNow)}</button>
           ${can('data.restore') ? `<button type="button" class="btn" data-act="restore">${esc(K.restore)}</button><button type="button" class="btn danger" data-act="reset">${esc(K.reset)}</button>` : ''}</div>
         ${KT.golive.beforeCopyHTML()}
@@ -127,24 +139,6 @@ KT.screens.settings = (function () {
     if (!res.errs.length) {
       const next = st.tiers.map(t => ({ tier: R.trim(t.tier), min_followers: Number(t.min_followers) })).sort((a, b) => a.min_followers - b.min_followers);
       if (can('settings.tiers') && JSON.stringify(next) !== JSON.stringify(state().lookups.tier_rules)) { state().lookups.tier_rules = next; commit(LS.saved); }
-    }
-    return res;
-  }
-  /* CR-03 §4.7 — default pillar targets (a Campaign can have its own); saved as soon as they add up to 100 */
-  function targetsHTML() {
-    const t = state().lookups.pillar_target_default || R.DEFAULT_TARGET;
-    if (!st.targets) st.targets = Object.fromEntries(R.PILLARS.map(p => [R.PILLAR_KEY[p], String(t[R.PILLAR_KEY[p]])]));
-    return `<div class="card"><div class="card-head"><h3>${esc(K.navTargets)}</h3></div><p class="hint" style="margin-top:0">${esc(LS.targetHint)}</p>
-      <div class="fields three">${R.PILLARS.map(p => `<div class="field"><label for="pt_${R.PILLAR_KEY[p]}">${esc(p)} (%)</label><input type="number" min="0" max="100" step="1" inputmode="numeric" id="pt_${R.PILLAR_KEY[p]}" data-pt="${R.PILLAR_KEY[p]}" value="${esc(st.targets[R.PILLAR_KEY[p]])}"></div>`).join('')}</div>
-      <div class="hint" id="pt_sum"></div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
-  }
-  function targetsCheck() {
-    const res = R.validatePillarTarget(st.targets), total = Object.values(st.targets).reduce((a, v) => a + (Number(v) || 0), 0);
-    $('ls_checks').innerHTML = checksHTML(res, ''); $('pt_sum').textContent = LS.targetSum(total);
-    $('set_body').querySelectorAll('[data-pt]').forEach(i => i.classList.toggle('invalid', res.errs.length > 0));
-    if (!res.errs.length) {
-      const next = Object.fromEntries(Object.entries(st.targets).map(([k, v]) => [k, Number(v)]));
-      if (can('settings.lists') && JSON.stringify(next) !== JSON.stringify(state().lookups.pillar_target_default)) { state().lookups.pillar_target_default = next; commit(LS.saved); }
     }
     return res;
   }
@@ -230,7 +224,7 @@ KT.screens.settings = (function () {
     const inp = (k, label, hint) => `<div class="field"><label for="ps_${k}">${esc(label)}</label><input id="ps_${k}" data-ps="${k}" value="${esc(st.pay[k])}" inputmode="decimal" autocomplete="off">${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
     const rates = S.wht_rates.map(r => ({ value: String(r), label: `${r}%` }));
     const sel = (k, label, items) => `<div class="field"><label for="ps_${k}">${esc(label)}</label><select id="ps_${k}" data-ps="${k}">${U.optionsHTML(items, st.pay[k])}</select></div>`;
-    const withDetails = (s.payee_profiles || []).filter(p => p.secure).length;
+    const withDetails = (s.payee_profiles || []).filter(p => p.secure).length, waiting = (s.payee_profiles || []).filter(p => p.secure_ship).length;   // CR-16: 0 once schema 15 has moved them
     const status = !V.available() ? `<div class="check warn">! <span>${esc(C.payee.noCrypto)}</span></div>`
       : !v ? `<p style="margin:0"><b>${esc(VT.notSetUp)}</b></p>` : `<p style="margin:0"><b>${esc(VT.setUpOn(R.dmy(String(v.created_at || '').slice(0, 10)), R.changedByName(s, v.created_by)))}</b> · ${esc(VT.withDetails(withDetails))}</p>`;
     const unlocked = v && V.isUnlocked(v);
@@ -241,7 +235,7 @@ KT.screens.settings = (function () {
       v && can('vault.admin') ? `<button type="button" class="btn small danger" data-act="vreset">${esc(VT.reset)}</button>` : '',
       v && can('payee.import') ? `<button type="button" class="btn small" data-act="vimport">${esc(VT.importBtn)}</button>` : '',
       `<button type="button" class="btn small ghost" data-act="vtemplate">${esc(VT.template)}</button>`].join('');
-    return `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${esc(PS.title)}</h3></div><p class="hint" style="margin-top:0">${esc(PS.accounting)}</p>
+    return `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${esc(PS.title)}</h3></div><p class="hint" style="margin-top:0">${esc(PS.accounting)}</p>${waiting ? `<div class="check warn">! <span>${esc(VT.shipWaiting(waiting))}</span></div>` : ''}
       <div class="fields">${inp('vat_rate', PS.vat)}${inp('wht_threshold', PS.threshold, PS.thresholdHint)}${inp('wht_rates', PS.rates, PS.ratesHint)}
         ${sel('default_wht_individual', PS.defInd, rates)}${sel('default_wht_company', PS.defCo, rates)}
         ${inp('band1', PS.band1)}${inp('band2', PS.band2, PS.bandsHint)}${sel('run_weekday', PS.weekday, C.pay.weekdays.map((d, i) => ({ value: String(i), label: d })))}</div>
@@ -277,11 +271,15 @@ KT.screens.settings = (function () {
       const f = e.target.files[0]; if (!f) return;
       plan = R.planPayeeImport(state(), R.parseCSV(await f.text()));
       if (plan.headerError) { $('pv_prev').innerHTML = `<div class="check err">✕ <span>${esc(plan.headerError)}</span></div>`; $('pv_ok').disabled = true; return; }
-      const action = r => (r.kind === 'error' ? `<span class="muted">${esc(VT.actSkip)}</span>`
-        : r.kind === 'new' ? `<select data-pvact="${r.n}"><option value="new">${esc(VT.actNew)}</option><option value="skip">${esc(VT.actSkip)}</option></select>`
-        : r.has_details ? `<select data-pvact="${r.n}"><option value="skip">${esc(VT.actSkip)}</option><option value="replace">${esc(VT.actReplace)}</option></select>` : `<span>${esc(VT.actAdd)}</span>`);
+      /* CR-16 §4.2 — a KOL with a payee already: Add as another payee (payee_label) · Replace default · Skip */
+      const st0 = state(), opt = (v, l, on) => `<option value="${v}"${on ? ' selected' : ''}>${esc(l)}</option>`;
+      const action = r => { if (r.kind === 'error') return `<span class="muted">${esc(VT.actSkip)}</span>`;
+        if (r.kind === 'new') return `<select data-pvact="${r.n}">${opt('new', VT.actNew)}${opt('skip', VT.actSkip)}</select>`;
+        const def = R.payeeOfKol(st0, r.kol.kol_id); if (!def) return `<span>${esc(VT.actAdd)}</span>`;
+        const another = !!r.label && R.trim(r.label).toLowerCase() !== R.trim(def.label).toLowerCase(), pick = another ? 'another' : r.has_details ? 'skip' : 'replace';
+        return `<select data-pvact="${r.n}" aria-label="${esc(VT.colAction)}">${opt('another', VT.actAnother, pick === 'another')}${opt('replace', VT.actReplaceDefault(def.label || C.payee.primary), pick === 'replace')}${opt('skip', VT.actSkip, pick === 'skip')}</select>`; };
       $('pv_prev').innerHTML = `<div class="tablewrap" style="max-height:52vh"><table class="tbl compact-sm"><thead><tr><th class="num">${esc(VT.colRow)}</th><th>${esc(VT.colHandle)}</th><th>${esc(VT.colMatch)}</th><th>${esc(VT.colAction)}</th></tr></thead><tbody>` +
-        plan.rows.map(r => `<tr><td class="num">${r.n}</td><td>@${esc(r.handle)}</td><td>${r.kind === 'error' ? `<span class="late">${esc(r.errs.join(' · '))}</span>` : r.kol ? esc(VT.matchKol(r.kol.display_name)) + (r.has_details ? ` <span class="muted small">(${esc(VT.hasDetails)})</span>` : '') : `<span class="muted">${esc(VT.noKol)}</span>`}</td><td>${action(r)}</td></tr>`).join('') + `</tbody></table></div>`;
+        plan.rows.map(r => `<tr><td class="num">${r.n}</td><td>@${esc(r.handle)}${r.label ? ` <span class="chip">${esc(r.label)}</span>` : ''}</td><td>${r.kind === 'error' ? `<span class="late">${esc(r.errs.join(' · '))}</span>` : r.kol ? esc(VT.matchKol(r.kol.display_name)) + (r.has_details ? ` <span class="muted small">(${esc(VT.hasDetails)})</span>` : '') : `<span class="muted">${esc(VT.noKol)}</span>`}</td><td>${action(r)}</td></tr>`).join('') + `</tbody></table></div>`;
       $('pv_ok').disabled = !plan.rows.some(r => r.kind !== 'error');
     });
     $('pv_ok').addEventListener('click', async () => {
@@ -292,8 +290,16 @@ KT.screens.settings = (function () {
       for (let i = 0; i < todo.length; i++) {
         const r = todo[i]; $('pv_ok').textContent = C.vault.importing(i + 1, todo.length);
         const secure = await V.encrypt(vault, r.details), s = state(), now = new Date().toISOString(), uid = U.userId();
-        let p = r.kol ? R.payeeOfKol(s, r.kol.kol_id) : r.payee;
-        if (!p) { p = R.blankPayee(s, { payee_id: U.store.newId('payee'), kol_id: r.kol ? r.kol.kol_id : null, account_handle: r.handle, payee_type: r.payee_type, user: uid, now }); s.payee_profiles.push(p); }
+        const how = act(r);
+        let p = how === 'another' ? null : r.kol ? R.payeeOfKol(s, r.kol.kol_id) : r.payee;
+        if (!p) {
+          /* a new payee (the KOL's first = its default "Primary" · another = not the default, with its label made unique) */
+          const first = !r.kol || !R.payeesOfKol(s, r.kol.kol_id).length;
+          let label = R.trim(r.label) || (first ? C.payee.primary : VT.importLabel), k = 2;
+          const taken = v => r.kol && R.validatePayeeLabel(s, r.kol.kol_id, v, null).length > 0;
+          while (taken(label) && k < 100) label = `${(R.trim(r.label) || VT.importLabel).slice(0, R.PAYEE_LABEL_MAX - 4)} ${k++}`;
+          p = R.blankPayee(s, { payee_id: U.store.newId('payee'), kol_id: r.kol ? r.kol.kol_id : null, account_handle: r.handle, payee_type: r.payee_type, label, is_default: first, user: uid, now }); s.payee_profiles.push(p);
+        }
         const replaced = !!p.secure;
         Object.assign(p, { payee_type: r.payee_type, secure, bank_name: r.details.bank_name, account_last4: R.last4(r.details.account_no), docs_link: r.docs_link || p.docs_link,
           details_version: (p.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid, updated_at: now, updated_by: uid });
@@ -392,7 +398,6 @@ KT.screens.settings = (function () {
     }
     const tr = t.closest('[data-tier]');
     if (tr && t.dataset.t) { st.tiers[+tr.dataset.tier][t.dataset.t] = t.value; tiersCheck(); }
-    if (t.dataset.pt) { st.targets[t.dataset.pt] = t.value; targetsCheck(); }
   }
   function bodyClick(e) {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -400,6 +405,8 @@ KT.screens.settings = (function () {
     if (b.dataset.deal) { go('deals', { deal: b.dataset.deal }); return; }
     const act = b.dataset.act;
     if (act === 'backup') { doBackup(); return; }
+    const om = e.target.closest('[data-opsm]');
+    if (om) { if (!U.guard('settings.ops')) return; const [kind, mode] = om.dataset.opsm.split(':'); if (R.opsMode(state(), kind) === mode) return; R.setOpsMode(state(), kind, mode); commit(K.ops.saved(K.ops.kind[kind], K.ops.mode[mode])); render(); return; }
     if (act === 'restore') { openRestore(); return; }
     /* CR-08 — the Payee vault (each action asks for its own permission) */
     if (act === 'vtemplate') { downloadCSV('payee_details_template.csv', R.PAYEE_CSV_COLS, [], true); return; }

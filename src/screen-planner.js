@@ -2,7 +2,14 @@
    an editable Phase table (% | ฿ for the whole table), the budget bar, a timeline preview and, when editing, what happens
    to the posts. Everything is saved together (an error anywhere saves nothing). Opened from Campaign & Phase. → KT.planner
    CR-06: a Phase is "Phase {n}" by its start date (+ an optional Label) · the Campaign's products (a new Campaign needs one) ·
-   Campaign period + Number of phases + Split dates evenly · allocation presets Even / Launch-heavy / Custom · rows stay in date order */
+   Campaign period + Number of phases + Split dates evenly · allocation presets Even / Launch-heavy / Custom · rows stay in date order
+   CR-17 §4.5 — Staff plan too: a new Campaign is "Submit for approval" · on an approved Campaign their Budget · Pillar target · Phase dates / budgets /
+   new / removed Phases are asked for (shown here as asked) · name · CTA · products change at once · a Rejected one is saved and Resubmitted.
+   CR-18 §4.1–4.2 — the Campaign: name → KOL budget → Products → Pillar target (no CTA / Default payment term here — what a Campaign has stays) ·
+   an approved Campaign's budget is read here and changed with Adjust budget · each Phase row takes Budget % or Amount (the one typed last leads,
+   the money is saved) · Even / Fill remaining in baht · the bar: green = the budget · red = short / over (Save asks first) · yellow = no budget ·
+   Unallocated under the last Phase · Note to approver for Staff.
+   CR-19 §4.7–4.8 — no pillar target · KOL budget * (above ฿0) before Create campaign / Submit for approval / Save. */
 KT.planner = (function () {
   'use strict';
   const U = KT.ui;
@@ -18,25 +25,26 @@ KT.planner = (function () {
   /* ===================== open ===================== */
   /* o: {campaignId (none = a new Campaign), addRow, focusPhase, opener} */
   function open(o = {}) {
-    if (!guard('campaign.edit')) return;
+    if (!guard('campaign.draft')) return;   // CR-17: Staff too
     if (U.modalOpen()) U.closeModal();
     const s = state(), c = o.campaignId ? s.campaigns.find(x => x.campaign_id === o.campaignId) : null;
-    const t = R.pillarTargetOf(s, c ? c.campaign_id : null);
-    const phases = c ? R.sortPhases(s.phases.filter(p => p.campaign_id === c.campaign_id)) : [];
+    /* CR-17 — for someone who asks: what they asked for shows (a Phase they asked to remove is left out) */
+    const asker = !R.canApprove(U.actor()), ask = r => (asker && r && r.pending_change ? r.pending_change.fields : {});
+    const phases = c ? R.sortPhases(s.phases.filter(p => p.campaign_id === c.campaign_id && !ask(p).delete)) : [];
+    const ca = c ? ask(c) : {};
     pl = {
       mode: c ? 'edit' : 'new', campaignId: c ? c.campaign_id : null,
-      camp: { campaign_name: c ? c.campaign_name : '', cta: c ? c.cta || '' : '', budget_kol: c && c.budget_kol != null ? String(c.budget_kol) : '',
-        default_payment_term: c && R.isTerm(c.default_payment_term) ? c.default_payment_term : '',   // CR-11 §4.11
-        ownTarget: !!(c && c.pillar_target), target: Object.fromEntries(R.PILLARS.map(p => [R.PILLAR_KEY[p], String(t[R.PILLAR_KEY[p]])])),
+      camp: { campaign_name: c ? c.campaign_name : '', budget_kol: c ? (v => (v == null ? '' : String(v)))(ca.budget_kol !== undefined ? ca.budget_kol : c.budget_kol) : '',
         products: c ? R.campaignProductCodes(s, c.campaign_id) : [] },
-      rows: phases.map(p => ({ key: 'k' + (++seq), phase_id: p.phase_id, label: p.label || '', start_date: p.start_date || '', end_date: p.end_date || '', amount: p.budget_kol == null ? '' : String(p.budget_kol), pct: '', default_pillar: p.default_pillar || '' })),
-      unit: c && !num(c.budget_kol) ? 'amount' : 'pct', deleted: [], touched: new Set(), submitted: false, dirty: false, focusRow: null,
+      rows: phases.map(p => { const a = ask(p), v = k => (a[k] !== undefined ? a[k] : p[k]);
+        return { key: 'k' + (++seq), phase_id: p.phase_id, label: p.label || '', start_date: v('start_date') || '', end_date: v('end_date') || '', amount: v('budget_kol') == null ? '' : String(v('budget_kol')), pct: '', basis: 'amount', default_pillar: p.default_pillar || '', waiting: !R.isApproved(p) || !!p.pending_change }; }),
+      note: '', deleted: [], touched: new Set(), submitted: false, dirty: false, focusRow: null,
       /* the period only helps plan (not saved): an existing Campaign starts with its Phases' dates; typing it makes the count re-split the dates */
       period: { start: phases.map(p => p.start_date).filter(Boolean).sort()[0] || '', end: phases.map(p => p.end_date).filter(Boolean).sort().pop() || '' },
-      preset: 'custom', countErr: null, moved: null,
+      countErr: null, moved: null,
     };
     if (!pl.rows.length || o.addRow) addRow(false);
-    fromAmounts();
+    sync();
     const me = pl, fi = o.focusPhase ? pl.rows.findIndex(r => r.phase_id === o.focusPhase) : -1, last = pl.rows.length - 1;
     /* the first thing to fill: a new Campaign's name · New phase: the new row's period (its picker opens on the day after the last Phase) · a Phase: its row */
     const focusSel = me.mode === 'new' && !o.addRow ? '[data-c="campaign_name"]' : o.addRow ? `[data-row="${last}"] .drange-t` : fi >= 0 ? `[data-row="${fi}"] [data-k="label"]` : null;
@@ -45,6 +53,8 @@ KT.planner = (function () {
       onClose: () => { if (pl === me) pl = null; if (U.currentTab() === 'campaign') setHash('campaign'); } });
     box().addEventListener('input', onInput); box().addEventListener('change', onChange);
     box().addEventListener('focusin', e => { const r = e.target.closest('[data-row]'); if (r && pl) pl.focusRow = +r.dataset.row; });
+    /* CR-18 §4.2 — money boxes show their commas once left (1,000,000) */
+    box().addEventListener('focusout', e => { const t = e.target; if (!pl || !t.classList || !t.classList.contains('numin') || t.dataset.k === 'pct') return; const v = R.money(t.value); if (v != null && v >= 0) t.value = R.fmtNum(v); });
     render();
     if (o.addRow && pl.mode === 'edit') setTimeout(() => { const r = pl && pl.rows[last], el = r && box() && box().querySelector(`[data-row="${last}"] .drange`); if (el && r.start_date) U.openRange(el, { from: r.start_date, to: '' }); }, 40);
   }
@@ -54,25 +64,19 @@ KT.planner = (function () {
     const el = i < 0 ? box().querySelector('[data-c="campaign_name"]') : box().querySelector(`[data-row="${i}"] [data-k="label"]`);
     if (el) { el.focus(); el.scrollIntoView({ block: 'nearest' }); }
   }
-  /* % ↔ ฿: the column typed in leads, the other is worked out from the Campaign budget */
-  const budget = () => num(pl.camp.budget_kol);
-  /* a % worked out from ฿ keeps its exact value (pctExact) so going back to ฿ gives the same amount (91.67% of ฿600,000 stays ฿550,000) */
-  function fromAmounts() { const b = budget(); pl.rows.forEach(r => { const p = R.isBlank(r.amount) || !b ? null : R.pctOfBudget(r.amount, b); r.pct = p == null ? '' : String(round2(p)); r.pctExact = p; }); }
-  const pctOf = r => (r.pctExact != null && String(round2(r.pctExact)) === String(r.pct) ? r.pctExact : r.pct);
-  function fromPcts() { const b = budget(); pl.rows.forEach(r => { r.amount = R.isBlank(r.pct) || b == null ? '' : String(R.budgetFromPct(pctOf(r), b)); }); }
-  /* the Campaign budget changed: a preset is laid out again, otherwise the leading column stays and the other follows */
-  function sync() { if (pl.preset !== 'custom' && applyPreset(pl.preset)) return; if (pl.unit === 'pct') fromPcts(); else fromAmounts(); }
-  /* one row typed in: only that row follows */
-  function syncRow(r) {
-    const b = budget();
-    if (pl.unit === 'pct') { r.pctExact = null; r.amount = R.isBlank(r.pct) || b == null ? '' : String(R.budgetFromPct(r.pct, b)); }
-    else { const p = R.isBlank(r.amount) || !b ? null : R.pctOfBudget(r.amount, b); r.pct = p == null ? '' : String(round2(p)); r.pctExact = p; }
-  }
-  /* Even / Launch-heavy: % and ฿ of every row at once (฿ in whole baht, the last row takes the rest) */
+  /* CR-18 §4.2 — Budget % ↔ Amount: the one typed last leads (basis), the other follows the Campaign budget (R.phaseBudgetSync) */
+  const budget = () => R.money(pl.camp.budget_kol);
+  const pctText = v => (v == null ? '' : Number(v).toFixed(2));
+  const amtText = v => (v == null ? '' : String(v));
+  function syncRow(r) { const x = R.budgetRow(r, pl.camp.budget_kol); if (r.basis === 'percent' && budget()) r.amount = amtText(x.amount); else r.pct = pctText(x.pct); }
+  /* the Campaign budget changed (or the plan opened): every row by its basis */
+  function sync() { pl.rows.forEach(syncRow); }
+  /* Even (any count, the last row takes the rest) · Launch-heavy 20 / 65 / 15 (3 phases): the money of every row at once */
   function applyPreset(key) {
-    const x = R.presetSplit(key, pl.rows.length, pl.camp.budget_kol); if (!x) return false;
-    pl.unit = 'pct'; pl.preset = key;
-    pl.rows.forEach((r, i) => { r.pct = String(x.pcts[i]); r.pctExact = null; r.amount = x.amounts ? String(x.amounts[i]) : ''; });
+    const b = budget(); if (!b) return false;
+    if (key === 'even') { R.evenAmounts(b, pl.rows.length).forEach((a, i) => Object.assign(pl.rows[i], { amount: String(a), basis: 'amount' })); }
+    else { const x = R.presetSplit(key, pl.rows.length, b); if (!x) return false; pl.rows.forEach((r, i) => Object.assign(r, { pct: String(x.pcts[i]), basis: 'percent' })); }
+    sync();
     return true;
   }
   /* rows in Phase order (start, end, then the order they were added) — "Phase n" = the row's place */
@@ -102,23 +106,25 @@ KT.planner = (function () {
     pl.rows = pl.rows.filter(r => !gone.has(r.key));
     for (let i = 0; i < x.add; i++) addRow(false);
     if (autoSplit()) splitIntoPeriod(true);
-    if (pl.preset === 'launch' && pl.rows.length !== 3) pl.preset = 'custom';
-    if (pl.preset !== 'custom') applyPreset(pl.preset);   // new rows start empty; the others keep what they had
     pl.dirty = true;
     return true;
   }
   function addRow(rerender = true) {
     const last = pl.rows[pl.rows.length - 1];
-    pl.rows.push({ key: 'k' + (++seq), phase_id: null, label: '', start_date: last && R.isISODate(last.end_date) ? R.addDays(last.end_date, 1) : '', end_date: '', amount: '', pct: '' });
+    pl.rows.push({ key: 'k' + (++seq), phase_id: null, label: '', start_date: last && R.isISODate(last.end_date) ? R.addDays(last.end_date, 1) : '', end_date: '', amount: '', pct: '', basis: 'amount' });
     pl.dirty = true;
     /* CR-10 §4.8: + Add phase opens the new row's picker on the day after the last Phase, waiting for the end */
     if (rerender) { render(); const r = pl.rows[pl.rows.length - 1], el = box().querySelector(`[data-row="${pl.rows.length - 1}"] .drange`); if (el && r.start_date) U.openRange(el, { from: r.start_date, to: '' }); else focusRow(pl.rows.length - 1); }
   }
-  const planRows = () => pl.rows.map(r => ({ key: r.key, phase_id: r.phase_id, label: r.label, start_date: r.start_date, end_date: r.end_date, budget_kol: r.amount, budget_pct: pl.unit === 'pct' ? r.pct : '', default_pillar: r.default_pillar || '' }));
-  const campDraft = () => ({ campaign_id: pl.campaignId, campaign_name: pl.camp.campaign_name, budget_kol: pl.camp.budget_kol });
+  /* the money of a row ('' / a number · "1,000" reads as 1000 · anything else stays as typed so it is flagged) */
+  const moneyOf = v => { const m = R.money(v); return m == null ? (R.isBlank(v) ? '' : v) : m; };
+  const planRows = () => pl.rows.map(r => ({ key: r.key, phase_id: r.phase_id, label: r.label, start_date: r.start_date, end_date: r.end_date, budget_kol: moneyOf(r.amount), budget_pct: r.basis === 'percent' ? r.pct : '', default_pillar: r.default_pillar || '' }));
+  const campDraft = () => ({ campaign_id: pl.campaignId, campaign_name: pl.camp.campaign_name, budget_kol: moneyOf(pl.camp.budget_kol) });
+  /* CR-18 §4.1 — an approved Campaign's budget is the approved one: read here, changed with Adjust budget */
+  const budgetLocked = () => { const c = campNow(); return !!c && R.isApproved(c) && !R.isBlank(c.budget_kol); };   // (CR-19: an approved one with no budget yet takes it here)
   function validate() {
-    const res = R.validatePhasePlan(state(), campDraft(), planRows(), pl.deleted, { pctUsed: pl.unit === 'pct' && pl.rows.some(r => !R.isBlank(r.pct)) });
-    if (pl.camp.ownTarget) res.errs.push(...R.validatePillarTarget(pl.camp.target).errs);
+    /* CR-19 §4.8 — the KOL budget is needed (above ฿0) to create / send / save — an approved budget is read-only here (Adjust budget) */
+    const res = R.validatePhasePlan(state(), campDraft(), planRows(), pl.deleted, { pctUsed: false, budgetRequired: !budgetLocked() });
     const pr = R.checkCampaignProducts(state(), pl.campaignId, pl.camp.products);
     res.errs.push(...pr.errs); res.warns.push(...pr.warns);
     if (pl.countErr) res.errs.unshift(pl.countErr);
@@ -133,46 +139,61 @@ KT.planner = (function () {
   /* ===================== draw ===================== */
   const sec = (title, body, extra, id) => `<section class="sec"${id ? ` id="${id}"` : ''}><div class="sec-h"><span>${esc(title)}</span>${extra || ''}</div>${body}</section>`;
   function rowHTML(r, i) {
-    const s = state(), canDel = !r.phase_id || R.canDeletePhase(s, r.phase_id), inp = pl.unit === 'pct' ? 'pct' : 'amount';
-    return `<tr data-row="${i}"${r.key === pl.moved ? ' class="moved"' : ''}><td class="pl-seq"><span class="dotc" style="background:${phaseVarOf(r.key)}"></span><span data-seqname>${esc(rowNames()[i])}</span></td>
+    const s = state(), canDel = !r.phase_id || R.canDeletePhase(s, r.phase_id), noB = !budget();
+    return `<tr data-row="${i}"${r.key === pl.moved ? ' class="moved"' : ''}><td class="pl-seq"><span class="dotc" style="background:${phaseVarOf(r.key)}"></span><span data-seqname>${esc(rowNames()[i])}</span>${r.waiting ? ` <span class="st apending ap-chg" title="${esc(C.approval.changePendingTip)}">${esc(C.approval.waitingShort)}</span>` : ''}</td>
       <td><input data-k="label" data-key="row${i}_label" value="${esc(r.label)}" placeholder="${esc(K.labelPh)}" aria-label="${esc(K.colLabel)}" autocomplete="off"></td>
       <td class="pl-per">${U.rangeHTML(`data-range="row" data-key="row${i}_start" data-key2="row${i}_end"`, R.isISODate(r.start_date) ? r.start_date : '', R.isISODate(r.end_date) ? r.end_date : '', { label: `${rowNames()[i]} · ${K.colPeriod}` })}</td>
       <td class="num" data-days></td>
-      <td><input type="number" min="0" step="${inp === 'pct' ? '0.01' : '1'}" inputmode="decimal" data-k="${inp}" data-key="row${i}_budget" value="${esc(r[inp])}" aria-label="${esc(inp === 'pct' ? K.colBudgetPct : K.colBudgetAmt)}"></td>
-      <td class="num" data-other></td>
+      <td class="num"><input class="numin pl-pct" inputmode="decimal" data-k="pct" data-key="row${i}_budget" value="${noB ? '' : esc(r.pct)}" placeholder="${noB ? '—' : '0.00'}"${noB ? ` disabled title="${esc(K.addBudgetFirst)}"` : ''} aria-label="${esc(`${rowNames()[i]} · ${K.colBudgetPct}`)}" autocomplete="off"></td>
+      <td class="num"><input class="numin pl-amt" inputmode="numeric" data-k="amount" data-key="row${i}_budget" value="${esc(R.money(r.amount) != null ? R.fmtNum(R.money(r.amount)) : r.amount)}" placeholder="0" aria-label="${esc(`${rowNames()[i]} · ${K.colAmount}`)}" autocomplete="off"></td>
       <td><select data-k="default_pillar" data-key="row${i}_pillar" aria-label="${esc(`${rowNames()[i]} · ${C.fill.defaultPillar}`)}">${optionsHTML(activeList('pillar_list', r.default_pillar || null), r.default_pillar || '', C.fill.none)}</select></td>
       <td><details class="menu"><summary class="icon-btn" aria-label="${esc(C.app.more)}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">
         <button type="button" class="mi" data-dup="${i}">${esc(K.dup)}</button>
         <button type="button" class="mi danger" data-del="${i}"${canDel ? '' : ` disabled aria-disabled="true" title="${esc(K.hasPosts)}"`}>${esc(K.del)}${canDel ? '' : ` <span class="muted small">· ${esc(K.hasPosts)}</span>`}</button></div></details></td></tr>`;
   }
   function html() {
-    const c = pl.camp, isNew = pl.mode === 'new', pct = pl.unit === 'pct';
+    const c = pl.camp, isNew = pl.mode === 'new', locked = budgetLocked();
+    const budgetField = locked
+      ? `<div class="field wide"><label>${esc(CK.fCampaignBudget)}</label><div class="ro-budget"><b>${R.isBlank(c.budget_kol) ? '—' : R.baht(R.money(c.budget_kol))}</b>${KT.budget.pendingTagHTML(pl.campaignId)}` +
+        `${KT.budget.canAdjust() && (campNow() || {}).status_override !== 'cancelled' ? ` <button type="button" class="btn small" data-pladjust>${esc(CK.adjustBudget)}</button>` : ''}</div><div class="hint">${esc(C.budget.readOnlyHint)}</div></div>`
+      : field('budget_kol', CK.fCampaignBudget, `<input class="numin" inputmode="numeric" id="f_budget_kol" data-c="budget_kol" data-key="budget_kol" value="${esc(R.money(c.budget_kol) != null ? R.fmtNum(R.money(c.budget_kol)) : c.budget_kol)}" placeholder="0" autocomplete="off">`, { req: 1, wide: 1, hint: esc(CK.campaignBudgetHint) });
     const campaign = `<div class="fields">
         ${field('campaign_name', CK.fName, `<input id="f_campaign_name" data-c="campaign_name" data-key="campaign_name" value="${esc(c.campaign_name)}" placeholder="${esc(CK.namePh)}" autocomplete="off">`, { req: 1, wide: 1 })}
-        ${field('cta', CK.fCta, `<select id="f_cta" data-c="cta">${optionsHTML(activeList('cta_list', c.cta), c.cta || '', C.common.none)}</select>`)}
-        ${field('default_payment_term', C.fill.defaultTerm, `<select id="f_default_payment_term" data-c="default_payment_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), c.default_payment_term || '', C.fill.none)}</select>`, { hint: esc(C.fill.defaultTermHint) })}
-        ${field('budget_kol', CK.fCampaignBudget, `<input type="number" min="0" step="1" inputmode="numeric" id="f_budget_kol" data-c="budget_kol" data-key="budget_kol" value="${esc(c.budget_kol)}">`)}
+        ${budgetField}
         ${field('products', K.fProducts, U.productPickerHTML('pl_products', c.products, code => (pl.campaignId ? R.productDealsInCampaign(state(), pl.campaignId, code).length : 0)), { req: isNew, wide: 1, hint: esc(K.productsHint) })}
-        <div class="field wide"><label class="tick"><input type="checkbox" data-owntarget${c.ownTarget ? ' checked' : ''}> ${esc(CK.ownTarget)}</label>
-          <div class="fields three" style="margin-top:6px">${R.PILLARS.map(p => `<div class="field"><label>${esc(p)} (%)</label><input type="number" min="0" max="100" step="1" inputmode="numeric" data-ptc="${R.PILLAR_KEY[p]}" value="${esc(c.target[R.PILLAR_KEY[p]])}"${c.ownTarget ? '' : ' disabled'}></div>`).join('')}</div></div>
+        ${asking() ? `<div class="field wide"><label for="pl_note">${esc(C.approval.noteL)} <span class="muted small">${esc(C.approval.noteOptional)}</span></label><textarea id="pl_note" data-plnote data-key="note" rows="2" placeholder="${esc(C.approval.notePh)}">${esc(pl.note)}</textarea></div>` : ''}
       </div>`;
-    const n = pl.rows.length, presets = [['even', K.presetEven]].concat(n === 3 ? [['launch', K.presetLaunch]] : []).concat([['custom', K.presetCustom]]);
+    const n = pl.rows.length, noB = !budget(), dis = noB ? ` disabled title="${esc(K.addBudgetFirst)}"` : '';
     const plan = `<div class="pl-plan">
         <div class="field"><label>${esc(K.period)}</label><div class="pl-period">${U.rangeHTML('data-range="period" data-key="period"', pl.period.start, pl.period.end, { label: K.period, clearable: true })}</div><div class="hint">${esc(K.periodHint)}</div></div>
         <div class="field"><label for="pl_count">${esc(K.count)}</label><span class="stepper-n pl-count"><button type="button" class="icon-btn" data-count="-1" aria-label="${esc(K.fewer)}"${n <= 1 ? ' disabled' : ''}>−</button>` +
           `<input type="number" id="pl_count" min="1" max="${R.MAX_PHASES}" step="1" inputmode="numeric" data-key="count" value="${n}"><button type="button" class="icon-btn" data-count="1" aria-label="${esc(K.more)}"${n >= R.MAX_PHASES ? ' disabled' : ''}>+</button></span></div>
         <div class="field"><label>&nbsp;</label><button type="button" class="btn small" data-splitdates title="${esc(K.splitDatesTip)}">${esc(K.splitDates)}</button></div>
       </div>
-      <div class="btns pl-tools"><span class="muted small">${esc(K.allocation)}</span><div class="seg" role="group" aria-label="${esc(K.allocation)}">${presets.map(([k, l]) => `<button type="button" data-preset="${k}" class="${pl.preset === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>` +
-        `<div class="seg" role="group" aria-label="${esc(K.unit)}"><button type="button" data-unit="pct" class="${pct ? 'on' : ''}">%</button><button type="button" data-unit="amount" class="${pct ? '' : 'on'}">฿</button></div>` +
-        `<button type="button" class="btn small" data-fill title="${esc(K.fillTip)}">${esc(K.fill)}</button></div>`;
+      <div class="btns pl-tools"><span class="muted small">${esc(K.allocation)}</span><button type="button" class="btn small" data-preset="even"${noB ? dis : ` title="${esc(K.evenTip)}"`}>${esc(K.even)}</button>` +
+        (n === 3 ? `<button type="button" class="btn small" data-preset="launch"${dis}>${esc(K.presetLaunch)}</button>` : '') +
+        `<button type="button" class="btn small" data-fill${noB ? dis : ` title="${esc(K.fillTip)}"`}>${esc(K.fillRemaining)}</button></div>`;
     const table = plan + `<div class="tablewrap"><table class="tbl pl-tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colLabel)}</th><th>${esc(K.colPeriod)}</th><th class="num">${esc(K.colDays)}</th>` +
-      `<th>${esc(pct ? K.colBudgetPct : K.colBudgetAmt)}</th><th class="num">${esc(pct ? K.colAmount : K.colPct)}</th><th title="${esc(C.fill.defaultPillarHint)}">${esc(C.fill.defaultPillar)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody></table></div>` +
+      `<th class="num">${esc(K.colBudgetPct)}</th><th class="num">${esc(K.colAmount)}</th><th title="${esc(C.fill.defaultPillarHint)}">${esc(C.fill.defaultPillar)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody><tfoot id="pl_foot"></tfoot></table></div>` +
       `<div class="btns" style="margin-top:8px"><button type="button" class="btn small" data-add>${esc(K.add)}</button></div><div class="pl-bar" id="pl_bar"></div>`;
     return { body: `<div class="pl-grid"><div class="pl-l">${sec(K.secCampaign, campaign)}</div><div class="pl-r">${sec(K.secPhases, table)}${sec(K.secTimeline, `<div id="pl_tl"></div>`)}` +
         `${isNew ? '' : sec(K.secImpact, `<div id="pl_impact"></div>`, '', 'pl_impactSec')}</div></div>`,
-      left: `<div class="checks" id="pl_checks"></div>`,
-      buttons: `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-plsave>${esc(isNew ? K.createCampaign : K.savePhases)}</button>` };
+      left: `${hint() ? `<div class="hint pl-aphint">${esc(hint())}</div>` : ''}<div class="checks" id="pl_checks"></div>`,
+      buttons: `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-plsave>${esc(saveLabel())}</button>` };
+  }
+  /* CR-17 §4.5 — the words of Save for this person and this Campaign */
+  const asking = () => !R.canApprove(U.actor());
+  const campNow = () => (pl.campaignId ? state().campaigns.find(x => x.campaign_id === pl.campaignId) : null);
+  function saveLabel() {
+    const c = campNow();
+    if (pl.mode === 'new') return asking() ? C.approval.submit : K.createCampaign;
+    return asking() && c && c.approval_status === 'rejected' ? C.approval.resubmit : K.savePhases;
+  }
+  function hint() {
+    const c = campNow();
+    if (!asking()) return '';
+    if (pl.mode === 'new' || (c && c.approval_status === 'rejected')) return C.approval.needsApproval;
+    return c && R.isApproved(c) ? C.approval.askHint : '';
   }
   function render() {
     if (!mine()) return;
@@ -200,8 +221,13 @@ KT.planner = (function () {
       tr.querySelector('[data-seqname]').textContent = names[i];
       const ok = R.isISODate(r.start_date) && R.isISODate(r.end_date) && r.end_date >= r.start_date;
       tr.querySelector('[data-days]').textContent = ok ? R.fmtNum(R.dayDiff(r.end_date, r.start_date) + 1) : '—';
-      tr.querySelector('[data-other]').textContent = pl.unit === 'pct' ? (R.isBlank(r.amount) ? '—' : R.baht(Number(r.amount))) : (R.isBlank(r.pct) ? '—' : `${round2(Number(r.pct))}%`);
+      /* the column not being typed in follows (CR-18 §4.2) */
+      const pi = tr.querySelector('[data-k="pct"]'), ai = tr.querySelector('[data-k="amount"]'), a = document.activeElement;
+      if (pi && pi !== a) pi.value = budget() ? r.pct : '';
+      if (ai && ai !== a) { const m = R.money(r.amount); ai.value = m != null ? R.fmtNum(m) : r.amount; }
     });
+    const sy = R.phaseBudgetSync(pl.camp.budget_kol, pl.rows);
+    $('pl_foot').innerHTML = sy.state === 'under' ? `<tr class="pl-unal"><td>${esc(K.unallocatedRow)}</td><td></td><td></td><td></td><td class="num">${esc(pctText(sy.diff / sy.budget * 100))}</td><td class="num">${R.baht(sy.diff)}</td><td></td><td></td></tr>` : '';
     const shown = Object.assign({}, res, { errs: res.errs.filter(e => show(e.field) || e.field === 'rows' || e === pl.countErr), warns: res.warns.filter(w => w.field !== 'products' || show('products')) });
     $('pl_checks').innerHTML = checksHTML(shown, res.errs.length ? '' : C.common.ok);
     b.querySelectorAll('[data-key]').forEach(el => {
@@ -216,14 +242,16 @@ KT.planner = (function () {
   }
   /* the budget bar: one square bar split by Phase colour against the Campaign budget, the part over it in red */
   function barHTML() {
-    const t = R.planTotals(campDraft(), planRows()), scale = Math.max(t.budget || 0, t.allocated) || 1;
-    const seg = pl.rows.map((r, i) => ({ r, i, v: num(r.amount) || 0 })).filter(x => x.v > 0);
+    const t = R.planTotals(campDraft(), planRows()), scale = Math.max(t.budget || 0, t.allocated) || 1, sy = R.phaseBudgetSync(pl.camp.budget_kol, pl.rows);
+    const seg = pl.rows.map((r, i) => ({ r, i, v: R.money(r.amount) || 0 })).filter(x => x.v > 0);
     const segs = seg.map(x => `<span style="width:${x.v / scale * 100}%;background:${phaseVarOf(x.r.key)}" title="${esc(`${rowTitle(x.r, x.i)} · ${R.baht(x.v)}`)}"></span>`).join('');
     const over = t.budget != null && t.diff < 0, mark = t.budget != null ? `<i class="pl-cap" style="left:${t.budget / scale * 100}%"></i>` : '';
     const overlay = over ? `<b class="pl-over" style="left:${t.budget / scale * 100}%;width:${-t.diff / scale * 100}%"></b>` : '';
-    const text = t.budget == null ? `<span class="muted">${esc(K.allocatedNoBudget(R.baht(t.allocated)))}</span>`
-      : `<span>${esc(K.allocated(R.baht(t.allocated), R.baht(t.budget), Math.round(t.pct)))}</span>` +
-        (over ? ` · <b class="late">${esc(K.overBy(R.baht(-t.diff)))}</b>` : t.diff > 0 ? ` · <span class="muted">${esc(K.unallocated(R.baht(t.diff)))}</span>` : '');
+    /* CR-18 §4.2 — green = the budget · red = short / over · yellow = no Campaign budget */
+    const text = sy.state === 'nobudget' ? `<span class="pl-msg muted">${esc(K.budgetFirst)}</span>`   // CR-19 §4.8: grey until the KOL budget is typed
+      : sy.state === 'even' ? `<span class="pl-msg ok">✓ ${esc(K.barEven(R.baht(sy.allocated), R.baht(sy.budget)))}</span>`
+      : sy.state === 'over' ? `<span class="pl-msg err">! ${esc(K.barOver(R.baht(-sy.diff)))}</span>`
+      : `<span class="pl-msg err">! ${esc(K.barUnder(R.baht(sy.diff), R.baht(sy.allocated), R.baht(sy.budget)))}</span>`;
     return `<div class="pl-track">${segs}${overlay}${mark}</div><div class="pl-text">${text}</div>`;
   }
   const okRow = r => R.isISODate(r.start_date) && R.isISODate(r.end_date) && r.start_date <= r.end_date;
@@ -267,14 +295,14 @@ KT.planner = (function () {
   function onInput(e) {
     if (!mine()) return;
     const t = e.target, tr = t.closest('[data-row]');
-    if (t.dataset.c) { pl.camp[t.dataset.c] = t.value; if (t.dataset.c === 'budget_kol') sync(); }
-    else if (t.dataset.ptc) pl.camp.target[t.dataset.ptc] = t.value;
+    if (t.dataset.c) { const had = !!budget(); pl.camp[t.dataset.c] = t.value; if (t.dataset.c === 'budget_kol') { sync(); if (had !== !!budget()) { pl.dirty = true; render(); const el = $('f_budget_kol'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } return; } } }
+    else if (t.dataset.plnote != null) { pl.note = t.value; pl.dirty = true; return; }
     else if (t.dataset.pp) { pl.period[t.dataset.pp] = t.value === 'invalid' ? '' : t.value; }
     else if (t.id === 'pl_count') return;
     else if (tr && t.dataset.k) {
       const r = pl.rows[+tr.dataset.row];
       r[t.dataset.k] = t.value === 'invalid' ? 'invalid' : t.value;
-      if (t.dataset.k === 'pct' || t.dataset.k === 'amount') { pl.preset = 'custom'; syncRow(r); box().querySelectorAll('[data-preset]').forEach(x => x.classList.toggle('on', x.dataset.preset === 'custom')); }
+      if (t.dataset.k === 'pct' || t.dataset.k === 'amount') { r.basis = t.dataset.k === 'pct' ? 'percent' : 'amount'; syncRow(r); }
     } else return;
     pl.dirty = true; refresh();
   }
@@ -288,8 +316,6 @@ KT.planner = (function () {
       pl.touched.add(t.dataset.key); pl.touched.add(t.dataset.key2); if (pl.countErr && pl.countErr.field === 'count') pl.countErr = null;
       pl.dirty = true; if (sortRows()) pl.moved = r.key; render(); return;
     }
-    if (t.dataset.owntarget != null) { pl.camp.ownTarget = t.checked; box().querySelectorAll('[data-ptc]').forEach(i => { i.disabled = !t.checked; }); }
-    if (t.dataset.c === 'cta') pl.camp.cta = t.value;
     if (t.dataset.key) pl.touched.add(t.dataset.key);
     /* a count out of 1–12 stays in the box (marked) · a Phase with posts that cannot go puts the count back */
     if (t.id === 'pl_count') { const typed = t.value, ok = setCount(typed); render(); if (!ok && R.checkPhaseCount(typed)) $('pl_count').value = typed; return; }
@@ -308,13 +334,13 @@ KT.planner = (function () {
     if (!mine()) return;
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     const m = b.closest('details'); if (m) m.open = false;
-    if (b.dataset.unit) { if (pl.unit !== b.dataset.unit) { pl.unit = b.dataset.unit; sync(); render(); } return; }
+    if (b.dataset.pladjust != null) { openAdjust(b); return; }
     if (b.dataset.add != null) { pl.countErr = null; addRow(); return; }
     if (b.dataset.dup != null) {
       const r = pl.rows[+b.dataset.dup], days = okRow(r) ? R.dayDiff(r.end_date, r.start_date) : null;
       const start = okRow(r) ? R.addDays(r.end_date, 1) : '';
-      const copy = { key: 'k' + (++seq), phase_id: null, label: K.copyLabel(r.label), start_date: start, end_date: start && days != null ? R.addDays(start, days) : '', amount: r.amount, pct: r.pct };
-      pl.rows.splice(+b.dataset.dup + 1, 0, copy); sortRows(); pl.preset = 'custom';
+      const copy = { key: 'k' + (++seq), phase_id: null, label: K.copyLabel(r.label), start_date: start, end_date: start && days != null ? R.addDays(start, days) : '', amount: r.amount, pct: r.pct, basis: r.basis };
+      pl.rows.splice(+b.dataset.dup + 1, 0, copy); sortRows();
       pl.dirty = true; render(); focusRow(pl.rows.indexOf(copy)); return;
     }
     if (b.dataset.del != null) {
@@ -324,64 +350,86 @@ KT.planner = (function () {
     }
     if (b.dataset.count) { setCount(pl.rows.length + Number(b.dataset.count)); render(); return; }
     if (b.dataset.splitdates != null) { pl.countErr = null; if (splitIntoPeriod(false)) pl.dirty = true; render(); return; }
-    if (b.dataset.preset) {
-      if (b.dataset.preset === 'custom') pl.preset = 'custom'; else applyPreset(b.dataset.preset);
-      pl.dirty = true; render(); return;
-    }
+    if (b.dataset.preset) { if (applyPreset(b.dataset.preset)) { pl.dirty = true; render(); } return; }
     if (b.dataset.fill != null) {
-      pl.preset = 'custom';
-      if (pl.unit !== 'pct') { pl.unit = 'pct'; fromAmounts(); }
       const i = pl.focusRow != null && pl.focusRow < pl.rows.length ? pl.focusRow : pl.rows.length - 1;
-      R.fillRemaining(pl.rows.map(r => r.pct), i).forEach((v, j) => { pl.rows[j].pct = String(v); });
-      fromPcts(); pl.dirty = true; render(); focusRow(i); return;
+      const amounts = R.fillRemainingAmount(pl.rows.map(r => r.amount), i, budget());
+      Object.assign(pl.rows[i], { amount: String(amounts[i]), basis: 'amount' }); syncRow(pl.rows[i]);
+      pl.dirty = true; render(); focusRow(i); return;
     }
     if (b.dataset.plsave != null) save();
   }
 
+  /* CR-18 §4.3 — Adjust budget from the plan: a panel in place · applied at once (a manager) → the plan takes the new budget and Phase amounts */
+  function openAdjust(opener) {
+    const me = pl, cid = pl.campaignId; if (!cid) return;
+    KT.budget.open(cid, { opener, back: () => { if (pl === me) render(); }, onDone: rec => {
+      if (pl !== me || !rec || rec.status !== 'approved') return;
+      const sg = rec.type === 'decrease' ? -1 : 1, c = campNow();
+      pl.camp.budget_kol = c && c.budget_kol != null ? String(c.budget_kol) : '';
+      (rec.allocations || []).forEach(a => { const r = pl.rows.find(x => x.phase_id === a.phase_id); if (r) Object.assign(r, { amount: String((R.money(r.amount) || 0) + sg * a.amount), basis: 'amount' }); });
+      sync(); render();
+    } });
+  }
+
   /* ===================== save: all or nothing ===================== */
   async function save() {
-    if (!guard('campaign.edit')) return;
+    if (!guard('campaign.draft')) return;
     const res = validate();
     if (res.errs.length) { pl.submitted = true; refresh(); return; }
-    const over = res.warns.find(w => w.kind === 'over');
-    if (over && !(await confirmDialog(K.saveAnywayTitle, over.msg, K.saveAnyway))) return;
-    const s = state(), now = new Date(), c0 = pl.camp, rows = planRows();
-    const target = c0.ownTarget ? Object.fromEntries(Object.entries(c0.target).map(([k, v]) => [k, Number(v)])) : null;
-    const fields = { campaign_name: R.trim(c0.campaign_name), cta: c0.cta || null, budget_kol: num(c0.budget_kol), pillar_target: target, default_payment_term: R.isTerm(c0.default_payment_term) ? c0.default_payment_term : null };
-    let c, oldCta = null;
+    /* CR-18 §4.2 — Phase budgets short of / over the Campaign budget: asked once (Save anyway · Keep editing keeps everything) */
+    const off = res.warns.find(w => w.kind === 'over' || w.kind === 'under');
+    if (off) { const t = R.planTotals(campDraft(), planRows()), what = off.kind === 'over' ? K.barOver(R.baht(-t.diff)) : K.unallocated(R.baht(t.diff));
+      if (!(await confirmDialog(K.mismatchTitle, K.mismatchBody(what), K.saveAnyway, false, K.keepEditing))) return; }
+    const s = state(), now = new Date(), c0 = pl.camp, rows = planRows(), note = asking() ? R.trim(pl.note) : '';
+    /* (CR-18 §4.1: CTA and the Default payment term are not in the plan — a Campaign keeps what it has · an approved budget is not touched here ·
+       CR-19 §4.7: nor its old pillar target) */
+    const fields = Object.assign({ campaign_name: R.trim(c0.campaign_name) }, budgetLocked() ? {} : { budget_kol: R.money(c0.budget_kol) });
+    let c;
+    const me = U.actor(), nowIso = now.toISOString(), asks = [], subs = [];   // CR-17 §4.5: what was asked for · new Phases that wait
     if (pl.mode === 'new') {
-      c = Object.assign({ campaign_id: R.campaignIdFor(fields.campaign_name, s.campaigns), note: null, status_override: null, status_reason: null, status_changed_at: null }, fields);
+      c = Object.assign({ campaign_id: R.campaignIdFor(fields.campaign_name, s.campaigns), note: null, cta: null, default_payment_term: null, status_override: null, status_reason: null, status_changed_at: null }, fields);
+      R.stampNew(c, me, nowIso, note);
       s.campaigns.push(c);
-    } else { c = s.campaigns.find(x => x.campaign_id === pl.campaignId); oldCta = c.cta || null; Object.assign(c, fields); }
+    } else {
+      c = s.campaigns.find(x => x.campaign_id === pl.campaignId);
+      const sp = R.splitChange(c, fields, R.KEY_CAMPAIGN, me); Object.assign(c, sp.now);
+      if (Object.keys(sp.ask).length) { R.requestChange(c, sp.ask, me, nowIso, note); asks.push({ phase_id: null, fields: sp.ask }); }
+    }
     const snap = list => list.map(p => ({ phase_id: p.phase_id, label: p.label || null, start_date: p.start_date, end_date: p.end_date, budget_kol: p.budget_kol, default_pillar: p.default_pillar || null }));
     const before = snap(s.phases.filter(p => p.campaign_id === c.campaign_id)), productsBefore = R.campaignProductCodes(s, c.campaign_id);
     const gone = new Set(pl.deleted);
+    /* CR-17 — an approved Phase of an approved Campaign that Staff take out: asked for (it stays until approved) */
+    pl.deleted.forEach(id => { const p = s.phases.find(x => x.phase_id === id); if (p && R.isApproved(c) && R.isApproved(p) && !R.canApprove(me)) { R.requestChange(p, { delete: true }, me, nowIso, note); asks.push({ phase_id: id, fields: { delete: true } }); gone.delete(id); } });
     s.phases = s.phases.filter(p => !gone.has(p.phase_id));
     s.deal_posts.forEach(p => { if (gone.has(p.phase_override)) p.phase_override = null; });
     rows.slice().sort((a, b) => (a.start_date < b.start_date ? -1 : 1)).forEach(r => {
       const rec = { campaign_id: c.campaign_id, label: R.trim(r.label) || null, start_date: r.start_date, end_date: r.end_date, budget_kol: num(r.budget_kol), default_pillar: r.default_pillar || null };
       const p = r.phase_id && s.phases.find(x => x.phase_id === r.phase_id);
-      if (p) Object.assign(p, rec); else s.phases.push(Object.assign({ phase_id: R.phaseIdFor(c.campaign_id, s.phases) }, rec));
+      if (p) { const sp = R.splitChange(p, rec, R.KEY_PHASE, me); Object.assign(p, sp.now); if (Object.keys(sp.ask).length) { R.requestChange(p, sp.ask, me, nowIso, note); asks.push({ phase_id: p.phase_id, fields: sp.ask }); } }
+      else { const np = Object.assign({ phase_id: R.phaseIdFor(c.campaign_id, s.phases) }, rec); R.stampNew(np, me, nowIso, note); s.phases.push(np); if (np.approval_status === 'pending' && pl.mode !== 'new') subs.push(np.phase_id); }
     });
     R.setCampaignProducts(s, c.campaign_id, c0.products);
     s.campaign_events.push({ event_id: store.newCampaignEventId(), campaign_id: c.campaign_id, type: 'phase_plan', from: { phases: before, products: productsBefore },
       to: { campaign: fields, phases: snap(s.phases.filter(p => p.campaign_id === c.campaign_id)), products: c0.products.slice() }, changed_at: now.toISOString(), changed_by: userId(), note: null });
-    /* the CTA changed: offer it to the open deals that still use the old one (CR-04 §4.7) */
-    if (pl.mode === 'edit' && oldCta !== fields.cta) {
-      const same = R.dealsWithCta(s, c.campaign_id, oldCta);
-      if (same.length && await confirmDialog(CK.ctaApplyTitle(same.length), CK.ctaApplyBody(oldCta || C.common.none, fields.cta || C.common.none, same.length), CK.ctaApplyOk)) {
-        const r = R.fieldChanges(same, 'cta', fields.cta, { eventId: store.newEventId(), now, user: userId(), note: CK.ctaNote });
-        const at = new Map(s.deals.map((x, i) => [x.deal_id, i]));
-        r.deals.forEach(x => { s.deals[at.get(x.deal_id)] = x; }); r.events.forEach(e => s.deal_events.push(e));
-      }
-    }
+    /* CR-17 — the approval rows: a new Campaign sent · changes asked for · new Phases sent · a Rejected one sent again (Resubmit) */
+    { let e = 0; const base = store.newCampaignEventId(), ev = (to, o = {}) => s.campaign_events.push({ event_id: base + e++, campaign_id: c.campaign_id, type: 'approval', from: o.from || null, to, phase_id: o.phase_id || null, fields: o.fields || null, changed_at: nowIso, changed_by: userId(), note: note || null });
+      if (pl.mode === 'new' && c.approval_status === 'pending') ev('submitted');
+      asks.forEach(a => ev('change_requested', a));
+      subs.forEach(id => ev('submitted', { phase_id: id }));
+      if (pl.mode !== 'new' && !R.canApprove(me) && (c.approval_status === 'rejected' || s.phases.some(p => p.campaign_id === c.campaign_id && p.approval_status === 'rejected'))) {
+        const r = R.resubmitCampaign(s, c.campaign_id, { eventId: () => base + e++, now: nowIso, user: userId() }, note); s.campaign_events.push(...r);
+      } }
+    /* CR-18 §3 — the first budget of a new / waiting Campaign (one row that follows it until it is approved) · CR-19: an approved one that had none */
+    if (!R.isApproved(c) || pl.mode === 'new' || !(s.campaign_budget_changes || []).some(x => x.campaign_id === c.campaign_id)) R.syncInitial(s, c.campaign_id, userId(), nowIso);
+    const waiting = !R.isApproved(c) || asks.length || subs.length;
     const id = c.campaign_id, isNew = pl.mode === 'new';
     pl.dirty = false;
     /* CR-11 §4.2 — a new Campaign: "Campaign created · Open" · Plan phases: saved, back to the drawer it came from */
-    if (isNew) commit(); else commit(K.saved(c.campaign_name));
+    if (isNew) commit(); else commit(waiting && !R.canApprove(me) ? C.approval.changeSent : K.saved(c.campaign_name));
     U.closeModal();
     if (KT.screens.campaign.afterPlan) KT.screens.campaign.afterPlan(id, isNew);
-    if (isNew) toastAction(C.common.created(K.campaignThing), C.common.open, () => { if (KT.screens.campaign.openCampaign) KT.screens.campaign.openCampaign(id); }, 8000);
+    if (isNew) toastAction(c.approval_status === 'pending' ? C.approval.sent : C.common.created(K.campaignThing), C.common.open, () => { if (KT.screens.campaign.openCampaign) KT.screens.campaign.openCampaign(id); }, 8000);
   }
 
   return { open, isOpen, reopen };

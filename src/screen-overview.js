@@ -1,7 +1,7 @@
 /* screen-overview.js — Dashboard (CR-05 §4.6), three tabs (#dashboard/all · /campaign · /ops, the last one remembered):
    All campaigns — date presets This year · This quarter · This month · Last month · Custom (CR-07 §4.1) · 5 KPI cards · Activity by campaign | KOL tier mix ·
                    Campaign portfolio with Days left · a download on each table / chart card and an Export of the whole tab (CR-09 §4.1–4.5)
-   By campaign   — one Campaign (and Phase): summary cards · Activity by date · Phase budget · Allocation vs target · Workload by PIC — one full row each (CR-07 §4.2)
+   By campaign   — one Campaign (and Phase): summary cards · Activity by date · Phase budget · Pillar allocation (CR-19, was Allocation vs target) · Workload by PIC — one full row each (CR-07 §4.2)
    Operations    — one PIC first (CR-07 §4.3), then Campaign / Tier · queue cards · the chosen queue as a table · Active pipeline · Due in next 7 days
    Money is said one way everywhere: Budget → Committed → Used % → Remaining → Pending (§4.5). → KT.screens.overview */
 KT.screens.overview = (function () {
@@ -12,7 +12,7 @@ KT.screens.overview = (function () {
   const TABS = ['all', 'campaign', 'ops'];
   const ov = {
     tab: TABS.includes(pref.get('dashtab', 'all')) ? pref.get('dashtab', 'all') : 'all',
-    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, inclCancel: false, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', sort: null }, savedPreset()),
+    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', sort: null }, savedPreset()),
     camp: { campaign: '', phase: '', gran: 'day', measure: 'posts', colorBy: null, colorFor: null, view: 'chart' },
     ops: { campaign: '', pic: null, tier: '', queue: null, limit: 50, selected: new Set() },
   };
@@ -45,6 +45,8 @@ KT.screens.overview = (function () {
     $('ov_tools').addEventListener('click', onToolsClick);
     $('ov_tools').addEventListener('change', onToolsChange);
     $('ov_body').addEventListener('click', onBodyClick);
+    /* CR-19 §4.4 — Tab goes through the rows · Enter = a click */
+    $('ov_body').addEventListener('keydown', e => { if (e.key !== 'Enter') return; const tr = e.target.closest('tr[data-gocamp]'); if (tr && e.target === tr) tr.click(); });
     /* CR-06 §4.9: drawn again for the content's new width (menu folded / opened, window resized) — the page stays where it was */
     document.addEventListener('kt:contentresize', () => { if (U.currentTab() !== 'overview') return; const y = window.scrollY; render(null, true); window.scrollTo(0, y); });
     sec.dataset.built = '1';
@@ -57,24 +59,44 @@ KT.screens.overview = (function () {
   const binTitle = (k, gran) => (gran === 'week' ? O.weekOf(R.dmy(k), R.dmy(R.addDays(k, 6))) : R.dmy(k));
 
   /* ===================== Tab 1 — All campaigns ===================== */
+  /* CR-14 §4.1 — Status (multi-select, instead of Include cancelled): the effective status today · default all but Cancelled · kept for each person */
+  function statusesNow() {
+    const uid = U.userId() || '';
+    if (ov.all.stUser !== uid) { ov.all.stUser = uid; ov.all.statuses = R.normDashStatuses(R.userPrefGet(pref.get(R.DASH_STATUS_KEY, ''), uid)); }
+    return ov.all.statuses;
+  }
+  function setStatuses(v) { statusesNow(); ov.all.statuses = R.normDashStatuses(v); pref.set(R.DASH_STATUS_KEY, R.userPrefSet(pref.get(R.DASH_STATUS_KEY, ''), U.userId() || '', ov.all.statuses)); }
+  /* the dot of each status = the colour of its status chip */
+  const STATUS_DOT = { ongoing: 'var(--st-prog)', not_started: 'outline', on_hold: 'var(--warn)', complete: 'var(--st-done)', cancelled: 'var(--st-cancel)' };
+  /* the words after "Status:" — on the button 3 or more read "3 selected", in a file every name */
+  function statusWords(v, full) {
+    const t = R.dashStatusText(v);
+    return t.kind === 'default' ? O.statusAllExcept : t.kind === 'all' ? O.statusAll : t.kind === 'names' || full ? t.list.map(k => C.phaseStatus[k]).join(', ') : C.ms.nSelected(t.n);
+  }
+  function statusMenu(s, from, to) {
+    const v = statusesNow(), n = R.statusCounts(s, from, to, td());
+    return U.multiSelect({ id: 'ov_status', options: R.CAMPAIGN_STATUSES.map(k => ({ value: k, label: C.phaseStatus[k], sub: R.fmtNum(n[k] || 0), dot: STATUS_DOT[k] })),
+      value: v, label: O.statusBtn(statusWords(v)), aria: O.statusL, title: O.statusTip, searchable: false, defaultValue: R.DASH_STATUS_DEFAULT, min: 1, minTip: O.statusMin,
+      onChange: x => { setStatuses(x); renderAll(); } });
+  }
   function allRange() { return ov.all.preset === 'custom' && ov.all.from && ov.all.to ? [ov.all.from, ov.all.to] : R.presetRange(ov.all.preset, td()); }
   function renderAll() {
     const s = state(), [from, to] = allRange(), A = ov.all;
     const presets = R.PRESETS.concat(['custom']).map(p => `<button type="button" data-preset="${p}" class="${A.preset === p ? 'on' : ''}">${esc(O.presets[p])}</button>`).join('');
     $('ov_tools').innerHTML = `<div class="seg" id="ov_preset">${presets}</div>` +
       (A.preset === 'custom' ? `<span class="fchip">${esc(`${R.dmy(from)} – ${R.dmy(to)}`)}<button type="button" data-clearcustom aria-label="${esc(C.deal.remove)}">×</button></span>` : `<span class="muted small">${esc(`${R.dmy(from)} – ${R.dmy(to)}`)}</span>`) +
-      `<label class="tick small"><input type="checkbox" id="ov_inclCancel"${A.inclCancel ? ' checked' : ''}> ${esc(C.campaign.includeCancelled)}</label>` +
+      statusMenu(s, from, to) +
       `<span class="spacer"></span><button type="button" class="btn small ov-export" data-export="all" title="${esc(O.exportTip)}">${ICON.download}<span>${esc(O.exportTab)}</span></button>` +
       `<span class="hidden">${U.rangeHTML('id="ov_crange"', from, to, { label: O.presets.custom })}</span>`;   // CR-10 §4.8: Custom opens the range picker — nothing changes until Apply
-    const k = R.portfolioKpis(s, from, to, td(), A.inclCancel);
+    const k = R.portfolioKpis(s, from, to, td(), statusesNow());
     /* CR-13 §4.1 — top to bottom: the totals → each Campaign → when → where the money went (Pillar · Tier) */
     $('ov_body').innerHTML = `<div class="kpis k5" id="ov_kpis">${kpiCards(k)}</div>` +
       `<div class="card ov-full ov-port"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>` +
-      `<div class="ov-r3">${swimCard()}</div><div class="ov-r4">${pillarCard()}${tierCard()}</div>`;
-    renderPortfolio(); renderSwim(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
+      `<div class="ov-r3">${tlCard()}</div><div class="ov-r4">${pillarCard()}${tierCard()}</div>`;
+    renderPortfolio(); renderTl(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
   }
   /* what the export rows of this tab are worked out from (KT.export) — the same as the screen */
-  const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), inclCancel: ov.all.inclCancel, measure: ov.all.measure, sort: ov.all.sort }; };
+  const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), statuses: statusesNow(), measure: ov.all.measure, sort: ov.all.sort }; };
   const campX = () => ({ state: state(), campaignId: ov.camp.campaign, phaseId: ov.camp.phase, today: td(), gran: ov.camp.gran || 'day', measure: ov.camp.measure, colorBy: ov.camp.colorBy || 'tier' });
   const opsX = () => ({ state: state(), f: opsFilter(), picLabel: picLabelOf(opsPicNow()), today: td(), queue: ov.ops.queue });
   const tabOfWidget = w => Object.keys(KT.export.TABS).find(t => KT.export.TABS[t].includes(w));
@@ -85,7 +107,7 @@ KT.screens.overview = (function () {
     if (t === 'campaign') { const c = R.campaignOf(s, ov.camp.campaign) || {}; return { file: KT.export.safeName(c.campaign_name + (ov.camp.phase ? ' ' + R.phaseName(s, ov.camp.phase) : '')), text: `${c.campaign_name || ''} › ${ov.camp.phase ? R.phaseName(s, ov.camp.phase) : O.allPhases}` }; }
     if (t === 'ops') { const f = opsFilter(), lab = picLabelOf(opsPicNow()); return { file: KT.export.safeName(lab), text: [`${O.picLabel}: ${lab}`, f.campaign ? `${O.campaign}: ${R.campaignName(s, f.campaign)}` : '', f.tier ? `${O.tierLabel}: ${f.tier}` : ''].filter(Boolean).join(' · ') }; }
     const [from, to] = allRange(), A = ov.all;
-    return { file: KT.export.scopeName(A.preset, from, to), text: `${A.preset === 'custom' ? O.presets.custom : O.presets[A.preset]} · ${R.dmy(from)} – ${R.dmy(to)}${A.inclCancel ? ` · ${C.campaign.includeCancelled}` : ''}` };
+    return { file: KT.export.scopeName(A.preset, from, to), text: `${A.preset === 'custom' ? O.presets.custom : O.presets[A.preset]} · ${R.dmy(from)} – ${R.dmy(to)}` };
   }
   /* CR-09 §4.1 Row 1 — 5 KPI cards, no buttons (ⓘ only) */
   function kpiCards(k) {
@@ -124,7 +146,8 @@ KT.screens.overview = (function () {
   /* Export (the whole tab): one .xlsx, a sheet per widget · Summary first with the tab, scope, when and who */
   function exportTab(tab) {
     const now = new Date(), sc = scopeOf(tab);
-    const meta = { tab: O.tabs[tab], scope: sc.text, at: `${R.dmy(td())} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`, by: (U.me() || {}).display_name || '' };
+    const meta = { tab: O.tabs[tab], scope: sc.text, at: `${R.dmy(td())} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`, by: (U.me() || {}).display_name || '',
+      status: tab === 'all' ? statusWords(statusesNow(), true) : null };   // CR-14 §4.1: the Status line under the range
     const name = KT.export.fileName(O.file['tab_' + tab], sc.file, td(), 'xlsx'), tables = KT.export.tabTables(tab, xOfTab(tab));
     U.download(name, KT.xlsx.workbook(tables.map((t, i) => KT.export.sheetOf(t, i ? null : meta))), KT.xlsx.MIME);
     toast(C.io.exported(name, tables.length));
@@ -147,7 +170,7 @@ KT.screens.overview = (function () {
     const t = m.total;
     $('ov_port').innerHTML = `<div class="tablewrap"><table class="tbl port"><thead><tr>${PCOLS().map(th).join('')}</tr></thead><tbody>` +
       m.rows.map(r => `<tr class="click" tabindex="0" data-gocamp="${esc(r.campaign.campaign_id)}"><td class="nm"><b>${esc(r.campaign.campaign_name)}</b></td><td>${phaseChip(r.status)}</td><td class="nowrap">${esc(r.from ? `${dm(r.from)} – ${dm(r.to)}` : '')}</td>` +
-        `<td class="num">${daysCell(r.days)}</td><td class="num">${r.budget == null ? `<span class="muted">${esc(O.noBudget)}</span>` : R.baht(r.budget)}</td><td class="num">${R.baht(r.committed)}</td><td>${usedBar72(r.usedPct)}</td>` +
+        `<td class="num">${daysCell(r.days)}</td><td class="num">${r.budget == null ? `<span class="muted">${esc(O.noBudget)}</span>` : R.baht(r.budget)}${KT.budget.pendingTagHTML(r.campaign.campaign_id) ? `<div>${KT.budget.pendingTagHTML(r.campaign.campaign_id)}</div>` : ''}</td><td class="num">${R.baht(r.committed)}</td><td>${usedBar72(r.usedPct)}</td>` +
         `<td class="num">${remainingText(r.remaining)}</td><td class="num${r.pending ? '' : ' muted'}">${r.pending ? R.baht(r.pending) : '—'}</td><td class="num">${R.fmtNum(r.deals)}</td></tr>`).join('') +
       `<tr class="total"><td>${esc(O.colTotal)}</td><td></td><td></td><td></td><td class="num">${t.budget == null ? '—' : R.baht(t.budget)}</td><td class="num">${R.baht(t.committed)}</td><td>${usedBar72(t.usedPct)}</td>` +
         `<td class="num">${remainingText(t.remaining)}</td><td class="num">${R.baht(t.pending)}</td><td class="num">${R.fmtNum(t.deals)}</td></tr></tbody></table></div>`;
@@ -165,7 +188,7 @@ KT.screens.overview = (function () {
   const donutHTML = (id, label) => `<div class="tm-wrap"><div class="tm-donut chartbox" id="${id}_box"><svg id="${id}_svg" role="img" aria-label="${esc(label)}"></svg><div class="tip" id="${id}_tip"></div></div><table class="tm-leg" id="${id}_leg"></table></div>`;
   const tierHTML = id => donutHTML(id, O.tierTitle);
   function renderTier(s, from, to) {
-    const A = ov.all, m = R.tierMix(s, from, to, td(), A.inclCancel);
+    const A = ov.all, m = R.tierMix(s, from, to, td(), statusesNow());
     document.querySelectorAll('#ov_body [data-tmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.tierMeasure));
     $('ov_body').querySelector('[data-tact="table"]').classList.toggle('on', A.tierView === 'table');
     ov.lastTier = m;
@@ -216,11 +239,11 @@ KT.screens.overview = (function () {
     drawDonut('ovx_tm', m, ov.all.tierMeasure, 260);
   }
   /* ---------- CR-13 §4.2 — Pillar mix (Row 4, left): where the committed money went, by pillar, against the target ---------- */
-  const PILLAR_VAR = ['--pl-aw', '--pl-co', '--pl-cv'];
+  const PILLAR_VAR = ['--pl-aw', '--pl-ac', '--pl-co', '--pl-cv'];   // CR-19: R.PILLARS order
   const pillarColor = k => (R.PILLARS.includes(k) ? css(PILLAR_VAR[R.PILLARS.indexOf(k)]) : css('--series-grey'));
   const pctTxt = v => (v == null ? '—' : `${Math.round(v * 10) / 10 === Math.round(v) ? Math.round(v) : (Math.round(v * 10) / 10).toFixed(1)}%`);
   function renderPillar(s, from, to) {
-    const A = ov.all, m = R.pillarMix(s, from, to, td(), A.inclCancel);
+    const A = ov.all, m = R.pillarMix(s, from, to, td(), statusesNow());
     document.querySelectorAll('#ov_body [data-pmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.pillarMeasure));
     $('ov_body').querySelector('[data-pmixact="table"]').classList.toggle('on', A.pillarView === 'table');
     ov.lastPillar = m;
@@ -236,12 +259,11 @@ KT.screens.overview = (function () {
     const val = x => (meas === 'spend' ? x.spend : x.deals), pctOf = x => (meas === 'spend' ? x.spendPct : x.dealsPct), total = meas === 'spend' ? m.total.spend : m.total.deals;
     const label = k => (k === R.NOT_SET ? O.notSet : k), rows = m.rows.filter(x => val(x) > 0);
     drawRing(id, rows.map(x => ({ value: val(x), tex: x.pillar === R.NOT_SET, fill: pillarColor(x.pillar),
-      tip: O.pillarSlice(label(x.pillar), R.baht(x.spend), x.deals, pctOf(x).toFixed(1), x.ofSet[meas] == null ? null : x.ofSet[meas].toFixed(1), pctTxt(x.target).replace('%', '')) })), total, meas, S);
-    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.pillarLabel)}</th><th class="num">${esc(meas === 'spend' ? O.mSpend : O.mDeals)}</th><th class="num">${esc(O.pctTotal)}</th>` +
-      `<th class="num">${esc(O.target)}</th><th class="num" title="${esc(O.deltaTip)}"><span class="tiph">${esc(O.delta)}</span></th></tr></thead><tbody>` +
+      tip: O.pillarSlice(label(x.pillar), R.baht(x.spend), x.deals, pctOf(x).toFixed(1)) })), total, meas, S);
+    /* CR-19 §4.7 — Pillar · Spend (or Deals) · % of total (no Target / Δ) */
+    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.pillarLabel)}</th><th class="num">${esc(meas === 'spend' ? O.mSpend : O.mDeals)}</th><th class="num">${esc(O.pctTotal)}</th></tr></thead><tbody>` +
       m.rows.map(x => `<tr><td><span class="tn"><i class="sw${x.pillar === R.NOT_SET ? ' tex' : ''}" style="background-color:${pillarColor(x.pillar)}"></i>${esc(label(x.pillar))}</span></td>` +
-        `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td>` +
-        `<td class="num">${esc(pctTxt(x.target))}</td><td class="num pm-d">${esc(U.ppText(x.gap[meas]))}</td></tr>`).join('') + `</tbody>`;
+        `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td></tr>`).join('') + `</tbody>`;
   }
   function expandPillar() {
     const m = ov.lastPillar, [from, to] = allRange(); if (!m) return;
@@ -250,98 +272,93 @@ KT.screens.overview = (function () {
     $('ovx_close').addEventListener('click', closeDialog);
     drawPillar('ovx_pm', m, ov.all.pillarMeasure, 260);
   }
-  /* Activity by campaign — one swimlane per Campaign, a shared x axis and one y scale */
-  const swimCard = () => `<div class="card swim"><div class="card-head"><h3>${esc(O.swimTitle)}</h3><div class="btns ov-ctl">
+  /* ---------- CR-19 §4 — Campaign timeline (Row 3): one row a Campaign (40px) — its dates in the colour of its status (the Gantt of Campaign & Phase ›
+     Timeline: U.ganttAxis · .gantt · .gbar), a thin line where a Phase starts, its posts by week (by day for 45 days or less — R.campaignTimeline,
+     the numbers of R.activityBins) on one scale for every row, in one ink (never a colour a Campaign) · what falls outside the Campaign's dates is
+     faded · 10 rows, then it scrolls inside the card with the axis on top · Show all = every row ---------- */
+  const tlCard = () => `<div class="card ctl-card"><div class="card-head"><h3>${U.labelInfo(O.timelineTitle, O.timelineTip, O.timelineTitle)}</h3><div class="btns ov-ctl">
       <div class="seg" data-swim="measure"><button type="button" data-v="posts">${esc(O.mPosts)}</button><button type="button" data-v="spend">${esc(O.mSpend)}</button></div>
       <button type="button" class="icon-btn" data-sact="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>
-      ${dlMenu('activity')}
-      <button type="button" class="icon-btn" data-sact="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>
-    <div class="legend"><span class="lg"><i style="background:var(--text-2)"></i>${esc(O.colPosted)}</span><span class="lg"><i class="planned"></i>${esc(O.planned)}</span></div>
-    <div class="chartbox" id="ov_swimbox"><svg id="ov_swim" role="img" aria-label="${esc(O.swimTitle)}"></svg><div class="tip" id="ov_swimtip"></div></div>
-    <div class="tablewrap hidden" id="ov_swimtable" style="max-height:320px"></div><div class="foot-note" id="ov_swimfoot"></div></div>`;
-  function swimModel(s, from, to) {
-    /* CR-09 §4.2: bars by week when the range is longer than 92 days, else by day — the axis says it one way */
-    const axis = R.timeAxis(from, to), gran = axis.gran, m = R.swimlanes(s, from, to, gran, ov.all.measure, td(), ov.all.inclCancel);
-    m.lanes.forEach(l => { l.color = l.slot >= 0 && l.slot < 8 ? css(`--ph${l.slot + 1}`) : css('--series-grey'); });
-    return Object.assign(m, { from, to, gran, axis, measure: ov.all.measure, td: td() });
-  }
-  function renderSwim(s, from, to) {
-    const m = swimModel(s, from, to), A = ov.all;
+      ${dlMenu('timeline')}
+      <button type="button" class="icon-btn" data-sact="expand" title="${esc(O.showAll)}" aria-label="${esc(O.showAll)}">${ICON.expand}</button></div></div>
+    <div class="ctl-sub" id="ov_tlsub"></div><div class="ctl-box" id="ov_tlbox"></div><div class="foot-note" id="ov_tlfoot"></div></div>`;
+  const TL_LEGEND = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled'];
+  /* the line under the title: n campaigns · Today · the status colours there are (always On going · Not started · Pending approval · Complete) · Posted · Planned */
+  const tlLegend = m => { const has = new Set(m.rows.map(r => r.status));
+    return TL_LEGEND.filter(k => ['ongoing', 'not_started', 'pending', 'complete'].includes(k) || has.has(k)).map(k => `<span class="lg"><i class="gbar span ${k}"></i>${esc(C.phaseStatus[k])}</span>`).join('') +
+      `<span class="lg"><i class="ctl-b p"></i>${esc(O.colPosted)}</span><span class="lg"><i class="ctl-b pl"></i>${esc(O.planned)}</span>`; };
+  function renderTl(s, from, to) {
+    const A = ov.all, m = R.campaignTimeline(s, from, to, A.measure, td(), statusesNow());
+    ov.lastTl = m;
     document.querySelectorAll('#ov_body [data-swim] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.measure));
     $('ov_body').querySelector('[data-sact="table"]').classList.toggle('on', A.view === 'table');
-    $('ov_swimbox').classList.toggle('hidden', A.view !== 'chart'); $('ov_swimtable').classList.toggle('hidden', A.view !== 'table');
-    drawSwim($('ov_swim'), $('ov_swimbox'), $('ov_swimtip'), m);
-    if (A.view === 'table') $('ov_swimtable').innerHTML = tableOf(KT.export.rowsFor('activity', allX()));
-    const undated = m.lanes.reduce((a, l) => a + (m.measure === 'spend' ? l.undated.amount : l.undated.count), 0), outside = m.lanes.reduce((a, l) => a + l.outside, 0);
-    $('ov_swimfoot').textContent = [undated ? (m.measure === 'spend' ? O.undatedSpend(R.baht(undated)) : O.undatedPosts(undated)) : '', outside ? O.outsideRange(outside) : ''].filter(Boolean).join(' · ');
-    ov.lastSwim = m;
+    $('ov_tlsub').innerHTML = `<span class="ctl-n">${esc(O.timelineSub(m.rows.length, dm(td())))}</span><span class="legend ctl-leg">${tlLegend(m)}</span>`;
+    if (A.view === 'table') $('ov_tlbox').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor('timelinetable', allX()))}</div>`;
+    else { $('ov_tlbox').innerHTML = tlHTML(s, m, false); wireTl($('ov_tlbox'), m); }
+    const undated = m.measure === 'spend' ? m.undated.amount : m.undated.count;
+    $('ov_tlfoot').textContent = [undated ? (m.measure === 'spend' ? O.undatedSpend(R.baht(undated)) : O.undatedPosts(undated)) : '', m.outside ? O.outsideRange(m.outside) : '',
+      m.outsidePeriod ? O.outsidePeriod(m.outsidePeriod) : ''].filter(Boolean).join(' · ');
   }
-  function drawSwim(svg, box, tip, md) {
-    tip.classList.remove('show');
-    /* CR-13 §4.1 — a full row: 80px a lane (240px at least) · the names in a fixed 200px column (narrow screens: 40% of the width) */
-    const W = Math.max(320, box.clientWidth || 800), LANE = 80 + (md.laneExtra || 0), LABEL = Math.min(200, Math.round(W * 0.4)), m = { l: LABEL, r: 12, t: 8, b: 26 };
-    /* a campaign name wraps onto more lines (never cut with …) and its lane grows to fit */
-    /* CR-11 §4.13 #10 — a name longer than 2 lines: the Campaign code (CH · KS …), the full name on hover */
-    const names = md.lanes.map(l => { const t = wrapText(l.campaign.campaign_name, LABEL - 14); return t.length > 2 ? [l.campaign.campaign_id] : t; }), LH = names.map(t => Math.max(LANE, 14 * t.length + 34));
-    const short = 240 - (LH.reduce((x, y) => x + y, 0) + m.t + m.b); if (short > 0 && LH.length) LH.forEach((x, i) => { LH[i] = x + short / LH.length; });
-    const tops = LH.map((x, i) => m.t + LH.slice(0, i).reduce((a, y) => a + y, 0));
-    const H = m.t + LH.reduce((a, y) => a + y, 0) + m.b, iw = W - m.l - m.r, cGrid = css('--grid'), cAxis = css('--muted'), cAcc = css('--accent');
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
-    if (!md.lanes.length || !md.keys.length) { svg.setAttribute('height', 80); svg.innerHTML = `<text x="${W / 2}" y="40" text-anchor="middle" class="axis">${esc(O.noCampaignInRange)}</text>`; return; }
-    const n = md.keys.length, band = iw / n, bw = Math.max(2, Math.min(18, band * 0.7)), step = md.gran === 'week' ? 7 : 1, inner = LANE - 14;
-    const max = Math.max(1, md.max), y0 = i => tops[i] + LH[i] - 6, h = v => v / max * inner;
-    let g = '', marks = '', hits = '';
-    md.lanes.forEach((l, i) => {
-      const top = tops[i], nl = names[i], ny = top + (nl.length > 1 ? 16 : 22);
-      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y0(i)}" y2="${y0(i)}" stroke="${cGrid}"/>` +
-        `<text x="8" y="${ny}" class="axis lane-n${l.posted + l.planned ? '' : ' empty'}"><title>${esc(l.campaign.campaign_name)}</title>${nl.map((t, k) => `<tspan x="8" dy="${k ? 14 : 0}">${esc(t)}</tspan>`).join('')}</text><text x="8" y="${ny + 14 * (nl.length - 1) + 16}" class="axis">${esc(O.laneCount(fmtV(l.posted + l.planned, md.measure), md.measure))}</text>`;
-      l.bins.forEach((b, j) => {
-        const x = m.l + band * j + band / 2 - bw / 2;
-        if (b.posted) marks += `<rect x="${x}" y="${y0(i) - h(b.posted)}" width="${bw}" height="${h(b.posted)}" fill="${l.color}"/>`;
-        if (b.planned) { const hp = h(b.planned), yb = y0(i) - h(b.posted) - (b.posted ? 2 : 0); marks += `<rect x="${x}" y="${yb - hp}" width="${bw}" height="${hp}" fill="${l.color}" fill-opacity=".4" stroke="${l.color}" stroke-width="1"/>`; }
-        if (b.total) hits += `<rect class="hit" data-l="${i}" data-b="${j}" x="${m.l + band * j}" y="${top}" width="${band}" height="${LH[i]}" tabindex="0" aria-label="${esc(`${l.campaign.campaign_name} · ${binTitle(b.key, md.gran)}: ${fmtV(b.total, md.measure)}`)}"/>`;
-      });
-    });
-    /* x axis (CR-09 §4.2): one row — each tick has its grid line and its label sits on it; a label that would touch the one before is left out */
-    const xOfD = d => m.l + (R.dayDiff(d, md.keys[0]) + (md.gran === 'day' ? 0.5 : 0)) / step * band;
-    const pts = md.axis.ticks.map(tk => ({ tk, x: xOfD(tk.date) })).filter(p => p.x >= m.l - 0.5 && p.x <= W - m.r + 0.5);
-    const gap = pts.length > 1 ? Math.min(...pts.slice(1).map((p, i) => p.x - pts[i].x)) : Infinity, wMax = Math.max(0, ...pts.map(p => p.tk.label.length * 6 + 2));
-    const every = Math.max(1, Math.ceil((wMax + 8) / gap));
-    let labels = '';
-    pts.forEach((p, i) => {
-      labels += `<line x1="${p.x}" x2="${p.x}" y1="${m.t}" y2="${H - m.b}" stroke="${cGrid}"/>`;
-      if (i % every) return;
-      const w = p.tk.label.length * 6 + 2, anchor = p.x - w / 2 < m.l ? 'start' : p.x + w / 2 > W - m.r ? 'end' : 'middle';
-      labels += `<text x="${p.x}" y="${H - m.b + 16}" text-anchor="${anchor}" class="axis">${esc(p.tk.label)}</text>`;
-    });
-    let now = '';
-    if (md.td >= md.keys[0] && md.td <= R.addDays(md.keys[n - 1], step - 1)) {
-      const tx = m.l + R.dayDiff(md.td, md.keys[0]) / step * band + band / step / 2;
-      now = `<line x1="${tx}" x2="${tx}" y1="${m.t}" y2="${H - m.b}" stroke="${cAcc}" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${tx + 4}" y="${m.t + 10}" class="axis today-l">${esc(O.today)}</text>`;
-    }
-    svg.innerHTML = g + labels + `<g>${hits}</g><g style="pointer-events:none">${marks}</g><line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="${cAxis}"/>` + now;
-    const show = (i, j) => {
-      const l = md.lanes[i], b = l.bins[j]; tip.textContent = '';
-      const add = (cls, t) => { const el = document.createElement('div'); el.className = cls; el.textContent = t; tip.appendChild(el); };
-      add('d', binTitle(b.key, md.gran)); add('r tot', l.campaign.campaign_name); add('d', O.postedPlanned(fmtV(b.posted, md.measure), fmtV(b.planned, md.measure)));
-      const rect = box.getBoundingClientRect(), sc = rect.width / W; let left = (m.l + band * j + band / 2) * sc + 12;
-      if (left + 200 > rect.width) left = (m.l + band * j + band / 2) * sc - 210;
-      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = tops[i] * sc + 'px'; tip.classList.add('show');
+  function tlHTML(s, m, all) {
+    if (!m.rows.length) return `<div class="hint">${esc(O.noCampaignInRange)}</div>`;
+    const ax = U.ganttAxis(m.from, m.to, R.timeAxis(m.from, m.to, m.gran).ticks, td()), step = m.gran === 'week' ? 7 : 1, end1 = R.addDays(m.to, 1);
+    const max = Math.max(1, m.max), H = 16, binL = k => ax.pct(k < m.from ? m.from : k), binR = k => ax.pct(R.addDays(k, step) > end1 ? end1 : R.addDays(k, step));
+    const rows = m.rows.map((r, i) => {
+      const span = r.start && r.end && r.end >= m.from && r.start <= m.to ? (() => { const l = ax.pct(r.start < m.from ? m.from : r.start), w = ax.pct(R.addDays(r.end > m.to ? m.to : r.end, 1)) - l;
+        return `<span class="gbar span ${r.status}" data-tlspan="${i}" style="left:${l}%;width:${Math.max(0.4, w)}%"></span>`; })() : '';
+      /* a Phase that starts after the Campaign does: a thin line there (no colour) */
+      const lines = r.phases.filter(p => p.start > r.start && p.start >= m.from && p.start <= m.to)
+        .map(p => `<i class="ctl-ph" style="left:${ax.pct(p.start)}%" title="${esc(O.tlPhaseStart(R.phaseName(s, p.phase_id), R.dmy(p.start)))}"></i>`).join('');
+      const bars = r.bins.map((b, j) => {
+        if (!b.total) return '';
+        const l = binL(b.key), w = Math.max(0, binR(b.key) - l); let y = 0;
+        const seg = (v, cls) => { if (!(v > 0)) return ''; const h = Math.max(1, v / max * H), out = `<i class="ctl-b ${cls}" style="left:calc(${l}% + 1px);width:max(1px,calc(${w}% - 2px));bottom:${10 + y}px;height:${h}px"></i>`; y += h; return out; };
+        return seg(b.posted - b.outPosted, 'p') + seg(b.outPosted, 'p out') + seg(b.planned - b.outPlanned, 'pl') + seg(b.outPlanned, 'pl out') +
+          `<i class="ctl-hit" data-tlr="${i}" data-tlb="${j}" style="left:${l}%;width:${w}%"></i>`;
+      }).join('');
+      const lab = m.measure === 'spend' ? R.baht(r.posted + r.planned) : O.rowPosts(R.fmtNum(r.posted + r.planned));
+      return `<tr class="click ctl-r" tabindex="0" data-gocamp="${esc(r.campaign.campaign_id)}" aria-label="${esc(`${r.campaign.campaign_name} · ${C.phaseStatus[r.status] || ''} · ${lab}`)}">` +
+        `<td class="gn"><b>${esc(r.campaign.campaign_name)}</b><div class="ctl-meta">${phaseChip(r.status)} <span class="muted">${esc(lab)}</span></div></td>` +
+        `<td class="gtl"><div class="gt-row">${ax.grid}${ax.today}${span}${lines}${bars}</div></td><td class="gd num">${daysCell(r.days)}</td></tr>`;
+    }).join('');
+    return `<div class="ctl-scroll${all ? ' all' : ''}"><table class="tbl gantt ctl"><thead><tr><th class="gn">${esc(O.colCampaign)}</th><th class="gtl"><div class="gt-head">${ax.head}</div></th>` +
+      `<th class="gd num">${esc(O.colDaysLeft)}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="ctl-shade"></div><div class="tip" data-tltip></div>`;
+  }
+  /* the tooltips (a bar: its week · Phase · posted / planned — the Campaign's dates: period · status · money · posts) · the shade that says there is more below */
+  function wireTl(box, m) {
+    const tip = box.querySelector('[data-tltip]'), sc = box.querySelector('.ctl-scroll'), s = state();
+    const more = () => box.classList.toggle('more', !!sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 2);
+    if (sc) { sc.addEventListener('scroll', () => { more(); tip.classList.remove('show'); }); more(); }
+    const fmt = v => (m.measure === 'spend' ? R.baht(v) : R.fmtNum(Math.round(v)));
+    const place = el => { const b = box.getBoundingClientRect(), r = el.getBoundingClientRect(); let left = r.left - b.left + r.width / 2 + 10; if (left + 230 > b.width) left = Math.max(0, r.left - b.left - 236);
+      tip.style.left = left + 'px'; tip.style.top = Math.max(0, r.top - b.top) + 'px'; tip.classList.add('show'); };
+    const lines = list => { tip.textContent = ''; list.forEach(([cls, t]) => { const el = document.createElement('div'); el.className = cls; el.textContent = t; tip.appendChild(el); }); };
+    const phaseAt = (r, d) => { const p = r.phases.find(x => x.start <= d && (!x.end || x.end >= d)); return p ? R.phaseName(s, p.phase_id) : '—'; };
+    const show = el => {
+      if (el.dataset.tlb != null) {
+        const r = m.rows[+el.dataset.tlr], b = r.bins[+el.dataset.tlb], mid = m.gran === 'week' ? R.addDays(b.key, 3) : b.key;
+        const out = b.outPosted + b.outPlanned;
+        lines([['d', binTitle(b.key, m.gran)], ['r tot', r.campaign.campaign_name], ['d', O.tlPhase(phaseAt(r, mid))], ['d', O.postedPlanned(fmt(b.posted), fmt(b.planned))]].concat(out ? [['d', `${fmt(out)} ${O.tlOutside}`]] : []));
+      } else {
+        const r = m.rows[+el.dataset.tlspan], mo = r.money, T = O.tlSpan;
+        lines([['r tot', r.campaign.campaign_name], ['d', `${T.period} ${r.start ? `${R.dmy(r.start)} – ${R.dmy(r.end)}` : '—'}`], ['d', `${T.status} ${C.phaseStatus[r.status] || r.status}`],
+          ['d', `${T.budget} ${mo.budget == null ? '—' : R.baht(mo.budget)} · ${T.committed} ${R.baht(mo.committed)} · ${T.used} ${mo.usedPct == null ? '—' : Math.round(mo.usedPct) + '%'}`],
+          ['d', `${T.posts} ${R.fmtNum(r.posted + r.planned)}${m.measure === 'spend' ? ' ฿' : ''}`]]);
+      }
+      place(el);
     };
-    svg.querySelectorAll('.hit').forEach(r => { const i = +r.dataset.l, j = +r.dataset.b;
-      r.addEventListener('pointerenter', () => show(i, j)); r.addEventListener('focus', () => show(i, j));
-      r.addEventListener('pointerleave', () => tip.classList.remove('show')); r.addEventListener('blur', () => tip.classList.remove('show')); });
+    box.addEventListener('pointerover', e => { const el = e.target.closest('.ctl-hit, [data-tlspan]'); if (el) show(el); else tip.classList.remove('show'); });
+    box.addEventListener('pointerleave', () => tip.classList.remove('show'));
   }
-  /* whole words per line (a word longer than a line breaks inside it) — names are never cut */
-  const wrapText = (t, w) => {
-    const n = Math.max(4, Math.floor(w / 7)), out = [];
-    String(t).split(/ +/).forEach(word => {
-      while (word.length > n) { out.push(word.slice(0, n)); word = word.slice(n); }
-      const last = out.length ? out[out.length - 1] : null;
-      if (last != null && last.length + 1 + word.length <= n) out[out.length - 1] = last + ' ' + word; else out.push(word);
-    });
-    return out;
-  };
+  /* Show all: every row, no scroll (the full screen dialog) */
+  function expandTl() {
+    const m = ov.lastTl; if (!m) return;
+    openDialog(`<div class="dlg-h">${esc(O.timelineTitle)} · ${esc(R.dmy(m.from))} – ${esc(R.dmy(m.to))}</div><div class="dlg-b"><div class="ctl-sub">${$('ov_tlsub').innerHTML}</div><div class="ctl-box" id="ovx_tl">${tlHTML(state(), m, true)}</div></div>
+      <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'xl');
+    $('ovx_close').addEventListener('click', closeDialog);
+    wireTl($('ovx_tl'), m);
+    $('ovx_tl').addEventListener('click', e => { const tr = e.target.closest('[data-gocamp]'); if (!tr) return; closeDialog(); Object.assign(ov.camp, { campaign: tr.dataset.gocamp, phase: '' }); ov.tab = 'campaign'; render(); });
+  }
   /* a Phase strip shows its full name, or only "Phase n" when that is all that fits, or nothing (never cut with …; the legend and tooltip carry the name) */
   const stripLabel = (t, w) => [t, String(t).split(' · ')[0]].find(x => x.length * 6 <= w) || '';
 
@@ -368,7 +385,7 @@ KT.screens.overview = (function () {
     if (!P.campaign) { $('ov_body').innerHTML = `<div class="card empty"><b>${esc(O.noCampaign)}</b></div>`; return; }
     $('ov_body').innerHTML = `<div class="kpis cards4" id="ov_cards"></div>${activityCard()}
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.phaseBudgetTitle)}</h3><div class="btns ov-ctl">${dlMenu('phasebudget')}</div></div><div id="ov_pbudget"></div></div>
-      <div class="card ov-full"><div class="card-head"><h3>${esc(O.allocTitle)}</h3><div class="btns ov-ctl">${dlMenu('allocation')}</div></div><div id="ov_alloc"></div></div>
+      <div class="card ov-full"><div class="card-head"><h3>${U.labelInfo(O.allocTitle, O.allocTip, O.allocTitle)}</h3><div class="btns ov-ctl">${dlMenu('allocation')}</div></div><div id="ov_alloc"></div></div>
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.workloadTitle)}</h3><div class="btns ov-ctl">${dlMenu('workload')}</div></div><div id="ov_cwork"></div></div>`;
     const scope = campScope();
     renderCards(s, scope); renderActivity(s, scope); renderPhaseBudget(s); renderAllocation(s); renderCampaignWorkload(s, scope);
@@ -420,7 +437,7 @@ KT.screens.overview = (function () {
   function colorOf(item) {
     if (item.grey) return css('--series-grey');
     if (item.kind === 'tier') return tierColor(item.key);
-    if (item.kind === 'pillar') return css(['--pl-aw', '--pl-co', '--pl-cv'][item.slot]);
+    if (item.kind === 'pillar') return css(PILLAR_VAR[item.slot]);
     if (item.kind === 'phase') return U.phaseColor(null, item.key);   // CR-13 §4.3: the ordinal grey of the Phase, never a data colour
     return item.slot >= 0 && item.slot < PALETTE_N ? css(`--ph${item.slot + 1}`) : css('--series-grey');
   }
@@ -536,33 +553,35 @@ KT.screens.overview = (function () {
   /* Phase budget — one full row (CR-07 §4.2): Phase (full name) · Period · Budget · Committed · Used % · Remaining · Pending · Posts */
   function renderPhaseBudget(s) {
     const pb = R.phaseBudgetRows(s, ov.camp.campaign), money = v => (v == null ? '—' : R.baht(v));
-    const row = (name, dot, period, budget, pct, committed, pending, posts, cls) => {
-      const m = R.moneyOf(budget, committed, pending, 0);
+    const cid = ov.camp.campaign;
+    /* CR-18 §4.3 — "+฿x pending" next to a budget that waits (the Campaign · a Phase · Unallocated) */
+    const row = (name, dot, period, budget, pct, committed, pending, posts, cls, pkey) => {
+      const m = R.moneyOf(budget, committed, pending, 0), tag = KT.budget.pendingTagHTML(cid, pkey);
       return `<tr class="${cls || ''}"><td class="pname">${dot}<span>${esc(name)}</span></td><td class="nowrap">${period}</td>` +
-        `<td class="num" title="${esc(pct == null ? '' : O.pctOfCampaign(Math.round(pct)))}">${money(budget)}</td><td class="num"><span class="${m.remaining < 0 ? 'late' : ''}">${R.baht(committed)}</span></td>` +
+        `<td class="num" title="${esc(pct == null ? '' : O.pctOfCampaign(Math.round(pct)))}">${money(budget)}${tag ? `<div>${tag}</div>` : ''}</td><td class="num"><span class="${m.remaining < 0 ? 'late' : ''}">${R.baht(committed)}</span></td>` +
         `<td>${budget != null ? usedBar(m.usedPct) : '<span class="muted">—</span>'}</td><td class="num">${remainingText(m.remaining)}</td><td class="num muted">${pending ? R.baht(pending) : '—'}</td><td class="num">${posts == null ? '' : R.fmtNum(posts)}</td></tr>`;
     };
     const rows = pb.rows.map(r => row(R.phaseName(s, r.phase.phase_id), `<span class="dotc" style="background:${colorOf({ kind: 'phase', key: r.phase.phase_id })}"></span>`, `${esc(dm(r.phase.start_date))}–${esc(dm(r.phase.end_date))}`,
-      r.budget, r.budgetPct, r.committed, r.shortlist, r.posts, r.phase.phase_id === ov.camp.phase ? 'selected' : '')).join('') +
+      r.budget, r.budgetPct, r.committed, r.shortlist, r.posts, r.phase.phase_id === ov.camp.phase ? 'selected' : '', r.phase.phase_id)).join('') +
+      /* CR-18 §4.3 — the Campaign budget no Phase has: a grey row under the last Phase */
+      ((un => (un > 0 || R.pendingPhaseDelta(s, cid, R.UNALLOCATED) ? `<tr class="extra unal"><td class="pname"><span>${esc(O.unallocatedRow)}</span></td><td></td><td class="num">${R.baht(Math.max(0, un || 0))}${KT.budget.pendingTagHTML(cid, R.UNALLOCATED) ? `<div>${KT.budget.pendingTagHTML(cid, R.UNALLOCATED)}</div>` : ''}</td><td></td><td></td><td></td><td></td><td></td></tr>` : ''))(R.unallocatedOf(s, cid))) +
       pb.extra.map(x => `<tr class="click extra${x.key === R.NEEDS ? ' warn' : ''}" data-godeals="${esc(x.key)}"><td class="pname"><span>${esc(x.key === R.NEEDS ? O.needsPhase : O.unscheduled)}</span></td><td></td><td></td><td class="num">${R.baht(x.committed)}</td><td></td><td></td><td></td><td class="num">${x.posts ? R.fmtNum(x.posts) : ''}</td></tr>`).join('');
     const t = pb.total;
     $('ov_pbudget').innerHTML = `<div class="tablewrap"><table class="tbl compact-sm pbudget"><thead><tr><th class="pname">${esc(O.colPhase)}</th><th>${esc(O.colPeriod)}</th><th class="num">${esc(MN.budget.h)}</th>` +
       `<th class="num">${esc(MN.committed.h)} ${info(MN.committed)}</th><th>${esc(MN.used.h)} ${info(MN.used)}</th><th class="num">${esc(MN.remaining.h)} ${info(MN.remaining)}</th><th class="num">${esc(MN.pending.h)} ${info(MN.pending)}</th><th class="num">${esc(O.colPosts)}</th></tr></thead><tbody>${rows}` +
-      row(O.campaignTotal, '', '', t.budget, null, t.committed, t.shortlist, t.posts, 'total') + `</tbody></table></div>`;
+      row(O.campaignTotal, '', '', t.budget, null, t.committed, t.shortlist, t.posts, 'total', null) + `</tbody></table></div>`;
   }
   function renderAllocation(s) {
     const a = R.pillarAllocation(s, ov.camp.campaign), keys = R.PILLARS.concat([R.NOT_SET]);
-    const col = k => (k === R.NOT_SET ? css('--series-grey') : css(['--pl-aw', '--pl-co', '--pl-cv'][R.PILLARS.indexOf(k)]));
+    const col = k => (k === R.NOT_SET ? css('--series-grey') : css(PILLAR_VAR[R.PILLARS.indexOf(k)]));
     const lab = k => (k === R.NOT_SET ? O.pillarNotSet : k);
     /* CR-07 §4.2: every segment says its ฿ and % (Target ฿ = its % of what is committed) */
     const bar = (pct, money) => `<div class="abar">${keys.map(k => (pct[k] ? `<span class="${k === R.NOT_SET ? 'tex' : ''}" style="flex:${pct[k]};background-color:${col(k)}" title="${esc(`${lab(k)} · ${Math.round(pct[k])}% · ${R.baht(Math.round(money ? money[k] : pct[k] / 100 * a.actual.total))}`)}"></span>` : '')).join('')}</div>`;
-    const pp = U.ppText;   // CR-13: one gap formatter (+15.4pp) for Allocation and Pillar mix
-    const gap = `<div class="agap">${R.PILLARS.map(p => `<span title="${esc(O.gapTip)}"><i style="background:${col(p)}"></i>${esc(p)} <b class="${Math.abs(a.actual.gap[p] || 0) >= 10 ? 'warn' : ''}">${esc(pp(a.actual.gap[p]))}</b></span>`).join('')}</div>`;
+    /* CR-19 §4.7 — Pillar allocation: what is, for the Campaign and each Phase (no Target bar, no pp) */
     const line = (label, body, cls) => `<div class="arow2${cls ? ' ' + cls : ''}"><div class="al">${label}</div>${body}</div>`;
     const camp = R.campaignOf(s, ov.camp.campaign) || {};
     $('ov_alloc').innerHTML = `<div class="slegend alegend">${keys.map(k => `<span><i class="${k === R.NOT_SET ? 'tex' : ''}" style="background-color:${col(k)}"></i>${esc(lab(k))}</span>`).join('')}</div>` +
-      line(esc(O.target), bar(a.target.pct)) +
-      line(`<b>${esc(O.actualOf(camp.campaign_name || ''))}</b>`, bar(a.actual.pct, a.actual.money) + gap) +
+      line(`<b>${esc(camp.campaign_name || '')}</b>`, bar(a.actual.pct, a.actual.money)) +
       a.phases.map(p => line(`<span class="dotc" style="background:${U.phaseColor(null, p.phase.phase_id)}"></span>${esc(R.phaseName(s, p.phase.phase_id))}`, p.total ? bar(p.pct, p.money) : `<span class="muted small">${esc(O.noCommitted)}</span>`, p.phase.phase_id === ov.camp.phase ? 'sel' : '')).join('') +
       /* CR-11 §4.11 — most of the spend has no pillar: say so, with the way to fix it once (a default pillar per Phase) */
       (R.mostSpendNoPillar(a.actual) ? `<div class="alloc-note check warn">! <span>${esc(C.fill.mostNoPillar)} ·</span>` +
@@ -578,11 +597,12 @@ KT.screens.overview = (function () {
       `<tr class="total"><td>${esc(O.colTotal)}</td><td class="num">${R.fmtNum(sum('open'))}</td><td class="num">${R.fmtNum(sum('overdue'))}</td><td class="num">${R.fmtNum(sum('docs'))}</td><td class="num">${R.baht(sum('committed'))}</td></tr></tbody></table></div>`;
   }
   function expand() {
-    const md = ov.tab === 'all' ? ov.lastSwim : ov.lastModel; if (!md) return;
-    openDialog(`<div class="dlg-h">${esc(ov.tab === 'all' ? O.swimTitle : O.activityTitle)} · ${esc(R.dmy(md.from))} – ${esc(R.dmy(md.to))}</div><div class="dlg-b">${ov.tab === 'all' ? '' : `<div class="legend">${$('ov_legend').innerHTML}</div>`}<div class="chartbox" id="ovx_box"><svg id="ovx_svg" role="img"></svg><div class="tip" id="ovx_tip"></div></div></div>
+    if (ov.tab === 'all') { expandTl(); return; }   // CR-19 §4.3: Show all of the Campaign timeline
+    const md = ov.lastModel; if (!md) return;
+    openDialog(`<div class="dlg-h">${esc(O.activityTitle)} · ${esc(R.dmy(md.from))} – ${esc(R.dmy(md.to))}</div><div class="dlg-b"><div class="legend">${$('ov_legend').innerHTML}</div><div class="chartbox" id="ovx_box"><svg id="ovx_svg" role="img"></svg><div class="tip" id="ovx_tip"></div></div></div>
       <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, true);
     $('ovx_close').addEventListener('click', closeDialog);
-    if (ov.tab === 'all') drawSwim($('ovx_svg'), $('ovx_box'), $('ovx_tip'), Object.assign({}, md, { laneExtra: 0 })); else renderActivityChart($('ovx_svg'), $('ovx_box'), $('ovx_tip'), md, 440);
+    renderActivityChart($('ovx_svg'), $('ovx_box'), $('ovx_tip'), md, 440);
   }
   /* ===================== Tab 3 — Operations ===================== */
   /* CR-09 §4.6 — All PICs or one PIC: the one picked (remembered per user) · else you when you are a PIC · else All PICs ('__all') */
@@ -606,6 +626,8 @@ KT.screens.overview = (function () {
     /* CR-11 §4.8 — Row 1 To do (work with a date) · Row 2 Data health (folds, remembered per person) · a card or an item opens its table below */
     const ctx = R.dealContext(s), Q = R.opsQueues(s, f, td(), ctx), H = R.dataHealth(s, f, td());
     const toShip = R.shipmentsToShip(s, f, td()), docs = R.docsToCollect(s, f, td()), mDue = R.metricsDue ? R.metricsDue(s, f, td()) : null;
+    /* CR-17 §4.4 — Simple payments: Payments to confirm (Sent more than 7 days, not paid) in place of Docs to collect · Approvals for those who approve */
+    const simplePay = R.isSimple(s, 'payments'), confirm = simplePay ? R.paymentsToConfirm(s, f, td()) : null, approver = R.canApprove(U.actor());
     const hItem = k => H.items.find(x => x.key === k);
     if (ov.ops.queue && ov.ops.queue.startsWith('h:') && !hItem(ov.ops.queue.slice(2))) ov.ops.queue = null;
     if (ov.ops.queue === 'overdue' && !Q.overdue.length) ov.ops.queue = null;
@@ -613,7 +635,8 @@ KT.screens.overview = (function () {
     const card = (attrs, n, label, on, go) => `<button type="button" class="qcard${on ? ' on' : ''}${go ? ' pay' : ''}" ${attrs}${on ? ' aria-pressed="true"' : ''}><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(label)}${go ? ' →' : ''}</span></button>`;
     const todo = card('data-queue="overdue"', Q.overdue.length, O.queues.overdue, ov.ops.queue === 'overdue') +
       card('data-gosamples', toShip.length, O.toShip, false, true) +
-      card('data-gopay="missing"', docs.length, O.docsToCollect, false, true) + (mDue ? card('data-gometrics', mDue.length, O.metricsDue, false, true) : '');
+      (simplePay ? card('data-gopay="sent"', confirm.length, O.paymentsToConfirm, false, true) : card('data-gopay="missing"', docs.length, O.docsToCollect, false, true)) +
+      (mDue ? card('data-gometrics', mDue.length, O.metricsDue, false, true) : '') + (approver ? card('data-goapprove', R.approvalCount(s), O.approvals, false, true) : '');
     const open = pref.get('opshealth_' + (U.userId() || ''), '0') === '1' || (ov.ops.queue || '').startsWith('h:');
     const health = `<details class="card ops-health${H.total ? '' : ' good'}" id="ov_health"${open && H.total ? ' open' : ''}><summary><span class="chev${open ? ' open' : ''}">${ICON.chevron}</span>` +
       `<b>${esc(H.total ? O.healthN(H.total) : O.allGood)}</b>${H.total ? '' : ' <span class="ok">✓</span>'}</summary>` +
@@ -713,7 +736,6 @@ KT.screens.overview = (function () {
     else if (t.id === 'ov_ocamp') { ov.ops.campaign = t.value; ov.ops.limit = 50; renderOps(); }
     else if (t.id === 'ov_opic') choosePic(t.value);
     else if (t.id === 'ov_otier') { ov.ops.tier = t.value; ov.ops.limit = 50; renderOps(); }
-    else if (t.id === 'ov_inclCancel') { ov.all.inclCancel = t.checked; renderAll(); }
     else if (t.id === 'ov_crange' && R.isISODate(t.dataset.from) && R.isISODate(t.dataset.to)) { Object.assign(ov.all, { preset: 'custom', from: t.dataset.from, to: t.dataset.to, custom: null }); savePreset(); renderAll(); }
   }
   function onBodyClick(e) {
@@ -735,7 +757,8 @@ KT.screens.overview = (function () {
     const ap = e.target.closest('[data-addprod]'); if (ap) { go('campaign', { planCampaign: ap.dataset.addprod }); return; }
     /* CR-11 §4.10 — Shipments › To ship of that PIC (and Campaign) */
     const gsm = e.target.closest('[data-gosamples]'); if (gsm) { const f = opsFilter(); go('shipments', { tab: 'to-ship', campaign: f.campaign || '', pic: f.pic || 'all', status: '', purpose: '', q: '' }); return; }
-    const gpy = e.target.closest('[data-gopay]'); if (gpy) { const f = opsFilter(); go('payments', { tab: 'topay', pic: f.pic, campaign: f.campaign || '', queue: gpy.dataset.gopay }); return; }
+    const gpy = e.target.closest('[data-gopay]'); if (gpy) { const f = opsFilter(); go('payments', gpy.dataset.gopay === 'sent' ? { tab: 'sent', pic: f.pic, campaign: f.campaign || '' } : { tab: 'topay', pic: f.pic, campaign: f.campaign || '', queue: gpy.dataset.gopay }); return; }
+    if (e.target.closest('[data-goapprove]')) { go('campaign', { approvals: true }); return; }   // CR-17 §4.5
     const q = e.target.closest('[data-queue]'); if (q) { ov.ops.queue = ov.ops.queue === q.dataset.queue && !q.dataset.queue.startsWith('h:') ? ov.ops.queue : q.dataset.queue; ov.ops.limit = 50; ov.ops.selected.clear(); renderOps(); return; }
     if (e.target.id === 'ov_qall') { const on = e.target.checked; document.querySelectorAll('#ov_qtable [data-qsel]').forEach(c => { c.checked = on; on ? ov.ops.selected.add(c.dataset.qsel) : ov.ops.selected.delete(c.dataset.qsel); }); qBulk(); return; }
     const qs = e.target.closest('[data-qsel]'); if (qs) { qs.checked ? ov.ops.selected.add(qs.dataset.qsel) : ov.ops.selected.delete(qs.dataset.qsel); qBulk(); return; }

@@ -65,17 +65,18 @@
     test('TC-08: Export the tab — one workbook, 5 sheets (CR-13: Summary · Campaign portfolio · Activity · Pillar mix · KOL tier mix) · Summary starts with the tab, scope, date and who', () => {
       const s = fresh(), [from, to] = thisYear(), x = { state: s, from, to, today: TD, inclCancel: false, measure: 'posts' };
       const tables = E.tabTables('all', x), meta = { tab: 'All campaigns', scope: 'This year · 01/01/2026 – 31/12/2026', at: '06/10/2026 10:00', by: 'Admin' };
-      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Campaign portfolio', 'Activity', 'Pillar mix', 'KOL tier mix']);
+      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Campaign portfolio', 'Campaign timeline', 'Pillar mix', 'KOL tier mix', 'Packages', 'Draft notes']);   // CR-20: + Packages · Draft notes   // CR-19 §4.5
       const sheets = tables.map((t, i) => E.sheetOf(t, i ? null : meta));
       assert.deepEqual(sheets[0].rows.slice(0, 4).map(r => [r[0].v, r[1]]), [['Tab', 'All campaigns'], ['Scope', meta.scope], ['Exported', '06/10/2026 10:00'], ['Exported by', 'Admin']]);
       const val = metric => tables[0].rows.find(r => r[1] === metric)[2];
       assert.deepEqual([val('Campaigns'), val('Deals'), val('Committed'), val('Paid'), val('Outstanding'), val('KOLs engaged'), val('Avg per deal')], [4, 300, 1783579, 774579, 1009000, 237, 6782]);
+      /* CR-19 §4.5 — Campaign timeline: a row per Campaign per week (Mon) · Posted · Planned · Spend */
       const act = tables[2];
-      assert.equal(act.header[0], 'Week starting');
-      assert.equal(act.rows.length, 53);
-      assert.equal(act.total[act.total.length - 1], act.rows.reduce((a, r) => a + r[r.length - 1], 0), 'the Total row adds the weeks up');
+      assert.deepEqual(act.header, ['Campaign', 'Status', 'Start', 'End', 'Week (Mon)', 'Posted', 'Planned', 'Spend']);
+      assert.equal(act.rows.length, 4 * 53);
+      assert.equal(act.total[5] + act.total[6], act.rows.reduce((a, r) => a + r[5] + r[6], 0), 'the Total row adds the weeks up');
       const bytes = X.workbook(sheets), td = new TextDecoder(), text = td.decode(bytes);
-      ['Summary', 'Campaign portfolio', 'Activity', 'Pillar mix', 'KOL tier mix'].forEach(n => assert.ok(text.includes(`name="${n}"`), n));
+      ['Summary', 'Campaign portfolio', 'Campaign timeline', 'Pillar mix', 'KOL tier mix'].forEach(n => assert.ok(text.includes(`name="${n}"`), n));
       assert.ok(!/Payee|account_no|full_name/.test(JSON.stringify(tables)), 'nothing from the Payee vault');
     });
     test('TC-02 / anchors: the numbers of the cards are those of the portfolio and of CR-05 §5.0', () => {
@@ -93,7 +94,7 @@
     test('TC-09: Color by = KOL Tier (Mega → Unknown) or Pillar — no Phase · bars by the deal\'s tier', () => {
       const s = fresh(), sc = { campaignId: charming(s).campaign_id };
       assert.deepEqual(R.activitySeries(s, sc, 'tier', TD).map(x => x.label), ['Mega', 'Macro', 'Mid-tier', 'Micro', 'Nano', 'Unknown']);
-      assert.deepEqual(R.activitySeries(s, sc, 'pillar', TD).map(x => x.label), ['Awareness', 'Consideration', 'Conversion', 'Pillar not set']);
+      assert.deepEqual(R.activitySeries(s, sc, 'pillar', TD).map(x => x.label), ['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', 'Pillar not set']);
       const [from, to] = R.activityRange(s, sc, TD), d = R.activityBins(s, sc, from, to, 'day', 'posts', 'tier', TD);
       assert.ok(d.totals.every(t => ['Mega', 'Macro', 'Mid-tier', 'Micro', 'Nano', 'Unknown'].includes(t.key)));
       assert.equal(d.totals.reduce((a, t) => a + t.posted + t.planned, 0), d.bins.reduce((a, b) => a + b.total, 0) + d.undated.count + d.outside);
@@ -108,7 +109,7 @@
     });
     test('TC-14: Export By campaign (Charming) — 5 sheets · Phase budget total ฿863,700 · Workload by PIC Open 14', () => {
       const tables = E.tabTables('campaign', campX(fresh()));
-      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Activity by date', 'Phase budget', 'Allocation vs target', 'Workload by PIC']);
+      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Activity by date', 'Phase budget', 'Pillar allocation', 'Workload by PIC']);
       assert.equal(tables[2].total[4], 863700);
       assert.equal(tables[4].total[1], 14);
       assert.deepEqual(tables[1].header.slice(0, 2), ['Date', 'Mega'], 'Daily · by KOL tier');
@@ -196,15 +197,15 @@
 
   describe('CR-09 R4 · Deals: one set of stage names · Pipeline stages · stage money', () => {
     const stages = (s, deals) => R.groupDeals(s, deals, 'stage', R.dealContext(s), TD).map(g => { const m = R.stageMoney(s, g.rows); return [g.key, m.n, m.amount, m.kind]; });
-    test('TC-21: Perfect Heart — Contacted 3 · ฿8,300 pending · Brief 9 · ฿37,600 · Approve Draft 1 5 · ฿22,900 · Post 70 · ฿511,179 · Cancelled 3 · ฿11,000 · 90 (Open 17)', () => {
+    test('TC-21: Perfect Heart — Contacted 3 · ฿8,300 pending · Brief 9 · ฿37,600 · Draft 1 5 · ฿22,900 · Post 70 · ฿511,179 · Cancelled 3 · ฿11,000 · 90 (Open 17)', () => {
       const s = fresh(), ph = s.deals.filter(d => d.campaign_id === 'PH');
-      assert.deepEqual(stages(s, ph), [['Contacted', 3, 8300, 'pending'], ['Brief', 9, 37600, 'committed'], ['Approve Draft 1', 5, 22900, 'committed'], ['Post', 70, 511179, 'committed'], ['Cancelled', 3, 11000, 'cancelled']]);
+      assert.deepEqual(stages(s, ph), [['Contacted', 3, 8300, 'pending'], ['Brief', 9, 37600, 'committed'], ['Draft 1', 5, 22900, 'committed'], ['Post', 70, 511179, 'committed'], ['Cancelled', 3, 11000, 'cancelled']]);
       assert.equal(ph.length, 90);
       assert.equal(ph.filter(R.isOpenDeal).length, 17);
       /* the Pipeline puts a deal in the column of the same name — so its counts are the Table's */
       const col = name => ph.filter(d => R.stageKey(s.lookups, d) === name).length;
-      assert.deepEqual(R.stageOrder(s.lookups).map(x => [x.key, col(x.key)]), [['Shortlist', 0], ['Contacted', 3], ['Confirm QT', 0], ['Brief', 9], ['Approve Script', 0], ['Approve Draft 1', 5], ['Approve Draft 2', 0], ['Approve Draft 3', 0], ['Post', 70], ['Cancelled', 3]]);
-      assert.ok(!/Draft 1 of 1/.test(R.stageLabel(s.lookups, ph.find(d => d.sub_status === 'Approve Draft 1'))));
+      assert.deepEqual(R.stageOrder(s.lookups).map(x => [x.key, col(x.key)]), [['Shortlist', 0], ['Contacted', 3], ['Confirm QT', 0], ['Brief', 9], ['Script', 0], ['Draft 1', 5], ['Draft 2', 0], ['Draft 3', 0], ['Approve', 0], ['Post', 70], ['Cancelled', 3]]);   // CR-15: + Approve
+      assert.ok(!/Draft 1 of 1/.test(R.stageLabel(s.lookups, ph.find(d => d.sub_status === 'Draft 1'))));
       assert.equal(C.stage.ofPlan(1, 2), '(1 of 2)');
     });
     test('TC-22: kxplai Contacted → Confirm QT — Confirm QT 1 · Contacted 2 · Committed +฿2,500 · Pending −฿2,500', () => {
@@ -265,7 +266,7 @@
     };
     const earnOf = s => s.users.find(u => u.display_name === 'Earn');
     test('TC-39: tabs To pay · Payment runs · Accounting — no History · an ⓘ line for each', () => {
-      assert.deepEqual(Object.entries(C.pay.tabs), [['topay', 'To pay'], ['runs', 'Payment runs'], ['accounting', 'Accounting']]);
+      assert.deepEqual(['topay', 'runs', 'accounting'].map(k => [k, C.pay.tabs[k]]), [['topay', 'To pay'], ['runs', 'Payment runs'], ['accounting', 'Accounting']]);   // Full mode (CR-17 adds Sent · Paid for Simple)
       assert.ok(Object.keys(C.pay.tabs).every(k => C.pay.tabTip[k]));
       assert.equal(C.pay.csvTip, 'To send to Accounting, create a payment run');
     });

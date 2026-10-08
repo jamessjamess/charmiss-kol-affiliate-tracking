@@ -1,13 +1,19 @@
 /* rules-overview.js — CR-03 §4.7: numbers for the Overview in Campaign mode (summary cards, Phase budget, Activity by date,
-   Allocation vs target) and pillar targets. Adds to KT.rules (load after rules-deal.js). No DOM, no storage.
+   Pillar allocation). Adds to KT.rules (load after rules-deal.js). No DOM, no storage.
+   CR-19 §4.6–4.7 — 4 pillars (+ Awareness & Consideration) · no pillar target any more (campaigns.pillar_target and
+   lookups.pillar_target_default stay in the data, unused) · migrateV18.
    scope = {campaignId, phaseIds} as in rules-phase.js. Money "Committed" counts from Confirm QT on; Shortlist is apart. */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
   const M = C.msg;
   const { isBlank, totalCost, isCancelled, addDays, dayDiff, weekStart } = R;
   const round2 = n => Math.round(n * 100) / 100;
-  const PILLARS = ['Awareness', 'Consideration', 'Conversion'];
-  const PILLAR_KEY = { Awareness: 'awareness', Consideration: 'consideration', Conversion: 'conversion' };
+  /* CR-19 §4.6 — the order everywhere: Awareness → Awareness & Consideration → Consideration → Conversion (+ Not set) */
+  const AWARE_CONSIDER = 'Awareness & Consideration';
+  const PILLARS = ['Awareness', AWARE_CONSIDER, 'Consideration', 'Conversion'];
+  const PILLAR_KEY = { Awareness: 'awareness', [AWARE_CONSIDER]: 'awareness_consideration', Consideration: 'consideration', Conversion: 'conversion' };
+  /* the short name for a chip / a narrow axis ("Aware + Consider") · the full one everywhere else */
+  const pillarShort = p => (C.pillarShort && C.pillarShort[p]) || p;
   const NOT_SET = '__none';
 
   /* the Phase's place in its Campaign (by start date) — its colour slot, fixed whatever is filtered */
@@ -34,7 +40,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* the date range of a scope: the Phase, else the Campaign (first start → last end) */
   function scopeRange(state, scope) {
     const sc = R.toScope(scope);
-    const ps = state.phases.filter(p => (sc.phaseIds ? sc.phaseIds.includes(p.phase_id) : !sc.campaignId || p.campaign_id === sc.campaignId));
+    const ps = state.phases.filter(p => R.isApproved(p) && (sc.phaseIds ? sc.phaseIds.includes(p.phase_id) : !sc.campaignId || p.campaign_id === sc.campaignId));
     const starts = ps.map(p => p.start_date).filter(Boolean).sort(), ends = ps.map(p => p.end_date).filter(Boolean).sort();
     return starts.length ? [starts[0], ends[ends.length - 1]] : [null, null];
   }
@@ -102,13 +108,15 @@ Object.assign(KT.rules, (function (R, C) {
     return [dates.length && dates[0] < from ? dates[0] : from, dates.length && dates[dates.length - 1] > to ? dates[dates.length - 1] : to];
   }
   const autoGran = (from, to) => (dayDiff(to, from) + 1 <= 45 ? 'day' : 'week');
-  function activityBins(state, scope, from, to, gran, measure, colorBy, today) {
+  /* period [start, end] (CR-19 §4.2, optional): what falls outside the Campaign's own dates is also kept apart (outPosted / outPlanned · outsidePeriod posts)
+     · first / last: the earliest and latest date placed in the bins */
+  function activityBins(state, scope, from, to, gran, measure, colorBy, today, period) {
     const idx = R.phaseIndex(state), deals = new Map(R.scopeDeals(state, scope, idx).filter(d => !isCancelled(d)).map(d => [d.deal_id, d]));
     const tiers = colorBy === 'tier' ? R.dealContext(state).tiers : null;   // CR-09 §4.4 — colour by the deal's KOL tier
     const keys = []; let cur = gran === 'week' ? weekStart(from) : from;
     while (cur <= to && keys.length <= 800) { keys.push(cur); cur = addDays(cur, gran === 'week' ? 7 : 1); }
-    const bins = new Map(keys.map(k => [k, { key: k, series: {}, posted: 0, planned: 0, total: 0 }]));
-    const totals = new Map(), undated = { count: 0, amount: 0 }; let outside = 0;
+    const bins = new Map(keys.map(k => [k, { key: k, series: {}, posted: 0, planned: 0, total: 0, outPosted: 0, outPlanned: 0 }]));
+    const totals = new Map(), undated = { count: 0, amount: 0 }; let outside = 0, outsidePeriod = 0, first = null, last = null;
     const seriesOf = (d, r) => (colorBy === 'pillar' ? (PILLARS.includes(d.pillar) ? d.pillar : NOT_SET) : colorBy === 'tier' ? ((tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER)
       : colorBy === 'campaign' ? d.campaign_id : (r.phase || (r.slot === 'unscheduled' ? R.UNSCHEDULED : R.NEEDS)));
     R.scopePosts(state, scope, idx).forEach(p => {
@@ -124,10 +132,12 @@ Object.assign(KT.rules, (function (R, C) {
       const sv = b.series[k] || (b.series[k] = { posted: 0, planned: 0 });
       if (isPosted) { sv.posted += v; b.posted += v; t.posted += v; } else { sv.planned += v; b.planned += v; t.planned += v; }
       b.total += v;
+      if (period && (date < period[0] || date > period[1])) { outsidePeriod++; if (isPosted) b.outPosted += v; else b.outPlanned += v; }
+      if (!first || date < first) first = date; if (!last || date > last) last = date;
     });
     /* deals without posts have their whole cost undated */
     if (measure === 'spend') deals.forEach(d => { if (!R.postsOf(state, d.deal_id).length && !R.isShortlist(state.lookups, d)) { undated.amount += totalCost(d); } });
-    return { bins: keys.map(k => bins.get(k)), totals: [...totals.values()], undated, outside };
+    return { bins: keys.map(k => bins.get(k)), totals: [...totals.values()], undated, outside, outsidePeriod, first, last };
   }
   /* series in a fixed order with their colour slot: Phases by start date · Campaigns by §4.8 · pillars; grey keys last */
   function activitySeries(state, scope, colorBy, today) {
@@ -135,33 +145,33 @@ Object.assign(KT.rules, (function (R, C) {
     if (colorBy === 'pillar') return PILLARS.map((p, i) => ({ key: p, slot: i, kind: 'pillar', label: p })).concat([{ key: NOT_SET, grey: true, label: C.overview.pillarNotSet }]);
     if (colorBy === 'tier') return R.tierOrder(state.lookups.tier_rules).map((t, i) => ({ key: t, slot: i, kind: 'tier', label: t, grey: t === R.UNKNOWN_TIER }));
     if (colorBy === 'campaign') return R.sortCampaigns(state.campaigns, state.phases, today).map((c, i) => ({ key: c.campaign_id, slot: i, label: c.campaign_name, kind: 'campaign' }));
-    const ps = state.phases.filter(p => !sc.campaignId || p.campaign_id === sc.campaignId);
+    const ps = state.phases.filter(p => R.isApproved(p) && (!sc.campaignId || p.campaign_id === sc.campaignId));
     return R.sortPhases(ps).map(p => ({ key: p.phase_id, slot: phaseSlot(state, p.phase_id), label: R.phaseName(state, p.phase_id), kind: 'phase' }))
       .concat(grey.filter(k => k !== NOT_SET).map(k => ({ key: k, grey: true })));
   }
 
-  /* ---------- Allocation vs target (Row 3) ---------- */
+  /* ---------- Pillar allocation (Row 3) ---------- */
+  /* (CR-19 §4.7: no target on screen any more — the old target data and these two helpers are kept for old files / old tests) */
   const DEFAULT_TARGET = { awareness: 10, consideration: 20, conversion: 70 };
-  /* CR-13 §4.2 — the share of each pillar within the money that has a pillar, and its gap to the target (pp) ·
-     one function for Allocation vs target (By campaign) and Pillar mix (All campaigns) · money {Awareness, …} · target {awareness, …} */
-  function pillarShares(money, target) {
+  /* the share of each pillar within the money that has a pillar (Not set left out) · money {Awareness, …} */
+  function pillarShares(money) {
     const set = PILLARS.reduce((a, p) => a + (Number(money[p]) || 0), 0);
     const pct = Object.fromEntries(PILLARS.map(p => [p, set ? (Number(money[p]) || 0) / set * 100 : null]));
-    return { set, pct, gap: Object.fromEntries(PILLARS.map(p => [p, set ? pct[p] - Number(target[PILLAR_KEY[p]]) : null])) };
+    return { set, pct };
   }
   const pillarTargetOf = (state, campaignId) => { const c = R.campaignOf(state, campaignId); return (c && c.pillar_target) || state.lookups.pillar_target_default || DEFAULT_TARGET; };
   /* targets are whole numbers 0–100 that add up to 100 */
   function validatePillarTarget(t) {
-    const errs = [], vals = PILLARS.map(p => t && t[PILLAR_KEY[p]]);
+    const errs = [], vals = Object.keys(DEFAULT_TARGET).map(k => t && t[k]);   // (the three keys an old target has)
     if (vals.some(v => isBlank(v) || !Number.isInteger(Number(v)) || Number(v) < 0 || Number(v) > 100)) errs.push({ field: 'pillar_target', msg: M.pillarTargetNumber });
     else if (vals.reduce((a, v) => a + Number(v), 0) !== 100) errs.push({ field: 'pillar_target', msg: M.pillarTargetSum(vals.reduce((a, v) => a + Number(v), 0)) });
     return { errs, warns: [], infos: [] };
   }
-  /* committed money by pillar: the whole Campaign and each Phase (post shares) · % of the row total · gap in pp against the target (Not set left out) */
+  /* committed money by pillar: the whole Campaign and each Phase (post shares) · % of the row total (CR-19: what is, no target) */
   function allocation(state, campaignId) {
-    const idx = R.phaseIndex(state), target = pillarTargetOf(state, campaignId);
+    const idx = R.phaseIndex(state);
     const deals = state.deals.filter(d => d.campaign_id === campaignId && !isCancelled(d));
-    const blank = () => ({ Awareness: 0, Consideration: 0, Conversion: 0, [NOT_SET]: 0 });
+    const blank = () => Object.assign(Object.fromEntries(PILLARS.map(p => [p, 0])), { [NOT_SET]: 0 });
     const actual = blank(), byPhase = new Map(R.phasesOfCampaign(state, campaignId).map(p => [p.phase_id, blank()]));
     deals.forEach(d => {
       const info = idx.deal.get(d.deal_id); if (!info) return;
@@ -169,10 +179,8 @@ Object.assign(KT.rules, (function (R, C) {
       info.share.forEach((v, key) => { actual[k] += v; if (byPhase.has(key)) byPhase.get(key)[k] += v; });
     });
     const row = m => { const total = Object.values(m).reduce((a, b) => a + b, 0); return { money: m, total, pct: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, total ? v / total * 100 : 0])) }; };
-    const a = row(actual), gap = pillarShares(actual, target).gap;
     return {
-      target: { pct: Object.fromEntries(PILLARS.map(p => [p, Number(target[PILLAR_KEY[p]])])) },
-      actual: Object.assign(a, { gap }),
+      actual: row(actual),
       phases: R.sortPhases(R.phasesOfCampaign(state, campaignId)).map(p => Object.assign({ phase: p }, row(byPhase.get(p.phase_id)))),
     };
   }
@@ -210,13 +218,53 @@ Object.assign(KT.rules, (function (R, C) {
     return dateRangePreset(key, today);
   }
   const campaignStatusOf = (state, c, today) => (R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today) : R.campaignStatus(R.phasesOfCampaign(state, c.campaign_id), today));
-  /* Campaigns whose dates touch [from, to] (Cancelled only when asked) */
-  function campaignsInRange(state, from, to, today, includeCancelled) {
+  /* CR-14 §4.1 — All campaigns › Status: the effective status of a Campaign today (CR-05 §4.7) · default = all but Cancelled ·
+     statuses = a list, or the old includeCancelled (true = all · false = the default) */
+  const DASH_STATUS_KEY = 'dash.all.statuses';
+  const DASH_STATUS_DEFAULT = ['ongoing', 'not_started', 'on_hold', 'complete'];
+  const statusSet = x => new Set(Array.isArray(x) ? x : x === true ? R.CAMPAIGN_STATUSES : DASH_STATUS_DEFAULT);
+  /* a stored / linked list → the statuses that exist, in §4.7 order · nothing valid → the default */
+  function normDashStatuses(v) { const set = new Set(Array.isArray(v) ? v : []), out = R.CAMPAIGN_STATUSES.filter(k => set.has(k)); return out.length ? out : DASH_STATUS_DEFAULT.slice(); }
+  const sameList = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  /* the words on the button: default · all · 1–2 names · n selected */
+  function dashStatusText(v) {
+    const list = normDashStatuses(v);
+    if (sameList(list, R.CAMPAIGN_STATUSES)) return { kind: 'all', n: list.length, list };
+    if (sameList(list, DASH_STATUS_DEFAULT)) return { kind: 'default', n: list.length, list };
+    return { kind: list.length <= 2 ? 'names' : 'count', n: list.length, list };
+  }
+  const isDefaultStatuses = v => sameList(normDashStatuses(v), DASH_STATUS_DEFAULT);
+  /* how many Campaigns of each status touch the range (every status, whatever is picked) */
+  function statusCounts(state, from, to, today) {
+    const out = Object.fromEntries(R.CAMPAIGN_STATUSES.map(k => [k, 0]));
+    campaignsInRange(state, from, to, today, R.CAMPAIGN_STATUSES).forEach(c => { const st = campaignStatusOf(state, c, today); out[st] = (out[st] || 0) + 1; });
+    return out;
+  }
+  /* Campaigns whose dates touch [from, to] and whose status is picked — the scope of every widget of All campaigns */
+  function campaignsInRange(state, from, to, today, statuses) {
+    const ok = statusSet(statuses);
     return R.sortCampaigns(state.campaigns, state.phases, today).filter(c => {
-      if (!includeCancelled && campaignStatusOf(state, c, today) === 'cancelled') return false;
-      const [a, z] = scopeRange(state, { campaignId: c.campaign_id });
+      if (!ok.has(campaignStatusOf(state, c, today))) return false;
+      const [a, z] = campaignDates(state, c);
       return !!a && a <= to && z >= from;
     });
+  }
+  /* the dates of a Campaign: its approved Phases · one that waits (CR-17) — its own Phases (they wait with it) */
+  const campaignDates = (state, c) => (R.isApproved(c) ? scopeRange(state, { campaignId: c.campaign_id }) : R.campaignSpan(state, c.campaign_id));
+  /* ===================== schema 18 (CR-19 §4.6) ===================== */
+  /* pillar_list: Awareness & Consideration after Awareness · a Phase with no default pillar whose name says both "Awareness" and "Consideration"
+     gets it (seed: Perfect Heart Phase 1) · deals are not touched · twice → the same */
+  function migrateV18(obj) {
+    const L = obj.lookups || (obj.lookups = {});
+    const list = Array.isArray(L.pillar_list) ? L.pillar_list : (L.pillar_list = PILLARS.filter(p => p !== AWARE_CONSIDER));
+    if (!list.includes(AWARE_CONSIDER)) { const i = list.indexOf('Awareness'); list.splice(i >= 0 ? i + 1 : 0, 0, AWARE_CONSIDER); }
+    (obj.phases || []).forEach(p => {
+      if (!isBlank(p.default_pillar)) return;
+      const t = `${p.label || ''} ${p.phase_name || ''}`;
+      if (/awareness/i.test(t) && /consideration/i.test(t)) p.default_pillar = AWARE_CONSIDER;
+    });
+    obj.schema_version = Math.max(obj.schema_version || 0, 18);
+    return obj;
   }
   /* posts of a Campaign's live deals posted inside [from, to] (and their views) */
   function postsIn(state, campaignId, from, to) {
@@ -225,23 +273,23 @@ Object.assign(KT.rules, (function (R, C) {
     return { posts: ps.length, views: ps.reduce((a, p) => a + (Number(p.views) || 0), 0) };
   }
   /* Row 2 — Campaign portfolio: money of the whole Campaign · posts / views inside the range · pillar mix of the committed money */
-  function portfolio(state, from, to, today, includeCancelled) {
+  function portfolio(state, from, to, today, statuses) {
     const idx = R.phaseIndex(state);
-    const rows = campaignsInRange(state, from, to, today, includeCancelled).map(c => {
+    const rows = campaignsInRange(state, from, to, today, statuses).map(c => {
       const [a, z] = scopeRange(state, { campaignId: c.campaign_id }), m = campaignMoney(state, c.campaign_id, idx), p = postsIn(state, c.campaign_id, from, to);
       return Object.assign({ campaign: c, status: campaignStatusOf(state, c, today), from: a, to: z, posts: p.posts, views: p.views, pillarMix: allocation(state, c.campaign_id).actual.pct }, m);
     });
-    const counted = rows.filter(r => includeCancelled || r.status !== 'cancelled');
-    return { rows, total: Object.assign(moneyTotal(counted), { posts: counted.reduce((s, r) => s + r.posts, 0), views: counted.reduce((s, r) => s + r.views, 0) }) };
+    /* the Total = the rows on screen (CR-14: the picked statuses decide, Cancelled too when it is picked) */
+    return { rows, total: Object.assign(moneyTotal(rows), { posts: rows.reduce((s, r) => s + r.posts, 0), views: rows.reduce((s, r) => s + r.views, 0) }) };
   }
   /* Row 1 — the 4 KPIs: deals / money of the Campaigns in range · posts / views posted in range */
-  function allKpis(state, from, to, today, includeCancelled) {
-    const p = portfolio(state, from, to, today, includeCancelled);
+  function allKpis(state, from, to, today, statuses) {
+    const p = portfolio(state, from, to, today, statuses);
     return Object.assign({ campaigns: p.rows.length }, p.total);
   }
   /* Row 3 — Activity by campaign: one lane per Campaign on a shared x axis and one y scale */
-  function swimlanes(state, from, to, gran, measure, today, includeCancelled) {
-    const lanes = campaignsInRange(state, from, to, today, includeCancelled).map(c => {
+  function swimlanes(state, from, to, gran, measure, today, statuses) {
+    const lanes = campaignsInRange(state, from, to, today, statuses).map(c => {
       const r = activityBins(state, { campaignId: c.campaign_id }, from, to, gran, measure, 'campaign', today);
       const bins = r.bins.map(b => ({ key: b.key, posted: b.posted, planned: b.planned, total: b.total }));
       return { campaign: c, slot: campaignSlot(state, c.campaign_id, today), bins, posted: bins.reduce((a, b) => a + b.posted, 0), planned: bins.reduce((a, b) => a + b.planned, 0), undated: r.undated, outside: r.outside };
@@ -280,7 +328,7 @@ Object.assign(KT.rules, (function (R, C) {
     const ctx = ctxIn || R.dealContext(state), M2 = C.ops, posts = d => R.postsOfCtx(ctx, d.deal_id);
     const lastPosted = d => posts(d).map(p => p.post_date).filter(Boolean).sort().pop() || null;
     const rows = deals.map(d => {
-      const due = R.dueDate(state, d), nx = R.nextStep(state.lookups, d).step;
+      const due = R.dueDate(state, d), nx = R.dueStep(state, d);
       if (key === 'overdue') { const late = due ? dayDiff(today, due) : 0; return { deal: d, rank: late, issue: M2.issueOverdue(nx ? nx.sub_status : '', R.dmy(due), late) }; }
       if (key === 'unpaid') { const lp = lastPosted(d); return { deal: d, rank: lp ? dayDiff(today, lp) : 0, issue: lp ? M2.issueUnpaid(R.dmy(lp), dayDiff(today, lp)) : M2.issueUnpaidNoDate }; }
       if (key === 'beforeBrief') return { deal: d, rank: d.brief_date ? dayDiff(today, d.brief_date) : 0, issue: M2.issueBeforeBrief(C.term[R.termOf(d)]) };
@@ -297,9 +345,31 @@ Object.assign(KT.rules, (function (R, C) {
      (the next step's expected date, CR-02 §5.3) falls on today … today + days · by date → [{ deal, due, step }] */
   function upcomingDues(state, f, today, days, ctxIn) {
     const ctx = ctxIn || R.dealContext(state), end = R.addDays(today, days == null ? 7 : days), scope = typeof f === 'string' ? { pic: f } : (f || {});
-    return opsDeals(state, scope, ctx).filter(R.isOpenDeal).map(d => ({ deal: d, due: R.dueDate(state, d), step: R.nextStep(state.lookups, d).step }))
+    return opsDeals(state, scope, ctx).filter(R.isOpenDeal).map(d => ({ deal: d, due: R.dueDate(state, d), step: R.dueStep(state, d) }))
       .filter(x => x.due && x.due >= today && x.due <= end)
       .sort((a, b) => a.due.localeCompare(b.due) || a.deal.deal_id.localeCompare(b.deal.deal_id));
+  }
+  /* ===================== CR-14 §4.3 — Campaign & Phase › Search ===================== */
+  /* tree [{name, phases: [{name, …}], …}] → what to show: the Campaign name matches → it with every Phase (match 'campaign') · only Phase names
+     match → the Campaign as context (its numbers stay whole) with those Phases, shown open (match 'phase') · no query → as it is (match null) */
+  function filterCampaignTree(tree, query) {
+    const q = R.foldText(query);
+    if (!q) return tree.map(x => Object.assign({}, x, { match: null }));
+    return tree.map(x => {
+      if (R.foldText(x.name).includes(q)) return Object.assign({}, x, { match: 'campaign' });
+      const phases = (x.phases || []).filter(p => R.foldText(p.name).includes(q));
+      return phases.length ? Object.assign({}, x, { phases, match: 'phase' }) : null;
+    }).filter(Boolean);
+  }
+  /* a text cut where the search is found (no case) → [{t, hit}] — the screen marks the hits */
+  function highlightParts(text, query) {
+    const t = String(text == null ? '' : text).normalize('NFC'), q = R.foldText(query);
+    if (!q) return [{ t, hit: false }];
+    const low = t.toLowerCase(), out = [];
+    let i = 0;
+    for (let j = low.indexOf(q); j >= 0; j = low.indexOf(q, i)) { if (j > i) out.push({ t: t.slice(i, j), hit: false }); out.push({ t: t.slice(j, j + q.length), hit: true }); i = j + q.length; }
+    if (i < t.length) out.push({ t: t.slice(i), hit: false });
+    return out;
   }
   /* Workload by PIC: open deals · overdue · Docs to collect (deals with an instalment at Missing docs, CR-13 §4.5) · committed of the open deals (no PIC = its own row) */
   function workload(state, f, today, ctxIn) {
@@ -319,8 +389,9 @@ Object.assign(KT.rules, (function (R, C) {
     return [...by.values()].filter(w => w.open || w.overdue || w.docs).sort((a, b) => b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
   }
 
-  return { PILLARS, PILLAR_KEY, NOT_SET, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
+  return { PILLARS, PILLAR_KEY, NOT_SET, AWARE_CONSIDER, pillarShort, campaignDates, migrateV18, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
     activityRange, autoGran, activityBins, activitySeries, DEFAULT_TARGET, pillarTargetOf, validatePillarTarget, pillarAllocation: allocation,
+    portfolioScope: campaignsInRange, DASH_STATUS_KEY, DASH_STATUS_DEFAULT, normDashStatuses, dashStatusText, isDefaultStatuses, statusCounts, filterCampaignTree, highlightParts,
     phaseSteps, phaseStep, pillarShares,
     moneyOf, campaignMoney, moneyTotal, PRESETS, dateRangePreset, presetRange, workloadByPic, campaignsInRange, portfolio, allKpis, swimlanes, QUEUES, opsDeals, opsQueues, queueRows, upcomingDues, workload };
 })(KT.rules, KT.content));

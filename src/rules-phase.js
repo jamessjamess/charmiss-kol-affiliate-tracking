@@ -55,7 +55,8 @@ Object.assign(KT.rules, (function (R, C) {
     const qt = R.stepOf(lookups, 'Confirm QT'), cur = R.stepOf(lookups, d.sub_status);
     return !qt || !cur || cur.sort_order < qt.sort_order;
   }
-  const phasesOfCampaign = (state, campaignId) => state.phases.filter(p => p.campaign_id === campaignId);
+  /* CR-17 §4.5 — the Phases that count (approved): posts resolve into them, budgets add up, pickers list them · a Phase waiting for approval is left out */
+  const phasesOfCampaign = (state, campaignId) => state.phases.filter(p => p.campaign_id === campaignId && R.isApproved(p));
   const campaignOf = (state, campaignId) => state.campaigns.find(c => c.campaign_id === campaignId) || null;
   const inRange = (p, d) => !!p.start_date && !!p.end_date && p.start_date <= d && d <= p.end_date;
 
@@ -89,7 +90,7 @@ Object.assign(KT.rules, (function (R, C) {
      campaign: campaign_id → {committed, paid, unscheduled, needs, needsPosts, unscheduledPosts} */
   function phaseIndex(state) {
     const phasesBy = new Map(), postsBy = new Map();
-    state.phases.forEach(p => { if (!phasesBy.has(p.campaign_id)) phasesBy.set(p.campaign_id, []); phasesBy.get(p.campaign_id).push(p); });
+    state.phases.forEach(p => { if (!R.isApproved(p)) return; if (!phasesBy.has(p.campaign_id)) phasesBy.set(p.campaign_id, []); phasesBy.get(p.campaign_id).push(p); });   // CR-17: resolvePostPhase skips a pending Phase
     state.deal_posts.forEach(p => { if (!postsBy.has(p.deal_id)) postsBy.set(p.deal_id, []); postsBy.get(p.deal_id).push(p); });
     const blankPhase = () => ({ committed: 0, shortlist: 0, paid: 0, posts: 0, dealIds: new Set(), primaryDeals: new Set() });
     const blankCamp = () => ({ committed: 0, shortlist: 0, paid: 0, unscheduled: 0, needs: 0, needsPosts: 0, unscheduledPosts: 0 });
@@ -156,7 +157,7 @@ Object.assign(KT.rules, (function (R, C) {
     const sc = toScope(scopeIn), num = list => { const v = list.filter(x => !isBlank(x)).map(Number); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
     if (!sc.phaseIds) return num(state.campaigns.filter(c => !sc.campaignId || c.campaign_id === sc.campaignId).map(c => c.budget_kol));
     const set = new Set(sc.phaseIds);
-    return num(state.phases.filter(p => set.has(p.phase_id)).map(p => p.budget_kol));
+    return num(state.phases.filter(p => set.has(p.phase_id) && R.isApproved(p)).map(p => p.budget_kol));
   }
 
   /* ---------- Phase / Campaign summaries ---------- */
@@ -175,7 +176,8 @@ Object.assign(KT.rules, (function (R, C) {
   const phaseCommitted = (state, phaseId, idx) => phaseSummary(state, phaseId, idx).committed;
   function campaignSummary(state, campaignId, idxIn) {
     const idx = idxIn || phaseIndex(state), c = campaignOf(state, campaignId) || {}, x = idx.campaign.get(campaignId) || {};
-    const phases = phasesOfCampaign(state, campaignId), deals = state.deals.filter(d => d.campaign_id === campaignId);
+    /* CR-17 — a Campaign that waits shows its own Phases (they wait with it): its period and what is allocated; an approved one counts approved Phases only */
+    const phases = R.isApproved(c) ? phasesOfCampaign(state, campaignId) : R.sortPhases(state.phases.filter(p => p.campaign_id === campaignId)), deals = state.deals.filter(d => d.campaign_id === campaignId);
     const allocatedList = phases.filter(p => !isBlank(p.budget_kol)).map(p => Number(p.budget_kol));
     return {
       phaseCount: phases.length,
@@ -295,6 +297,8 @@ Object.assign(KT.rules, (function (R, C) {
     const errs = [], warns = [], infos = [];
     errs.push(...R.validateCampaign(state, { campaign_id: campaign.campaign_id || null, campaign_name: campaign.campaign_name }).errs);
     if (!isBlank(campaign.budget_kol) && (isNaN(campaign.budget_kol) || Number(campaign.budget_kol) < 0)) errs.push(issue('budget_kol', M.phaseBudgetInvalid));
+    /* CR-19 §4.8 — a Campaign is created / sent for approval with a KOL budget above ฿0 */
+    else if (opts.budgetRequired && (isBlank(campaign.budget_kol) || !(Number(campaign.budget_kol) > 0))) errs.push(issue('budget_kol', C.planner.budgetRequired));
     rows.forEach((r, i) => {
       if (isBlank(r.start_date) || isBlank(r.end_date)) {
         if (isBlank(r.start_date)) errs.push(issue(`row${i}_start`, M.phaseDatesRequired));
@@ -306,9 +310,10 @@ Object.assign(KT.rules, (function (R, C) {
     });
     (deletedIds || []).forEach(id => { if (!canDeletePhase(state, id)) errs.push(issue('rows', M.planDeleteHasPosts(phaseName(state, id)))); });
     const t = planTotals(campaign, rows);
-    if (t.budget != null && t.diff < 0) warns.push(issue('budget', M.planOver(baht(-t.diff)), 'over'));
+    /* CR-18 §4.2 — the Phase budgets against the Campaign budget: short or over = red (Save asks first, it does not block) · no budget = yellow */
+    if (t.budget != null && rows.length && t.diff < 0) warns.push(Object.assign(issue('budget', C.planner.barOver(baht(-t.diff)), 'over'), { red: true }));
+    if (t.budget != null && rows.length && t.diff > 0) warns.push(Object.assign(issue('budget', C.planner.barUnder(baht(t.diff), baht(t.allocated), baht(t.budget)), 'under'), { red: true }));
     if (t.budget == null && opts.pctUsed) warns.push(issue('budget_kol', M.planPctNoBudget));
-    if (t.budget != null && t.diff > 0 && rows.length) infos.push(issue('budget', M.planUnallocated(baht(t.diff))));
     const seqs = planSeqs(rows), ok = rows.map((r, i) => Object.assign({}, r, { phase_id: 'row' + i })).filter(rowOk), nameOf = id => { const i = +id.slice(3); return phaseTitle(seqs[i], rows[i].label); };
     phaseOverlaps(ok).forEach(o => warns.push(issue('rows', M.phaseOverlap(nameOf(o.a), nameOf(o.b), dmShort(o.from), dmShort(o.to)))));
     /* gaps between Phases: posts dated there will need a Phase picked */

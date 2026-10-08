@@ -248,7 +248,7 @@
       const made = R.bulkShortlistDeals(s, R.bulkShortlistPlan(s, [k.kol_id], ch, {}), ch, ctxB(s, 1))[0];
       s.deals.push(made.deal); s.deal_status_log.push(made.log); made.deal.pillar = 'Awareness';
       assert.equal(made.deal.payment_term, null, 'empty is fine at Shortlist');
-      assert.deepEqual(R.canMoveToStage(s, made.deal, 'Confirm QT').errs.map(e => e.kind), ['term']);
+      assert.deepEqual(R.canMoveToStage(s, made.deal, 'Confirm QT').errs.map(e => e.kind), ['term', 'rate_card']);   // CR-20 §4.7: the rate card too (from R.stageRequirements)
       assert.deepEqual(R.canMoveToStage(s, made.deal, 'Contacted').errs, []);
       assert.ok(R.checkMove(s, made.deal, 'Confirm QT', { date: TD }).errs.some(e => e.field === 'payment_term'));
       assert.ok(!R.checkMove(s, made.deal, 'Confirm QT', { date: TD, paymentTerm: 'prepaid' }).errs.some(e => e.field === 'payment_term'));

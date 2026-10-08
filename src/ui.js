@@ -45,7 +45,10 @@ KT.ui = (function () {
     if (s && (s.payment_lines || []).length) { let e = 0; const evs = R.cancelDealLines(s, { eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
     /* CR-10 §4.14 — Samples: a deal at Confirm QT gets a To ship · a cancelled deal's To ship → Not required · Ship by follows the deal's dates */
     if (s && Array.isArray(s.sample_shipments)) { let e = 0; const evs = R.syncShipments(s, { shipmentId: () => store.newId('shipment'), eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
+    /* CR-20 §4.8 — a package's payment status follows its line · a deal knows whether its package is paid (Dashboard Paid / Pending) */
+    if (s && Array.isArray(s.kol_packages)) { let e = 0; const evs = R.syncPackages(s, { eventId: () => store.newEventId() + e++, now: new Date(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
     store.save(); renderBanners(); if (msg) toast(msg);
+    if (api.onCommit) api.onCommit();   // CR-17: the side menu's badge (Approvals)
   }
 
   /* ===================== formats ===================== */
@@ -60,6 +63,9 @@ KT.ui = (function () {
   const bahtShort = n => (Number(n) < 0 ? '-' : '') + '฿' + shortNum(Math.abs(Number(n) || 0));
   const dm = iso => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
   const initials = name => { const t = String(name || '').trim(); return t ? Array.from(t)[0].toUpperCase() : '?'; };
+  /* CR-16 §4.4 — a KOL's photo (this browser's IndexedDB, KT.photos) or the letter circle as before · cls '' (32px in KOL Master) · 'lg' (64px) · 'md' · 'sm' */
+  const avatarHTML = (k, cls) => { const url = k && KT.photos && KT.photos.url(k.kol_id);
+    return `<span class="av${cls ? ' ' + cls : ''}${url ? ' ph' : ''}">${url ? `<img src="${esc(url)}" alt="" decoding="async">` : esc(initials(k && k.display_name))}</span>`; };
   const range = (a, b) => (!a ? '' : !b || a === b ? R.dmy(a) : `${R.dmy(a)} – ${R.dmy(b)}`);
   /* platform icon (CR-02 §4.6) — state: 'posted' (full colour) · 'planned' (faded) · '' (plain, e.g. KOL accounts) */
   const pfIcon = (platform, state, tip) => `<span class="pfi${state ? ' ' + state : ''}" title="${esc(tip || platform)}" role="img" aria-label="${esc(tip || platform)}">${KT.icons.svg(platform)}</span>`;
@@ -96,7 +102,7 @@ KT.ui = (function () {
     return `<span class="stage ${cls}" title="${tip}"><span class="dots">${dots.map(x => `<i class="${x.state}"></i>`).join('')}</span><span class="lbl">${esc(stageLabel(d))}${of ? ` <span class="muted">${esc(of)}</span>` : ''}</span></span>`;
   }
   /* Phase / Campaign status chip (CR-02 §4.8): On going blue · Not started grey outline · Complete pale green */
-  const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel' };
+  const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel', pending: 'apending', rejected: 'cancel' };   // CR-17: Pending approval (yellow) · Rejected
   const phaseChip = st => `<span class="st ${PHASE_CLS[st] || ''}">${esc(C.phaseStatus[st] || st)}</span>`;
   /* Payment column (CR-02 §4.3): small grey term · coloured state; tooltip = the term's ticks with dates */
   const PAY_CLS = { paid: 'ok', deposit_paid: 'info', overdue: 'err', due: 'warn', not_due: 'muted', free: 'muted' };
@@ -122,7 +128,7 @@ KT.ui = (function () {
   const phaseVar = phaseId => phaseVarAt(R.phaseStep(state(), phaseId));
   /* CR-11 §4.13 #4 — a KOL name / @handle may break only after _ . - (and at spaces), never inside a word: "thapear.<wbr>thapear" */
   const nameHTML = n => esc(n == null ? '' : n).replace(/([._-])(?=[^._\-\s])/g, '$1<wbr>');
-  /* a gap in percentage points, one way everywhere (Allocation vs target · Pillar mix): +15.4pp · −36.5pp · ±0.0pp */
+  /* a gap in percentage points, one way everywhere (CR-13 · CR-19: no target on screen any more): +15.4pp · −36.5pp · ±0.0pp */
   const ppText = v => (v == null || isNaN(v) ? '—' : `${v > 0.05 ? '+' : v < -0.05 ? '−' : '±'}${Math.abs(v).toFixed(1)}pp`);
   /* ⓘ (CR-05 §4.6): a button that opens a small popover — heading, what the number means and how it is worked out.
      info(body, heading) · or info(C.money.committed) for the money words of §4.5 ({h, d, f}) */
@@ -214,7 +220,7 @@ KT.ui = (function () {
     const errs = once(res.errs || []), warns = once(res.warns || []), infos = once(res.infos || []);
     return ((!errs.length && !warns.length && okText) ? `<div class="check ok">✓ <span>${esc(okText)}</span></div>` : '') +
       errs.map(x => `<div class="check err">✕ <span>${esc(x.msg)}</span></div>`).join('') +
-      warns.map(x => `<div class="check warn">! <span>${esc(x.msg)}</span></div>`).join('') +
+      warns.map(x => `<div class="check ${x.red ? 'err' : 'warn'}">! <span>${esc(x.msg)}</span></div>`).join('') +   // CR-18: a red warning (does not block)
       infos.map(x => `<div class="check info">i <span>${esc(x.msg)}</span></div>`).join('');
   };
   const kv = (label, value, cls) => `<div class="kv"><span>${esc(label)}</span><b${cls ? ` class="${cls}"` : ''}>${R.isBlank(value) ? `<span class="muted">${C.common.none}</span>` : esc(value)}</b></div>`;
@@ -228,7 +234,7 @@ KT.ui = (function () {
     const s = state();
     /* Campaigns in CR-02 §4.8 order, Phases by start date */
     return (placeholder != null ? `<option value="">${esc(placeholder)}</option>` : '') + R.sortCampaigns(s.campaigns, s.phases, today()).filter(c => !campaignId || c.campaign_id === campaignId).map(c => {
-      const ps = R.sortPhases(s.phases.filter(p => p.campaign_id === c.campaign_id));
+      const ps = R.sortPhases(R.phasesOfCampaign(s, c.campaign_id));   // CR-17: a Phase waiting for approval is not offered
       const all = withCampaign ? `<option value="c:${esc(c.campaign_id)}" data-special${selected === 'c:' + c.campaign_id ? ' selected' : ''}>${esc(C.common.allOf(c.campaign_name))}</option>` : '';
       return ps.length || withCampaign ? `<optgroup label="${esc(c.campaign_name)}">${all}${ps.map(p => phaseOptionHTML(p, selected)).join('')}</optgroup>` : '';
     }).join('');
@@ -287,6 +293,101 @@ KT.ui = (function () {
     try { n.showPicker(); } catch (err) { n.focus(); n.click(); }
   });
 
+  /* ===================== CR-14 §4.2 — ui.multiSelect: one multi-select for every list of values ===================== */
+  /* multiSelect(o) → HTML · the screen may draw it again whenever it likes — what is open and the search typed stay here, by o.id.
+     o = { id, options [{value, label, sub (grey text: a count), chip (HTML on the right), dot (a colour · 'outline')}], value [values],
+           label (the words on the button), aria, title, searchable (default: more than 7 options), placeholder,
+           defaultValue (→ Reset instead of Clear), min (1: the last tick cannot go · minTip), inline (no button: the list sits in a Filters panel),
+           onChange(values) } · a value changes at once (no Apply) · Esc or a click outside closes it · ↑ ↓ move · Space ticks.
+     Its own classes only (.ms…): no rule of a toolbar / search box reaches inside (the CR-14 bug: .toolbar .search made the box 280px tall) */
+  const MS = new Map();
+  const SEARCH_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>';
+  const msSearchable = o => (o.searchable != null ? !!o.searchable : o.options.length > 7);
+  function multiSelect(o) {
+    const st = Object.assign({ open: false, q: '' }, MS.get(o.id) || {}, { o });
+    MS.set(o.id, st);
+    const MC = C.ms, value = o.value || [], search = msSearchable(o), open = !!o.inline || st.open;
+    const shown = new Set(R.msFilter(o.options, search ? st.q : '').map(x => String(x.value)));
+    const opt = x => {
+      const on = value.includes(x.value), locked = R.msLocked(value, x.value, o.min);
+      const dot = !x.dot ? '' : x.dot === 'outline' ? '<span class="ms-dot outline"></span>' : `<span class="ms-dot" style="background:${x.dot}"></span>`;
+      return `<label class="ms-opt${shown.has(String(x.value)) ? '' : ' hidden'}"${locked && o.minTip ? ` title="${esc(o.minTip)}"` : ''}>` +
+        `<input type="checkbox" data-msv="${esc(x.value)}"${on ? ' checked' : ''}${locked ? ' aria-disabled="true" data-mslock' : ''}>${dot}` +
+        `<span class="ms-name">${esc(x.label)}</span>${x.sub != null && x.sub !== '' ? `<span class="ms-sub">${esc(x.sub)}</span>` : ''}${x.chip || ''}</label>`;
+    };
+    const pop = `<div class="ms-pop${open ? ' open' : ''}" role="group" aria-label="${esc(o.aria || o.label || '')}">` +
+      (search ? `<div class="ms-qw">${SEARCH_ICON}<input type="text" class="ms-q" data-msq value="${esc(st.q)}" placeholder="${esc(o.placeholder || MC.search)}" aria-label="${esc(o.placeholder || MC.search)}" autocomplete="off"></div>` : '') +
+      `<div class="ms-list">${o.options.map(opt).join('')}<div class="ms-none${shown.size ? ' hidden' : ''}">${esc(MC.noMatches)}</div></div>` +
+      `<div class="ms-foot"><button type="button" class="btn small ghost" data-msall>${esc(MC.selectAll)}</button><button type="button" class="btn small ghost" data-msclear>${esc(o.defaultValue ? MC.reset : MC.clear)}</button></div></div>`;
+    return `<div class="ms${o.inline ? ' inline' : ''}" data-ms="${esc(o.id)}">` +
+      (o.inline ? '' : `<button type="button" class="ms-trigger" data-mst aria-haspopup="true" aria-expanded="${open}"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ms-l">${esc(o.label)}</span><span class="ms-caret" aria-hidden="true">▾</span></button>`) +
+      pop + '</div>';
+  }
+  /* the words on a button: none → allText · one → its label · more → "n selected" */
+  const msLabel = (value, options, allText) => (!value.length ? allText : value.length === 1 ? ((options.find(x => x.value === value[0]) || {}).label || '') : C.ms.nSelected(value.length));
+  const msRoot = el => (el && el.closest ? el.closest('[data-ms]') : null);
+  const msState = root => (root ? MS.get(root.dataset.ms) : null);
+  /* below the button, its left edge · past the right of the window → its right edge */
+  function msPlace(root) {
+    const pop = root.querySelector('.ms-pop'); if (!pop || root.classList.contains('inline')) return;
+    pop.classList.remove('right');
+    if (pop.getBoundingClientRect().right > document.documentElement.clientWidth - 8) pop.classList.add('right');
+  }
+  function msOpen(root, on) {
+    const st = msState(root); if (!st || root.classList.contains('inline')) return;
+    st.open = on;
+    const pop = root.querySelector('.ms-pop'), t = root.querySelector('[data-mst]');
+    pop.classList.toggle('open', on); if (t) t.setAttribute('aria-expanded', String(on));
+    if (on) { msPlace(root); const f = root.querySelector('[data-msq]') || root.querySelector('.ms-opt:not(.hidden) [data-msv]'); if (f) f.focus(); }
+  }
+  const msCloseAll = except => document.querySelectorAll('.ms:not(.inline) .ms-pop.open').forEach(p => { const r = msRoot(p); if (r !== except) msOpen(r, false); });
+  /* a new value → the screen (it draws again) → the focus back where it was */
+  function msSet(root, values, focusValue) {
+    const st = msState(root); if (!st) return;
+    const id = root.dataset.ms;
+    st.o.value = values;
+    st.o.onChange(values);
+    const again = document.querySelector(`[data-ms="${CSS.escape(id)}"]`); if (!again) return;
+    msPlace(again);
+    const el = focusValue != null ? again.querySelector(`[data-msv="${CSS.escape(focusValue)}"]`) : again.querySelector('[data-msq]');
+    if (el && again !== root) el.focus();
+  }
+  document.addEventListener('click', e => {
+    const root = msRoot(e.target);
+    msCloseAll(root);
+    const st = msState(root); if (!st) return;
+    if (e.target.closest('[data-mst]')) { msOpen(root, !st.open); return; }
+    if (e.target.closest('[data-msall]')) { msSet(root, R.msSelectAll(st.o.options, st.o.value, msSearchable(st.o) ? st.q : '')); return; }
+    if (e.target.closest('[data-msclear]')) { msSet(root, st.o.defaultValue ? st.o.defaultValue.slice() : st.o.min ? (st.o.value || []).slice(0, st.o.min) : []); return; }
+    if (e.target.closest('input[data-mslock]')) e.preventDefault();   // the last one stays ticked (its tooltip says why)
+  });
+  document.addEventListener('change', e => {
+    const cb = e.target.closest ? e.target.closest('input[data-msv]') : null; if (!cb) return;
+    const root = msRoot(cb), st = msState(root); if (!st) return;
+    msSet(root, R.msToggle(st.o.options, st.o.value, st.o.options.map(x => x.value).find(v => String(v) === cb.dataset.msv), cb.checked, st.o.min), cb.dataset.msv);
+  });
+  /* the search filters the list where it is (the box keeps its focus and caret) */
+  document.addEventListener('input', e => {
+    if (!e.target.matches || !e.target.matches('[data-msq]')) return;
+    const root = msRoot(e.target), st = msState(root); if (!st) return;
+    st.q = e.target.value;
+    const shown = new Set(R.msFilter(st.o.options, st.q).map(x => String(x.value)));
+    root.querySelectorAll('.ms-opt').forEach(l => l.classList.toggle('hidden', !shown.has(l.querySelector('[data-msv]').dataset.msv)));
+    root.querySelector('.ms-none').classList.toggle('hidden', shown.size > 0);
+  });
+  document.addEventListener('keydown', e => {
+    const root = msRoot(e.target), st = msState(root); if (!st) return;
+    if (e.key === 'Escape' && st.open && !root.classList.contains('inline')) { e.preventDefault(); e.stopPropagation(); msOpen(root, false); const t = root.querySelector('[data-mst]'); if (t) t.focus(); return; }
+    if (e.key === 'Enter' && e.target.matches('[data-msq]')) { e.preventDefault(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (e.target.matches('[data-mst]')) { if (e.key === 'ArrowDown') { e.preventDefault(); msOpen(root, true); } return; }
+    const items = [...root.querySelectorAll('.ms-opt:not(.hidden) [data-msv]')]; if (!items.length) return;
+    e.preventDefault();
+    const i = items.indexOf(e.target), q = root.querySelector('[data-msq]');
+    const next = e.key === 'ArrowDown' ? items[i < 0 ? 0 : Math.min(items.length - 1, i + 1)] : i <= 0 ? q || items[0] : items[i - 1];
+    next.focus();
+  }, true);
+
   /* ===================== searchable combobox (CR-05 §4.3) ===================== */
   /* enhances <select data-combo>: the select stays the source of truth (value, change event, disabled, hidden) and the
      box searches its options by name. Option data: data-st = status chip · data-range = dates (grey) · data-special = a choice
@@ -305,7 +406,8 @@ KT.ui = (function () {
     if (sel.getAttribute('aria-label')) inp.setAttribute('aria-label', sel.getAttribute('aria-label'));
     if (sel.id) { inp.id = sel.id + '_q'; const lab = document.querySelector(`label[for="${sel.id}"]`); if (lab) lab.setAttribute('for', inp.id); }
     let open = false, active = -1, q = '', shown = [];
-    const item = (o, group) => ({ value: o.value, label: o.dataset.label || o.textContent, st: o.dataset.st || '', range: o.dataset.range || '', special: o.dataset.special != null, hide: o.dataset.hide != null, group });
+    const item = (o, group) => ({ value: o.value, label: o.dataset.label || o.textContent, st: o.dataset.st || '', range: o.dataset.range || '', special: o.dataset.special != null, hide: o.dataset.hide != null, group,
+      off: o.disabled || o.dataset.off != null, tip: o.dataset.tip || '' });   // CR-17: greyed, cannot be chosen (Pending approval)
     const read = () => [...sel.children].flatMap(ch => (ch.tagName === 'OPTGROUP' ? [...ch.children].map(o => item(o, ch.label)) : [item(ch, null)]));
     const mark = label => { const i = q ? fold(label).indexOf(fold(q)) : -1; return i < 0 ? esc(label) : `${esc(label.slice(0, i))}<mark>${esc(label.slice(i, i + q.length))}</mark>${esc(label.slice(i + q.length))}`; };
     function sync() {
@@ -321,7 +423,7 @@ KT.ui = (function () {
       let lastGroup = null;
       list.innerHTML = shown.map((x, i) => {
         const head = x.group && x.group !== lastGroup ? `<div class="combo-g">${esc(x.group)}</div>` : ''; lastGroup = x.group;
-        return head + `<div class="combo-o${i === active ? ' on' : ''}${x.value === sel.value ? ' sel' : ''}${x.special ? ' sp' : ''}" role="option" id="${lid}_${i}" data-i="${i}" aria-selected="${x.value === sel.value}">` +
+        return head + `<div class="combo-o${i === active ? ' on' : ''}${x.value === sel.value ? ' sel' : ''}${x.special ? ' sp' : ''}${x.off ? ' off' : ''}" role="option" id="${lid}_${i}" data-i="${i}" aria-selected="${x.value === sel.value}"${x.off ? ` aria-disabled="true" title="${esc(x.tip)}"` : ''}>` +
           `<span class="combo-l">${mark(x.label)}</span>${x.st ? phaseChip(x.st) : ''}${x.range ? `<span class="combo-r">${esc(x.range)}</span>` : ''}</div>`;
       }).join('') || `<div class="combo-empty">${esc((sel.dataset.combo === 'phase' ? C.combo.noPhase : sel.dataset.combo === 'pic' ? C.combo.noPic : C.combo.noCampaign)(q))}</div>` +
         (sel.dataset.comboNew === 'campaign' && can('campaign.edit') ? `<button type="button" class="btn small" data-combonew>${esc(C.campaign.newCampaignBtn)}</button>` : '');
@@ -331,7 +433,7 @@ KT.ui = (function () {
     function openList() { if (open || sel.disabled) return; open = true; q = ''; active = Math.max(0, read().filter(x => !x.hide).findIndex(x => x.value === sel.value)); list.classList.remove('hidden'); inp.setAttribute('aria-expanded', 'true'); render(); inp.select(); }
     function close() { if (!open) return; open = false; q = ''; list.classList.add('hidden'); inp.setAttribute('aria-expanded', 'false'); sync(); }
     function choose(i) {
-      const x = shown[i]; if (!x) return;
+      const x = shown[i]; if (!x || x.off) return;
       const changed = x.value !== sel.value; SELECT_VALUE.set.call(sel, x.value); close();
       if (changed) fire(sel);
     }
@@ -355,11 +457,31 @@ KT.ui = (function () {
   }
   const enhanceCombos = root => (root || document).querySelectorAll('select[data-combo]').forEach(enhanceCombo);
   /* <option>s for a Campaign combobox: name · status · dates, in sortCampaigns order (Cancelled only when searching) */
-  function campaignOptionsHTML(selected, placeholder) {
+  /* o.forDeal (New deal · Bulk shortlist · Add to campaign · a deal's Campaign): a Campaign not approved yet is there, greyed with its chip, and cannot be picked (CR-17 §4.5) */
+  /* CR-19 §4.6 — a pillar's colour (Awareness · Awareness & Consideration · Consideration · Conversion — in that order) · Not set = grey ·
+     a chip with its colour and its short name ("Aware + Consider"), the full name in the tooltip */
+  const PILLAR_VARS = ['--pl-aw', '--pl-ac', '--pl-co', '--pl-cv'];
+  const pillarVar = p => { const i = R.PILLARS.indexOf(p); return i >= 0 ? `var(${PILLAR_VARS[i]})` : 'var(--series-grey)'; };
+  const pillarChipHTML = (p, short) => (p ? `<span class="plc" title="${esc(p)}"><i style="background:${pillarVar(p)}"></i>${esc(short ? R.pillarShort(p) : p)}</span>` : '');
+  /* CR-19 — the Gantt of Campaign & Phase › Timeline, shared with Dashboard › Campaign timeline: a range [from, to] laid out in % ·
+     head = the tick labels (R.timeAxis ticks) with their grid line · grid = the grid lines of a row · today = the dashed Today line */
+  function ganttAxis(from, to, ticks, today) {
+    const days = R.dayDiff(R.addDays(to, 1), from), pct = iso => R.dayDiff(iso, from) / days * 100, inside = (ticks || []).filter(t => t.date >= from && t.date <= to);
+    return { from, to, days, pct,
+      head: inside.map(t => `<span class="gt-tick" style="left:${pct(t.date)}%">${esc(t.label)}</span><i class="gt-grid" style="left:${pct(t.date)}%"></i>`).join(''),
+      grid: inside.map(t => `<i class="gt-grid" style="left:${pct(t.date)}%"></i>`).join(''),
+      today: today && today >= from && today <= to ? `<i class="gt-today" style="left:${pct(today)}%"></i>` : '' };
+  }
+  /* CR-17 — the dates of a Campaign that waits for approval: its own Phases (they wait too) */
+  const allDates = (s, cid) => { const ps = s.phases.filter(p => p.campaign_id === cid);
+    return [ps.map(p => p.start_date).filter(Boolean).sort()[0] || null, ps.map(p => p.end_date).filter(Boolean).sort().pop() || null]; };
+  function campaignOptionsHTML(selected, placeholder, o = {}) {
     const s = state(), td = today();
     return (placeholder != null ? `<option value="" data-special>${esc(placeholder)}</option>` : '') + R.sortCampaigns(s.campaigns, s.phases, td).map(c => {
-      const st = R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td) : R.campaignStatus(R.phasesOfCampaign(s, c.campaign_id), td), [a, z] = R.scopeRange(s, { campaignId: c.campaign_id });
-      return `<option value="${esc(c.campaign_id)}" data-st="${st}" data-range="${esc(a ? `${dm(a)} – ${dm(z)}` : '')}"${st === 'cancelled' ? ' data-hide' : ''}${c.campaign_id === selected ? ' selected' : ''}>${esc(c.campaign_name)}</option>`;
+      const st = R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td) : R.campaignStatus(R.phasesOfCampaign(s, c.campaign_id), td), [a, z] = R.isApproved(c) ? R.scopeRange(s, { campaignId: c.campaign_id }) : allDates(s, c.campaign_id);
+      const chip = c.approval_status === 'rejected' ? 'rejected' : st, off = o.forDeal && !R.isApproved(c) && c.campaign_id !== selected;
+      return `<option value="${esc(c.campaign_id)}" data-st="${chip}" data-range="${esc(a ? `${dm(a)} – ${dm(z)}` : '')}"${st === 'cancelled' || c.approval_status === 'rejected' ? ' data-hide' : ''}` +
+        `${off ? ` disabled data-off data-tip="${esc(C.approval.waiting)}"` : ''}${c.campaign_id === selected ? ' selected' : ''}>${esc(c.campaign_name)}</option>`;
     }).join('');
   }
   /* one Phase <option>: name · status · dates */
@@ -479,6 +601,7 @@ KT.ui = (function () {
         ${field('ck_followers', CK.followers, inp('followers', 'number'))}${field('ck_profile_link', CK.profileLink, inp('profile_link', 'url'))}
         ${field('ck_kol_type', CK.type, sel('kol_type', types, CK.notSet))}${field('ck_kol_category', CK.category, inp('kol_category'))}
         ${field('ck_gender', CK.gender, sel('gender', R.GENDERS.map(v => ({ value: v, label: v })), CK.notSet))}${field('ck_contact_channel', CK.contact, sel('contact_channel', R.CONTACT_CHANNELS.map(v => ({ value: v, label: v })), CK.notSet))}
+        ${field('ck_contact_id', C.kol.contactId, `<input id="f_ck_contact_id" data-ck="contact_id" data-key="ck_contact_id" value="${esc(x.contact_id == null ? '' : x.contact_id)}" placeholder="${esc(C.kol.contactIdPh[x.contact_channel || ''] || C.kol.contactIdPh[''])}" maxlength="${R.CONTACT_ID_MAX}" autocomplete="off">`, { hint: esc(C.kol.contactIdHint) })}
         ${field('ck_pic', CK.pic, sel('pic', picList(x.pic).map(v => ({ value: v, label: v })), CK.choose), { req: 1 })}
         ${field('ck_default_payment_term', CK.term, sel('default_payment_term', R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), C.term.none), { hint: esc(o_termHint(x)) })}
       </div>`;
@@ -498,7 +621,11 @@ KT.ui = (function () {
   /* after(): something changed (the caller marks itself dirty and runs the check) */
   function wireKolCreate(root, c, after) {
     root.querySelectorAll('[data-ck]').forEach(el => {
-      const h = () => { c.draft[el.dataset.ck] = el.value; after(); };
+      const h = () => {
+        c.draft[el.dataset.ck] = el.value;
+        if (el.dataset.ck === 'contact_channel') { const ci = root.querySelector('[data-ck="contact_id"]'); if (ci) ci.placeholder = C.kol.contactIdPh[el.value] || C.kol.contactIdPh['']; }   // CR-14 §4.5
+        after();
+      };
       el.addEventListener('input', h); el.addEventListener('change', () => { c.touched.add(el.dataset.key); h(); }); el.addEventListener('blur', () => { c.touched.add(el.dataset.key); after(); });
     });
     root._ck = { c, after };
@@ -663,17 +790,18 @@ KT.ui = (function () {
   const drawer = { owner: null };
   /* CR-10 §4.13 — owner.kind 'deal' · 'kol' · 'campaign' · 'planner': 60% wide (R.drawerWidth), resizable from the left edge, each kind remembers its own
      width (ui.drawerWidth.<kind>; the CR-07 / CR-09 keys are read once) · the page beside stays usable, except under the Phase Planner (it holds a plan) */
-  const WIDE = { kol: { legacy: 'ui.kolDrawerWidth' }, deal: { legacy: 'ui.dealDrawerWidth' }, campaign: {}, planner: { modal: true } };
+  /* CR-20 §4.6 — a deal opens as a modal (L · ~1120px · 90vh · the page faded behind), not a side drawer */
+  const WIDE = { kol: { legacy: 'ui.kolDrawerWidth' }, campaign: {}, planner: { modal: true } };
   const wideOf = () => { const k = drawer.owner && drawer.owner.kind; return k && WIDE[k] ? Object.assign({ kind: k, key: 'ui.drawerWidth.' + k, width: (v, m, s) => R.drawerWidth(k, v, m, s) }, WIDE[k]) : null; };
   const isKol = () => !!wideOf();
   const RESIZE_HANDLE = () => `<div class="dr-resize" data-dr-resize title="${esc(C.common.resizeDrawer)}" aria-hidden="true"></div>`;
   const savedWideWidth = () => { const W = wideOf(), v = W ? +pref.get(W.key, '') || (W.legacy ? +pref.get(W.legacy, '') : 0) : 0; return v > 0 ? v : null; };
   function sizeDrawer(width) {
-    const el = $('drawer_content'), W = wideOf(), wide = !!W, kind = drawer.owner && drawer.owner.kind;
-    const modal = !wide || !!W.modal;
-    $('drawer').classList.toggle('nonmodal', !modal); el.classList.toggle('wide', wide); el.classList.toggle('kol', kind === 'kol'); el.classList.toggle('dealw', kind === 'deal'); el.setAttribute('aria-modal', String(modal));
+    const el = $('drawer_content'), W = wideOf(), wide = !!W, kind = drawer.owner && drawer.owner.kind, dm = kind === 'deal';
+    const modal = dm || !wide || !!W.modal;
+    $('drawer').classList.toggle('nonmodal', !modal); $('drawer').classList.toggle('dmodal', dm); el.classList.toggle('wide', wide); el.classList.toggle('kol', kind === 'kol'); el.classList.toggle('dm', dm); el.setAttribute('aria-modal', String(modal));
     document.body.classList.toggle('drawer-open', !!drawer.owner && modal);
-    if (!wide) { el.style.width = ''; el.classList.remove('two'); return; }
+    if (!wide) { el.style.width = ''; el.classList.toggle('two', dm && window.innerWidth >= 768); return; }   // the deal: two columns from 768px, one (full screen) below
     const vw = window.innerWidth, cw = Math.round(document.querySelector('.app-main').getBoundingClientRect().width) || vw;
     const w = width || W.width(vw, vw - cw, savedWideWidth());
     el.style.width = w + 'px'; el.classList.toggle('two', w >= 720);   // two columns from 720px (CR-10 §4.13)
@@ -712,27 +840,35 @@ KT.ui = (function () {
   });
   $('drawer').addEventListener('dblclick', e => { if (e.target.closest('[data-dr-resize]') && isKol()) { const W = wideOf(); pref.set(W.key, ''); if (W.legacy) pref.set(W.legacy, ''); sizeDrawer(); } });   // = 60% again
   document.addEventListener('kt:contentresize', () => { if (isKol()) sizeDrawer(); });
+  window.addEventListener('resize', () => { if (drawer.owner && drawer.owner.kind === 'deal') sizeDrawer(); });
 
   /* ===================== CR-07 §4.9 — the Journey timeline + payment track ===================== */
   const JR = C.journey;
   const PASSED = ['done', 'late', 'nodate'];
   /* one circle per step (✓ done · ⏳ waiting · empty upcoming · ✕ cancelled) with its date and days under it; the circle opens the details */
-  function journeyHTML(d, logs, posts) {
+  /* o.notes (CR-20 §4.13): a Draft step opens its notes and shows 📎 n · 🖼 n · Brief / Script show 🔗 when the deal has the link (§4.12) */
+  function journeyHTML(d, logs, posts, o = {}) {
     const s = state(), t = R.dealTimeline(s.lookups, d, logs, posts, today()), td = today();
     const by = x => (x.log && x.log.changed_by !== undefined ? R.changedByName(s, x.log.changed_by) : '');
     const li = t.steps.map((x, i) => {
       const nx = t.steps[i + 1], seg = nx ? (PASSED.includes(nx.state) ? ' seg-on' : '') : t.cancelled ? ' seg-cancel' : '';
       const lines = [];
       if (x.date) lines.push(esc(dm(x.date)));
-      if (x.state === 'nodate') lines.push(esc(JR.dateNotRecorded));
+      if (x.state === 'nodate') lines.push(`<span class="jt-nr" title="${esc(JR.dateNotRecorded)}">—</span>`);   // CR-15 §4.4: data from before — not a warning
       if (x.days != null) lines.push(esc(JR.took(x.days)));
       if (x.late_days) lines.push(`<b class="jt-bad">${esc(JR.late(x.late_days))}</b>`);
       if (x.state === 'current' && x.waiting != null) lines.push(esc(JR.waiting(x.waiting)));
       if ((x.state === 'current' || x.state === 'upcoming' || x.state === 'overdue') && x.expected) lines.push(x.overdue_days ? `<b class="jt-bad">${esc(`${JR.due(dm(x.expected))} · ${JR.overdue(x.overdue_days)}`)}</b>` : esc(JR.due(dm(x.expected))));
       if (x.state === 'upcoming' && !x.expected) lines.push('–');
-      const icon = x.state === 'current' ? '⏳' : PASSED.includes(x.state) ? '✓' : x.state === 'overdue' ? '!' : '';
+      const icon = x.state === 'current' ? '⏳' : x.state === 'nodate' ? '—' : PASSED.includes(x.state) ? '✓' : x.state === 'overdue' ? '!' : '';
       const detail = [PASSED.includes(x.state) ? (x.date ? JR.passedOn(R.dmy(x.date)) : JR.dateNotRecorded) : JR.notYet, x.expected ? JR.expected(R.dmy(x.expected)) : JR.noExpected, by(x) ? JR.by(by(x)) : ''].filter(Boolean).join(' · ');
-      return `<li class="jt-s ${x.state}${x.overdue_days ? ' od' : ''}${seg}"><button type="button" class="info jt-c" data-info-h="${esc(`${x.sub} · ${stepTitle(x.sub)}`)}" data-info-d="${esc(detail)}" data-info-f="${esc((x.log && x.log.note) || '')}" aria-label="${esc(`${x.short}: ${JR.state[x.state]}`)}" aria-expanded="false">${icon}</button>` +
+      const st = R.stepOf(s.lookups, x.sub), dn = R.draftNo(st), link = st && st.date_field === 'brief_date' ? d.link_brief : R.isScriptStep(st) ? d.script_link : null;
+      if (link && R.isHttpLink(link)) lines.push(`<a class="jt-link" href="${esc(link)}" target="_blank" rel="noopener" title="${esc(st.date_field === 'brief_date' ? C.deal.f.link_brief : C.deal.scriptLink)}" aria-label="${esc(st.date_field === 'brief_date' ? C.deal.f.link_brief : C.deal.scriptLink)}">🔗</a>`);
+      const nc = dn && d.deal_id ? R.noteCounts(R.stepNoteOf(s, d.deal_id, R.draftKey(dn))) : null, ncText = nc ? C.notes.counts(nc.links, nc.images) : '';
+      if (ncText) lines.push(`<span class="jt-nc">${esc(ncText)}</span>`);
+      const btn = o.notes && dn && d.deal_id ? `<button type="button" class="jt-c jt-note" data-notes="${dn}" title="${esc(C.notes.title(dn))}" aria-label="${esc(`${x.short}: ${JR.state[x.state]} · ${C.notes.title(dn)}`)}">${icon}</button>`
+        : `<button type="button" class="info jt-c" data-info-h="${esc(`${x.sub} · ${stepTitle(x.sub)}`)}" data-info-d="${esc(detail)}" data-info-f="${esc((x.log && x.log.note) || '')}" aria-label="${esc(`${x.short}: ${JR.state[x.state]}`)}" aria-expanded="false">${icon}</button>`;
+      return `<li class="jt-s ${x.state}${x.overdue_days ? ' od' : ''}${seg}">${btn}` +
         `<div class="jt-t"><b>${esc(x.short)}</b>${lines.map(l => `<span>${l}</span>`).join('')}</div></li>`;
     });
     if (t.cancelled) {
@@ -746,13 +882,52 @@ KT.ui = (function () {
   /* the payment track: the term on the left, then Docs → (Deposit 50% | 50%) → Paid with dates, coloured by payment_state */
   function payTrackHTML(d) {
     const p = R.paymentTimeline(d, today());
+    if (p.term === 'package') { const pk = R.packageById(state(), d.package_id), paid = !!d.package_paid;   // CR-20 §4.8
+      return `<div class="pt"><span class="pt-term" title="${esc(JR.payment)}">${esc(C.termShort.package)}</span><span class="muted small">${esc(pk ? R.packageLabel(pk) : C.common.none)}</span>` +
+        `<b class="pt-st ${paid ? 'ok' : 'warn'}">${esc(paid ? C.pkg.paidVia : C.pkg.notPaid)}</b></div>`; }
     if (p.term === 'free') return `<div class="pt"><span class="pt-term">${esc(JR.payment)}</span><span class="chip">${esc(C.termShort.free)}</span></div>`;
+    if (d.deal_id && R.isSimple(state(), 'payments')) return simpleTrackHTML(d, p);   // CR-17 §4.4
     const label = f => (f === 'paid_50' ? (p.term === 'split_50' ? C.payStep.deposit : C.payStep.paid_50) : C.payStep[f]);
     return `<div class="pt"><span class="pt-term" title="${esc(JR.payment)}">${esc(C.termShort[p.term || 'none'])}</span><ol class="pt-list">` +
       p.items.map(x => `<li class="pt-s${x.done ? ' on' : ''}"><span class="pt-c">${x.done ? '✓' : ''}</span><span class="pt-l">${esc(label(x.flag))}</span>` +
         `<span class="muted">${x.done ? esc(x.date ? dm(x.date) : '✓') : '—'}</span>${x.when ? `<span class="pt-when">${esc(JR[x.when])}</span>` : ''}</li>`).join('') +
       `</ol><b class="pt-st ${PAY_CLS[p.state] || ''}">${esc(C.payState[p.state])}</b></div>`;
   }
+  /* CR-17 §4.4 — Simple mode: To pay → Sent dd/mm → Paid dd/mm (the term on the left, the state on the right) */
+  function simpleTrackHTML(d, p) {
+    const t = R.simplePayTrack(state(), d, today()), CP = C.pay.simple;
+    const step = (on, label, date) => `<li class="pt-s${on ? ' on' : ''}"><span class="pt-c">${on ? '✓' : ''}</span><span class="pt-l">${esc(label)}</span><span class="muted">${on && date ? esc(dm(date)) : '—'}</span></li>`;
+    const stTxt = { paid: CP.trackPaid, sent: CP.trackSent, to_pay: CP.trackToPay, not_due: C.payState.not_due, none: C.payState.not_due }[t.state];
+    return `<div class="pt"><span class="pt-term" title="${esc(JR.payment)}">${esc(C.termShort[p.term || 'none'])}</span><ol class="pt-list">` +
+      step(t.owed > 0 || !!t.sent || !!t.paid, CP.trackToPay, null) + step(!!t.sent, CP.trackSent, t.sent) + step(t.allPaid, CP.trackPaid, t.paid) +
+      `</ol><b class="pt-st ${t.state === 'paid' ? 'ok' : t.state === 'sent' ? 'info' : t.state === 'to_pay' ? 'warn' : 'muted'}">${esc(stTxt)}</b></div>`;
+  }
+  /* ===================== CR-17 — a small form beside a row button (Mark paid · Shipped · Delivered) ===================== */
+  /* o = { title, body (html), ok (label), onOk(root) → true when done (it closes), focus (selector) } · Enter = Confirm · Esc / a click outside = close */
+  let popf = null;
+  function closePopForm() { if (popf) { const m = popf; popf = null; m.remove(); } }
+  function popForm(anchor, o) {
+    closePopForm();
+    const m = document.createElement('div'); m.className = 'menu-list floating popform'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', o.title);
+    m.innerHTML = `<div class="pf-h">${esc(o.title)}</div><div class="pf-b">${o.body}</div><div class="checks pf-chk"></div>` +
+      `<div class="pf-f"><button type="button" class="btn small" data-pfx>${esc(C.common.cancel)}</button><button type="button" class="btn small primary" data-pfok>${esc(o.ok)}</button></div>`;
+    (anchor && anchor.closest('dialog') || document.body).appendChild(m);
+    popf = m; m._anchor = anchor;
+    const r = anchor ? anchor.getBoundingClientRect() : { left: innerWidth / 2, right: innerWidth / 2, top: innerHeight / 3, bottom: innerHeight / 3 };
+    m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 8)) + 'px';
+    m.style.top = (r.bottom + m.offsetHeight + 8 > innerHeight ? Math.max(8, r.top - m.offsetHeight - 4) : r.bottom + 4) + 'px';
+    const ok = () => { const done = o.onOk(m); if (done !== false) closePopForm(); };
+    m.addEventListener('click', e => { if (e.target.closest('[data-pfx]')) { closePopForm(); if (anchor && anchor.isConnected) anchor.focus(); } else if (e.target.closest('[data-pfok]')) ok(); });
+    m.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePopForm(); if (anchor && anchor.isConnected) anchor.focus(); }
+      else if (e.key === 'Enter' && !e.target.closest('textarea') && !e.target.closest('.dpick')) { e.preventDefault(); ok(); }
+    });
+    const f = (o.focus && m.querySelector(o.focus)) || m.querySelector('[data-pfok]'); if (f) f.focus();
+    return m;
+  }
+  /* the error under the fields of the open form */
+  const popFormError = (m, msg) => { const c = m.querySelector('.pf-chk'); if (c) c.innerHTML = msg ? `<div class="check err">✕ <span>${esc(msg)}</span></div>` : ''; };
+  document.addEventListener('mousedown', e => { if (popf && !popf.contains(e.target) && !(popf._anchor && popf._anchor.contains(e.target)) && !e.target.closest('.dpop,.cal')) closePopForm(); }, true);
   /* across when the section is wide enough for the steps (64px each — CR-10 §4.13: a 60% drawer is always across, even Script + 3 drafts), else down */
   function fitJourney(root) { (root || document).querySelectorAll('.jt').forEach(el => { el.classList.remove('vert'); el.classList.toggle('vert', el.clientWidth < (+el.dataset.n || 1) * 64); }); }
   document.addEventListener('kt:contentresize', () => fitJourney(document));
@@ -768,7 +943,7 @@ KT.ui = (function () {
     } catch (e) { return false; }
   }
   const COPY_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>';
-  const copyBtnHTML = name => `<button type="button" class="copybtn" data-copyname="${esc(name)}" title="${esc(C.copy.name)}" aria-label="${esc(C.copy.aria(name))}">${COPY_ICON}</button>`;
+  const copyBtnHTML = (name, label) => `<button type="button" class="copybtn" data-copyname="${esc(name)}" title="${esc(label || C.copy.name)}" aria-label="${esc(label ? `${label} ${name}` : C.copy.aria(name))}">${COPY_ICON}</button>`;
   /* the click stops here: copying never opens the row's drawer */
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-copyname]'); if (!b) return;
@@ -884,9 +1059,25 @@ KT.ui = (function () {
   window.addEventListener('storage', e => { if (e.key === S.KEY) { otherTabChanged = true; renderBanners(); } });
 
   /* ===================== Backup / Restore / Reset / Export all ===================== */
+  /* CR-16 §4.4 — with photos in this browser: Include photos (on) · the size of the file with / without them first */
   function doBackup() {
+    const ph = KT.photos && KT.photos.available() ? KT.photos.totals() : { n: 0, bytes: 0 };
+    if (!ph.n) { saveBackup(false); return; }
+    const K = C.data, plain = store.sizeChars ? store.sizeChars() : 0, withPh = plain + Math.ceil(ph.bytes * 4 / 3) + ph.n * 40;
+    const mb = n => R.fmtNum(Math.max(0.1, Math.round(n / 104857.6) / 10));
+    const sizeText = on => K.backupSize(mb(on ? withPh : plain));
+    createModal({ size: 'S', title: K.backupTitle, foot: ['', cmButtons(K.backupDownload, 'bk_ok')],
+      body: `<label class="tick block"><input type="checkbox" id="bk_photos" checked> ${esc(K.includePhotos)}</label>` +
+        `<p class="hint">${esc(K.includePhotosHint(R.fmtNum(ph.n), ph.bytes < 1048576 ? `${R.fmtNum(Math.max(1, Math.round(ph.bytes / 1024)))} KB` : `${mb(ph.bytes)} MB`))}</p><p class="muted small" id="bk_size">${esc(sizeText(true))}</p>` });
+    $('bk_photos').addEventListener('change', e => { $('bk_size').textContent = sizeText(e.target.checked); });
+    $('bk_ok').addEventListener('click', async () => { const on = $('bk_photos').checked; $('bk_ok').disabled = true; await saveBackup(on); closeModal(); });
+  }
+  async function saveBackup(withPhotos) {
     const b = store.backup();
-    download(b.filename, b.text, 'application/json');
+    let text = b.text;
+    if (withPhotos) { const photos = await KT.photos.exportAll(); if (Object.keys(photos).length) text = text.replace(/}\s*$/, () => `,"photos":${JSON.stringify(photos)}}`); }   // base64 pictures under "photos" (never in localStorage)
+    if (withPhotos && KT.photos.exportStepImages) { const imgs = await KT.photos.exportStepImages(); if (Object.keys(imgs).length) text = text.replace(/}\s*$/, () => `,"step_images":${JSON.stringify(imgs)}}`); }   // CR-20 §4.13: the draft images too
+    download(b.filename, text, 'application/json');
     renderBanners();
     if (api.currentTab() === 'settings') api.refresh();
     toast(C.data.backupDone(b.filename));
@@ -909,7 +1100,8 @@ KT.ui = (function () {
       $('rs_preview').innerHTML = `<p class="muted small">${esc(K.restoreFileInfo(f.name, p.backupAt ? R.fmtDateTime(p.backupAt) : ''))}</p>
         <div class="check warn">! <span>${esc(K.restorePreview)}</span></div>
         <div class="tablewrap"><table class="tbl"><thead><tr><th></th><th class="num">${esc(K.restoreColNow)}</th><th class="num">${esc(K.restoreColFile)}</th></tr></thead><tbody>` +
-        S.COLLECTIONS.map(k => `<tr><td>${esc(C.counts[k])}</td><td class="num">${R.fmtNum(p.current[k])}</td><td class="num">${R.fmtNum(p.counts[k])}</td></tr>`).join('') + `</tbody></table></div>`;
+        S.COLLECTIONS.map(k => `<tr><td>${esc(C.counts[k])}</td><td class="num">${R.fmtNum(p.current[k])}</td><td class="num">${R.fmtNum(p.counts[k])}</td></tr>`).join('') +
+        `<tr><td>${esc(K.photosRow)}</td><td class="num">${R.fmtNum(KT.photos && KT.photos.available() ? KT.photos.totals().n : 0)}</td><td class="num">${p.photos ? R.fmtNum(p.photos) : `<span class="muted" title="${esc(K.photosKept)}">—</span>`}</td></tr>` + `</tbody></table></div>`;
       $('rs_ok').disabled = false;
     });
     $('rs_ok').addEventListener('click', () => {
@@ -917,6 +1109,9 @@ KT.ui = (function () {
       const r = store.restore(text, fileName);
       if (!r.ok) { toast(K.restoreBad); return; }
       closeDialog(); api.afterDataReplaced(K.restoreDone + (r.scrubbed ? ' · ' + C.msg.restoreScrubbed(r.scrubbed) : ''));
+      /* CR-16 §4.4 — a backup with photos writes them back (a backup without keeps the ones in this browser) */
+      if (r.photos && KT.photos.available()) KT.photos.importAll(r.photos).then(n => { if (n) toast(K.photosRestored(R.fmtNum(n))); });
+      if (r.stepImages && KT.photos.available()) KT.photos.importStepImages(r.stepImages);   // CR-20 §4.13
     });
   }
   function openReset() {
@@ -961,9 +1156,9 @@ KT.ui = (function () {
   const api = {
     C, R, S, $, esc, today, store, state, pref, commit, toast, me, userId, filterChips, noMatchHTML, sizeDrawer, priceRefHTML, priceRefFree, priceRefSummary, costInput, journeyHTML, payTrackHTML, fitJourney, copyText, copyBtnHTML, actor, viewingAs, roleOverride, can, guard, picList, canSeeTab, toastAction, download, downloadCSV, checksHTML, kv, field, range, stChip, stageChip, stageText,
     stageLabel, stageCell, planTip, PAY_CLS, payTicks, payCell, STATUS_CLS, PHASE_CLS, phaseChip,
-    shortNum, bahtShort, dm, initials, nameHTML, PHASE_RAMP, phaseColor, phaseColorAt, phaseVar, phaseVarAt, ppText, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
+    ganttAxis, pillarVar, pillarChipHTML, shortNum, bahtShort, dm, initials, avatarHTML, nameHTML, PHASE_RAMP, phaseColor, phaseColorAt, phaseVar, phaseVarAt, ppText, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
     dateHTML, setDate, setDateDisabled, parseDmy,
-    enhanceCombo, enhanceCombos, phaseOptionHTML, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
+    multiSelect, msLabel, enhanceCombo, enhanceCombos, phaseOptionHTML, popForm, closePopForm, popFormError, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
     kolCreateHTML, kolCreateCheck, wireKolCreate, accountFieldsHTML, accountCheck, wireAccount,
     dlg, openDialog, closeDialog, confirmDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
     renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams, linkParams,

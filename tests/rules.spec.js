@@ -107,7 +107,7 @@
   describe('seed acceptance', () => {
     test('TC-01: collection counts after first load', () => {
       const st = S.createStore({ seed: SEED, storage: fakeStorage() });
-      assert.deepEqual(st.counts(), { campaigns: 4, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214, pick_lists: 0 }, 'CR-04 … CR-10: users, campaign_events, products, payments and sample shipments come with the migrations');
+      assert.deepEqual(st.counts(), { campaigns: 4, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214, pick_lists: 0, shipping_addresses: 0, campaign_budget_changes: 4, kol_packages: 0, step_notes: 0 }, 'CR-04 … CR-10: users, campaign_events, products, payments and sample shipments come with the migrations · CR-20: packages, draft notes');
     });
     test('TC-02: committed per Phase (not counting Cancel) — by post since CR-03', () => {
       const s = fresh();
@@ -128,9 +128,9 @@
 
   describe('journey', () => {
     test('statusOf derives Status from SubStatus', () => {
-      const L = SEED.lookups;
+      const L = fresh().lookups;   // CR-15: today's journey (the seed's old names are migrated on load)
       assert.equal(R.statusOf(L, 'Shortlist'), 'List');
-      assert.equal(R.statusOf(L, 'Approve Draft 2'), 'Inprocess');
+      assert.equal(R.statusOf(L, 'Draft 2'), 'Inprocess');
       assert.equal(R.statusOf(L, 'Post'), 'Complete');
       assert.equal(R.statusOf(L, 'Cancel'), 'Cancel');
     });
@@ -138,19 +138,22 @@
       const s = fresh();
       s.deals.forEach(d => assert.equal(R.statusOf(s.lookups, d.sub_status), d.status, d.deal_id));
     });
-    test('nextStep skips optional steps but offers them; Script / Draft 2–3 follow the deal plan (CR-02)', () => {
-      const { step, optional } = R.nextStep(SEED.lookups, { sub_status: 'Brief' });
-      assert.equal(step.sub_status, 'Approve Draft 1');
-      assert.deepEqual(optional.map(s => s.sub_status), [], 'Script is not in a default plan');
-      assert.equal(R.nextStep(SEED.lookups, { sub_status: 'Brief', script_required: true }).step.sub_status, 'Approve Script');
-      assert.deepEqual(R.nextStep(SEED.lookups, { sub_status: 'Shortlist' }).optional.map(s => s.sub_status), ['Contacted']);
-      assert.equal(R.nextStep(SEED.lookups, { sub_status: 'Shortlist' }).step.sub_status, 'Confirm QT');
-      assert.equal(R.nextStep(SEED.lookups, { sub_status: 'Approve Draft 1' }).step.sub_status, 'Post');
-      assert.equal(R.nextStep(SEED.lookups, { sub_status: 'Post' }).step, null);
-      assert.equal(R.nextStep(SEED.lookups, { sub_status: 'Cancel' }).step, null);
+    test('nextStep skips optional steps but offers them; Draft 2–3 follow the deal plan (CR-02) · Script and Approve always (CR-15)', () => {
+      const L = fresh().lookups, { step, optional } = R.nextStep(L, { sub_status: 'Brief' });
+      assert.equal(step.sub_status, 'Script');
+      assert.deepEqual(optional.map(s => s.sub_status), []);
+      assert.equal(R.nextStep(L, { sub_status: 'Script' }).step.sub_status, 'Draft 1');
+      assert.deepEqual(R.nextStep(L, { sub_status: 'Shortlist' }).optional.map(s => s.sub_status), ['Contacted']);
+      assert.equal(R.nextStep(L, { sub_status: 'Shortlist' }).step.sub_status, 'Confirm QT');
+      assert.equal(R.nextStep(L, { sub_status: 'Draft 1' }).step.sub_status, 'Approve');
+      assert.equal(R.nextStep(L, { sub_status: 'Approve' }).step.sub_status, 'Post');
+      assert.equal(R.nextStep(L, { sub_status: 'Post' }).step, null);
+      assert.equal(R.nextStep(L, { sub_status: 'Cancel' }).step, null);
     });
-    test('TC-15 basis: D000114 due 12/08/2026 → overdue', () => {
+    test('TC-15 basis: D000114 (Brief) — CR-15: the next step is Script; no Script due → no due · Script due 12/08/2026 → overdue', () => {
       const s = fresh(), d = deal(s, 'D000114');
+      assert.equal(R.dueDate(s, d), null, 'its Draft 1 due 12/08 is not the next step any more');
+      d.expected_script_date = '2026-08-12';
       assert.equal(R.dueDate(s, d), '2026-08-12');
       assert.equal(R.isOverdue(s, d, TODAY), true);
       assert.equal(R.isOverdue(s, d, '2026-08-12'), false);
@@ -159,7 +162,7 @@
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
       s.deal_posts.push({ post_id: 'PX1', deal_id: 'D000044', expected_post_date: '2026-09-20', post_date: null });
       s.deal_posts.push({ post_id: 'PX2', deal_id: 'D000044', expected_post_date: '2026-09-10', post_date: null });
-      const d2 = { ...d, sub_status: 'Approve Draft 1', status: 'Inprocess' };
+      const d2 = { ...d, sub_status: 'Draft 1', status: 'Inprocess' };
       assert.equal(R.dueDate(s, d2), '2026-09-10');
     });
     test('completed / cancelled deals are never overdue', () => {
@@ -176,25 +179,27 @@
       const s = fresh();
       assert.equal(R.daysInStep(s, deal(s, 'D000114'), TODAY), R.dayDiff(TODAY, '2026-08-06'));
     });
-    test('TC-05 basis: D000044 Brief → Approve Draft 1 fills approved_draft1_date and logs the move', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
+    test('TC-05 basis: D000044 Brief → Draft 1 fills approved_draft1_date and logs the move', () => {
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30 });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
       const opts = { date: TODAY, note: '' };
-      const chk = R.checkMove(s, d, 'Approve Draft 1', opts);
-      assert.deepEqual(chk.errs, []);
-      assert.ok(chk.infos.some(i => i.msg === C.msg.moveNoExpectedDraft(1)));
-      const r = R.applyMove(s, d, 'Approve Draft 1', opts, { logId: 771, quoteId: 'Q00525', now: new Date('2026-10-05T03:00:00Z') });
-      assert.equal(r.deal.sub_status, 'Approve Draft 1');
+      const chk = R.checkMove(s, d, 'Draft 1', opts);
+      assert.deepEqual(chk.errs, []);   // (CR-20 §4.15: the "no expected Draft n" info gave way to the Next expected section of Move stage)
+      const r = R.applyMove(s, d, 'Draft 1', opts, { logId: 771, quoteId: 'Q00525', now: new Date('2026-10-05T03:00:00Z') });
+      assert.equal(r.deal.sub_status, 'Draft 1');
       assert.equal(r.deal.status, 'Inprocess');
       assert.equal(r.deal.approved_draft1_date, TODAY);
-      assert.equal(r.log.from_sub_status, 'Brief');
-      assert.equal(r.log.sub_status, 'Approve Draft 1');
+      /* CR-15 §4.2: Script, passed on the way, is marked done the same day with a log of its own */
+      assert.equal(r.deal.script_date, TODAY);
+      assert.deepEqual(r.logs.map(l => [l.log_id, l.from_sub_status, l.sub_status, l.note]), [[771, 'Brief', 'Script', C.msg.autoCompleted], [772, 'Script', 'Draft 1', null]]);
+      assert.equal(r.log.from_sub_status, 'Script');
+      assert.equal(r.log.sub_status, 'Draft 1');
       assert.equal(r.log.source, 'user');
       assert.equal(r.quote, null);
       assert.equal(d.sub_status, 'Brief', 'applyMove must not mutate the input deal');
     });
     test('a date already filled is kept', () => {
       const s = fresh(), d = { ...deal(s, 'D000044'), approved_draft1_date: '2026-09-04' };
-      const r = R.applyMove(s, d, 'Approve Draft 1', { date: TODAY }, { logId: 1 });
+      const r = R.applyMove(s, d, 'Draft 1', { date: TODAY }, { logId: 1 });
       assert.equal(r.deal.approved_draft1_date, '2026-09-04');
     });
     test('TC-06 basis: moving back needs a note', () => {
@@ -218,7 +223,7 @@
       assert.ok(R.checkMove(s, deal(s, 'D999999'), 'Post', { date: TODAY }).errs.some(e => e.msg === C.msg.moveNoPosts));
       s.deal_posts.push({ post_id: 'P999999', deal_id: 'D999999', account_id: 'A00001', post_date: null, post_link: null });
       assert.ok(R.checkMove(s, deal(s, 'D999999'), 'Post', { date: TODAY }).errs.some(e => e.msg === C.msg.movePostsIncomplete(1)));
-      assert.equal(C.msg.movePostsIncomplete(1).startsWith('โพสต์ยังไม่ครบ 1 รายการ'), true);
+      assert.equal(C.msg.movePostsIncomplete(1), '1 post still without a link and post date');   // CR-20 §0 #4: English
     });
     test('legacy deals may go to Post with incomplete posts', () => {
       const s = fresh();
@@ -228,17 +233,17 @@
     });
     test('skipping a required step is a warning, not an error', () => {
       const s = fresh();
-      s.deals.push({ deal_id: 'D999997', campaign_id: 'KS', kol_id: 'K0120', status: 'List', sub_status: 'Shortlist', pillar: 'Awareness', payment_term: 'postpaid' });   // CR-10 §4.12: a term is needed into Confirm QT
-      const r = R.checkMove(s, deal(s, 'D999997'), 'Approve Draft 1', { date: TODAY });
+      s.deals.push({ deal_id: 'D999997', campaign_id: 'KS', kol_id: 'K0120', status: 'List', sub_status: 'Shortlist', pillar: 'Awareness', payment_term: 'postpaid', rate_card: 3000 });   // CR-10 §4.12: a term is needed into Confirm QT · CR-20 §4.7: a rate card too
+      const r = R.checkMove(s, deal(s, 'D999997'), 'Draft 1', { date: TODAY });
       assert.deepEqual(r.errs, []);
-      assert.ok(r.warns.some(w => w.msg === C.msg.moveSkip('Confirm QT, Brief')));
+      assert.ok(r.warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TODAY).slice(0, 5), 'Confirm QT, Brief, Script')), 'CR-15: marked done on the day of the move');
     });
     test('leaving Cancel: only back to the step before, with a note', () => {
       const s = fresh();
       s.deals.push({ deal_id: 'D999996', campaign_id: 'KS', kol_id: 'K0120', status: 'Cancel', sub_status: 'Cancel', cancel_reason: 'x', pillar: 'Awareness' });
       s.deal_status_log.push({ log_id: 9001, deal_id: 'D999996', from_sub_status: 'Brief', status: 'Cancel', sub_status: 'Cancel' });
       const d = deal(s, 'D999996');
-      assert.ok(R.checkMove(s, d, 'Approve Draft 1', { date: TODAY, note: 'กลับมาทำต่อ' }).errs.some(e => e.msg === C.msg.moveLeaveCancelOnly('Brief')));
+      assert.ok(R.checkMove(s, d, 'Draft 1', { date: TODAY, note: 'กลับมาทำต่อ' }).errs.some(e => e.msg === C.msg.moveLeaveCancelOnly('Brief')));
       assert.ok(R.checkMove(s, d, 'Brief', { date: TODAY }).errs.some(e => e.msg === C.msg.moveLeaveCancelNote));
       assert.deepEqual(R.checkMove(s, d, 'Brief', { date: TODAY, note: 'กลับมาทำต่อ' }).errs, []);
       assert.equal(R.applyMove(s, d, 'Brief', { date: TODAY, note: 'กลับมาทำต่อ' }, { logId: 1 }).deal.cancel_reason, null);
@@ -260,7 +265,7 @@
     });
     test('moving needs a valid date and a known step', () => {
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
-      assert.ok(R.checkMove(s, d, 'Approve Draft 1', { date: '' }).errs.some(e => e.field === 'date'));
+      assert.ok(R.checkMove(s, d, 'Draft 1', { date: '' }).errs.some(e => e.field === 'date'));
       assert.ok(R.checkMove(s, d, 'Nope', { date: TODAY }).errs.length);
       assert.ok(R.checkMove(s, d, 'Brief', { date: TODAY }).errs.some(e => e.msg === C.msg.moveSame));
     });
@@ -425,7 +430,7 @@
       assert.equal(deal.rate_card, null);
       assert.equal(R.totalCost(deal), 0);
       assert.equal(R.costReference(s, 'K0120').latest.total, 6500);
-      assert.deepEqual(Object.keys(deal).sort(), Object.keys(s.deals[0]).sort(), 'same fields as seed deals');
+      assert.deepEqual(Object.keys(deal).sort(), Object.keys(s.deals[0]).filter(k => k !== 'script_required').sort(), 'same fields as seed deals (CR-15: script_required stays on old deals only)');
       assert.equal(log.from_sub_status, null);
       assert.equal(log.sub_status, 'Shortlist');
       assert.equal(log.effective_date, TODAY);
@@ -459,7 +464,7 @@
       const s = fresh();
       const r = R.validateKol(s, { kol_id: null, display_name: 'ใหม่', kol_status: 'Active',
         accounts: [{ account_id: null, platform: 'TikTok', handle: 'KIAOKOY_22', profile_link: 'https://www.tiktok.com/@KIAOKOY_22', followers: '100' }] });
-      assert.ok(r.errs.some(e => e.msg.includes('เป็นของ kiaokoy_22 (K0001) อยู่แล้ว')), JSON.stringify(r.errs));
+      assert.ok(r.errs.some(e => e.msg.includes('belongs to kiaokoy_22 (K0001)')), JSON.stringify(r.errs));   // CR-20 §0 #4: English
     });
     test('KOL rules: name, ≥1 account, complete new accounts, Blacklist reason', () => {
       const s = fresh();
@@ -567,6 +572,7 @@
     });
     test('TC-15: D000114 is found by the overdue filter', () => {
       const s = fresh();
+      deal(s, 'D000114').expected_script_date = '2026-08-12';   // CR-15: at Brief it waits on Script
       assert.ok(R.filterDeals(s, { overdue: true }, TODAY, ctxOf(s)).some(d => d.deal_id === 'D000114'));
       assert.ok(!R.filterDeals(s, { overdue: true }, TODAY, ctxOf(s)).some(d => d.status === 'Complete'));
     });
@@ -617,9 +623,9 @@
   });
 
   describe('Pipeline · Overview · Export · Import · Lists (Round 4)', () => {
-    test('TC-21: Pipeline CH-P1 — Brief 2 · Approve Draft 1 1 · Post 58 (deals with a post in CH-P1)', () => {
+    test('TC-21: Pipeline CH-P1 — Brief 2 · Draft 1 1 · Post 58 (deals with a post in CH-P1)', () => {
       const cols = R.pipeline(fresh(), 'CH-P1').filter(c => c.count).map(c => [c.step.sub_status, c.count]);
-      assert.deepEqual(cols, [['Brief', 2], ['Approve Draft 1', 1], ['Post', 58]]);
+      assert.deepEqual(cols, [['Brief', 2], ['Draft 1', 1], ['Post', 58]]);
     });
     test('TC-22: Template export header = deal_id, Phase + the 36 Template columns', () => {
       const s = fresh(), t = R.templateExport(s, s.deals, R.dealContext(s));
@@ -634,10 +640,12 @@
       assert.deepEqual(R.parseCSV('﻿' + csv), [['a', 'b', 'c'], ['x,y', 'line1\nline2', 'true'], ['q"q', '', 'p | r']]);
     });
     test('Looker CSV rows carry the computed columns', () => {
-      const s = fresh(), c = R.dealContext(s), row = R.dealsRows(s, [deal(s, 'D000114')], TODAY, c)[0];
+      const s = fresh(), c = R.dealContext(s);
+      deal(s, 'D000114').expected_script_date = '2026-08-12';   // CR-15: at Brief it waits on Script
+      const row = R.dealsRows(s, [deal(s, 'D000114')], TODAY, c)[0];
       assert.equal(row.is_overdue, true);
       assert.equal(row.due_date, '2026-08-12');
-      assert.equal(row.next_step, 'Approve Draft 1');
+      assert.equal(row.next_step, 'Script');
       assert.equal(row.campaign_id, 'KS');
       assert.equal(R.postsRows(s, R.postsOf(s, 'D000150'), c)[0].kol_name, R.kolById(s, deal(s, 'D000150').kol_id).display_name);
     });
@@ -668,7 +676,8 @@
     test('import: missing columns, bad links and duplicate rows are reported', () => {
       const s = fresh();
       assert.ok(R.planImport(s, [['name']]).headerError);
-      const plan = R.planImport(s, R.parseCSV('display_name,profile_link,followers\na,notalink,1\nb,https://www.tiktok.com/@dupe,1\nc,https://www.tiktok.com/@dupe,1'));
+      /* CR-14 §4.6: platform and followers are required columns now */
+      const plan = R.planImport(s, R.parseCSV('display_name,platform,profile_link,followers\na,TikTok,notalink,1\nb,TikTok,https://www.tiktok.com/@dupe,1\nc,TikTok,https://www.tiktok.com/@dupe,1'));
       assert.deepEqual(plan.rows.map(r => r.kind), ['error', 'new_kol', 'error']);
       assert.equal(R.handleFromAnyLink('https://www.facebook.com/somepage/'), 'somepage');
       assert.equal(R.handleFromAnyLink('https://www.lemon8-app.com/@ttukablythe_'), 'ttukablythe_');
@@ -690,8 +699,8 @@
       const s = fresh();
       assert.ok(R.stepUse(s, 'Brief') > 0);
       assert.equal(R.stepLocked(R.stepOf(s.lookups, 'Post')), true);
-      assert.equal(R.stepLocked(R.stepOf(s.lookups, 'Approve Script')), false);
-      assert.equal(R.stepUse(s, 'Approve Script'), 0);
+      assert.equal(R.stepLocked(R.stepOf(s.lookups, 'Script')), false);
+      assert.equal(R.stepUse(s, 'Script'), 0);
       /* CR-04: the PIC list moved to Role Management — the same rules on the other lists */
       assert.ok(R.listValueUse(s, 'platform_list', 'TikTok') > 0);
       assert.equal(R.listValueUse(s, 'cta_list', 'Eveandboy'), 0);
@@ -721,7 +730,13 @@
       /* CR-08: the only exceptions are the labels of the encrypted Payee bank details, the PR column headers Accounting uses and the export dialog
          that names them — the values are never stored in plain text */
       /* CR-10 §4.14: the labels of the encrypted shipping details (recipient · phone · address) too · CR-11 §4.10: and Shipments saying whether one is on file */
-      walk(Object.assign({}, C, { payee: Object.assign({}, C.payee, { bank: {} }), pay: Object.assign({}, C.pay, { prCols: [], exportLocked: '' }), samples: {}, ship: {} }));
+      /* CR-14 §4.5: and the words that tell people a phone number does not go in the contact ID */
+      /* CR-16 §4.3: and the words of the shipping addresses (Add address · Shipping addresses · n addresses) — the addresses themselves are encrypted */
+      const addr = k => /address|ที่อยู่/i.test(k) || /address|ที่อยู่/i.test(String(C.payee[k]));
+      walk(Object.assign({}, C, { payee: Object.assign(Object.fromEntries(Object.entries(C.payee).filter(([k]) => !addr(k) && k !== 'defaultTip' && k !== 'lockedNote')), { bank: {} }),
+        pay: Object.assign({}, C.pay, { prCols: [], exportLocked: '' }), samples: {}, ship: {}, counts: Object.assign({}, C.counts, { shipping_addresses: '' }),
+        vault: Object.assign({}, C.vault, { shipWaiting: '' }), profile: Object.assign({}, C.profile, { payeeCount: '' }),
+        msg: Object.assign({}, C.msg, { contactPhone: '', importPhone: '', shipAddress: '' }), kol: Object.assign({}, C.kol, { contactIdHint: '' }) }));
       assert.equal(texts.some(x => PII.test(x)), false);
     });
   });

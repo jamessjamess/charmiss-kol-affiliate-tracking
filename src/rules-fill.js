@@ -1,7 +1,8 @@
 /* rules-fill.js — CR-11 R5 §4.11: fill once, carried on. A Phase's default pillar and a Campaign's default payment term set once and
    carried into New deal / Bulk shortlist (with a chip that says where it came from) · the only product of a Campaign picked for you ·
    Apply to the deals that are still empty (one event a deal · Undo) · the Allocation note when most spend has no pillar.
-   Order of the payment term (§9 #12): the KOL's default → the Campaign's → none. Pure functions. Adds to KT.rules (load after rules-ship.js). */
+   Order of the payment term (§9 #12): the KOL's default → the Campaign's → none · CR-18 §4.1: the KOL's default → none (a Campaign no longer fills a
+   new deal — its term stays for Apply in the Campaign drawer). Pure functions. Adds to KT.rules (load after rules-ship.js). */
 Object.assign(KT.rules, (function (R) {
   'use strict';
   const { isBlank, isISODate } = R;
@@ -9,16 +10,15 @@ Object.assign(KT.rules, (function (R) {
   const campaignOf = (state, id) => state.campaigns.find(c => c.campaign_id === id) || null;
   const campaignDefaultTerm = (state, campaignId) => { const c = campaignOf(state, campaignId); return c && R.isTerm(c.default_payment_term) ? c.default_payment_term : null; };
   const phaseDefaultPillar = (state, phaseId) => { const p = phaseOf(state, phaseId); return p && !isBlank(p.default_pillar) ? p.default_pillar : null; };
-  /* the term a new deal starts with → { term, source: 'kol' | 'campaign' | null } */
-  function termPrefill(state, kol, campaignId) {
+  /* the term a new deal starts with → { term, source: 'kol' | null } (CR-18: only the KOL's default) */
+  function termPrefill(state, kol) {
     if (kol && R.isTerm(kol.default_payment_term)) return { term: kol.default_payment_term, source: 'kol' };
-    const t = campaignDefaultTerm(state, campaignId);
-    return t ? { term: t, source: 'campaign' } : { term: '', source: null };
+    return { term: '', source: null };
   }
   /* Auto by post date: the one Phase of the Campaign whose dates hold the date (none, or overlapping → null) */
   function phaseOfDate(state, campaignId, date) {
     if (!isISODate(date)) return null;
-    const list = state.phases.filter(p => p.campaign_id === campaignId && isISODate(p.start_date) && isISODate(p.end_date) && p.start_date <= date && date <= p.end_date);
+    const list = state.phases.filter(p => p.campaign_id === campaignId && R.isApproved(p) && isISODate(p.start_date) && isISODate(p.end_date) && p.start_date <= date && date <= p.end_date);
     return list.length === 1 ? list[0].phase_id : null;
   }
   /* the pillar a new deal starts with: the Phase picked, else the Phase of its expected post date — when that Phase has a default → { pillar, phase_id } | null */

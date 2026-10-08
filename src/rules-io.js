@@ -36,16 +36,16 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ===================== Looker / analysis CSVs (§10.1) ===================== */
   const DEALS_COLS = ['deal_id', 'campaign_id', 'campaign_name', 'primary_phase_id', 'primary_phase_name', 'phase_ids', 'legacy_phase_id', 'kol_id', 'kol_name', 'kol_tier', 'tier_followers', 'pillar', 'status', 'sub_status', 'journey_sort',
-    'draft_rounds', 'script_required', 'payment_term', 'commit_type', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date', 'payment_state', 'pic', 'rate_card', 'gencode_expense', 'gencode_period',
-    'gencode_start_date', 'gencode_end_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'total_cost', 'delivered', 'delivery_date', 'products', 'brief_date',
-    'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_post_date',
+    'draft_rounds', 'payment_term', 'commit_type', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date', 'payment_state', 'pic', 'rate_card', 'gencode_expense', 'gencode_period',
+    'gencode_start_date', 'gencode_end_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'total_cost', 'delivered', 'delivery_date', 'products', 'brief_date', 'expected_script_date', 'script_date',
+    'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_approve_date', 'approved_date', 'expected_post_date',
     'link_brief', 'cta', 'posts_planned', 'posts_done', 'first_post_date', 'last_post_date', 'views', 'likes', 'comments', 'saves', 'shares', 'next_step', 'due_date',
     'is_overdue', 'cancel_reason', 'remark', 'is_legacy'];
   const POSTS_COLS = ['post_id', 'deal_id', 'campaign_id', 'campaign_name', 'phase_id', 'phase_name', 'phase_seq', 'phase_label', 'phase_source', 'phase_override', 'post_share', 'kol_id', 'kol_name', 'account_id', 'platform', 'handle', 'followers', 'tier', 'expected_post_date',
     'post_date', 'post_link', 'gencode_code', 'views', 'likes', 'comments', 'saves', 'shares', 'metrics_updated_at', 'deal_status', 'deal_sub_status'];
   const LOG_COLS = ['log_id', 'deal_id', 'campaign_id', 'campaign_name', 'kol_name', 'from_sub_status', 'status', 'sub_status', 'effective_date', 'changed_at', 'source', 'note'];
-  const KOL_COLS = ['kol_id', 'display_name', 'kol_category', 'kol_type', 'gender', 'pic', 'kol_status', 'status_reason', 'contact_channel', 'account_count', 'platforms',
-    'max_followers', 'tier', 'deal_count', 'latest_quote_total', 'latest_quote_source', 'sources', 'note'];
+  const KOL_COLS = ['kol_id', 'display_name', 'kol_category', 'kol_type', 'gender', 'pic', 'kol_status', 'status_reason', 'contact_channel', 'contact_id', 'account_count', 'platforms',
+    'max_followers', 'tier', 'deal_count', 'latest_quote_total', 'latest_quote_source', 'last_worked', 'last_campaign', 'sources', 'note'];
   const ACCOUNT_COLS = ['account_id', 'kol_id', 'kol_name', 'platform', 'handle', 'profile_link', 'followers', 'tier', 'post_count', 'is_legacy'];
   const QUOTE_COLS = ['quote_id', 'kol_id', 'kol_name', 'account_id', 'platform', 'handle', 'quoted_at', 'source', 'source_row', 'rate_card', 'gencode_expense',
     'gencode_period', 'basket_fee', 'asset_fee', 'expediting_fee', 'total', 'note'];
@@ -98,11 +98,12 @@ Object.assign(KT.rules, (function (R, C) {
     return logs.map(l => { const d = ctx.deals.get(l.deal_id) || {}; return Object.assign({}, l, { campaign_id: d.campaign_id, campaign_name: (ctx.campaigns.get(d.campaign_id) || {}).campaign_name || null, kol_name: (ctx.kols.get(d.kol_id) || {}).display_name }); });
   }
   function kolRows(state, kols) {
-    const ix = R.kolIndex(state), rules = state.lookups.tier_rules || [];
+    const ix = R.kolIndex(state), rules = state.lookups.tier_rules || [], pidx = R.perfIndex(state);
     return kols.map(k => {
-      const accs = ix.accounts.get(k.kol_id) || [], mf = R.maxFollowers(accs), q = (ix.quotes.get(k.kol_id) || [])[0];
-      return Object.assign({}, k, { kol_type: R.kolTypeLabel(state.lookups, k.kol_type) || null, account_count: accs.length, platforms: [...new Set(accs.map(a => a.platform))], max_followers: mf, tier: R.tierOf(mf, rules),
-        deal_count: (ix.deals.get(k.kol_id) || []).length, latest_quote_total: q ? totalCost(q) || null : null, latest_quote_source: q ? q.source : null });
+      const accs = ix.accounts.get(k.kol_id) || [], mf = R.maxFollowers(accs), q = (ix.quotes.get(k.kol_id) || [])[0], last = R.lastWorkedInfo(state, k.kol_id, pidx);
+      return Object.assign({}, k, { kol_type: R.kolTypeLabel(state.lookups, k.kol_type) || null, contact_id: k.contact_id || null, account_count: accs.length, platforms: [...new Set(accs.map(a => a.platform))], max_followers: mf, tier: R.tierOf(mf, rules),
+        deal_count: (ix.deals.get(k.kol_id) || []).length, latest_quote_total: q ? totalCost(q) || null : null, latest_quote_source: q ? q.source : null,
+        last_worked: last ? last.date : null, last_campaign: last ? R.campaignName(state, last.campaignId) || null : null });   // CR-14 §4.4 — the same as the screen
     });
   }
   function accountRows(state, accounts) {
@@ -120,10 +121,17 @@ Object.assign(KT.rules, (function (R, C) {
     return { header: ['deal_id', 'Phase'].concat(R.TEMPLATE_HEADERS), rows: deals.map(d => [d.deal_id, prim(d)].concat(R.templateRow(state, d, ctx))) };
   }
 
-  /* ===================== KOL import (§7.4) ===================== */
-  const IMPORT_COLS = ['display_name', 'platform', 'profile_link', 'followers', 'kol_category', 'kol_type', 'gender', 'pic', 'contact_channel',
-    'rate_card', 'gencode_expense', 'gencode_period', 'basket_fee', 'asset_fee', 'expediting_fee', 'note'];
-  const IMPORT_SAMPLE = [IMPORT_COLS, ['ตัวอย่าง KOL', 'TikTok', 'https://www.tiktok.com/@example_kol', '25000', 'Korea Brand Lover', 'KOL สายแบรนด์เกา', 'Female', 'Pang', 'LINE', '5000', '', '', '', '', '', 'จาก Shortlist']];
+  /* ===================== KOL import (§7.4 · CR-14 §4.6) ===================== */
+  /* the template of today (KOL_Master_Import_Template · sheet KOL_Import): 10 columns in this order — the first 4 are required */
+  const TEMPLATE_COLS = ['display_name', 'platform', 'profile_link', 'followers', 'kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id'];
+  const IMPORT_REQUIRED = ['display_name', 'platform', 'profile_link', 'followers'];
+  /* every column read (any order · no case · spaces cut): the template + the old file's prices and note (16 columns) */
+  const IMPORT_COLS = TEMPLATE_COLS.concat(['rate_card', 'gencode_expense', 'gencode_period', 'basket_fee', 'asset_fee', 'expediting_fee', 'note']);
+  const importHead = h => String(h == null ? '' : h).replace(/^\uFEFF/, '').trim().toLowerCase();
+  /* a count as typed: "125,000" → "125000" (blank → '') */
+  const importNum = v => String(v == null ? '' : v).replace(/[,\s]/g, '');
+  /* the template as a CSV (UTF-8 with BOM, the header only) */
+  const templateCSV = () => '\uFEFF' + TEMPLATE_COLS.join(',') + '\r\n';
   /* handle from a profile link: TikTok/IG/X rule first, else the first path part (Facebook page, Lemon8 @name, YouTube @name) */
   function handleFromAnyLink(url) {
     const h = R.handleFromLink(url); if (h) return h;
@@ -136,15 +144,21 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* text rows (first row = header) → a plan per row: match · new_account (needs a tick) · new_kol · error */
   function planImport(state, table) {
-    const head = (table[0] || []).map(h => trim(h).toLowerCase());
-    const missing = ['display_name', 'profile_link'].filter(c => !head.includes(c));
-    if (missing.length) return { headerError: M.importHeader(missing.join(', ')), rows: [] };
+    const head = (table[0] || []).map(importHead);
+    const missing = IMPORT_REQUIRED.filter(c => !head.includes(c));
+    if (missing.length) return { headerError: M.importMissingCol(missing), rows: [], ignored: [] };
+    /* a column the app does not know is skipped and named in the report */
+    const ignored = [...new Set(head.filter(h => h && !IMPORT_COLS.includes(h)))];
+    const fileNew = new Map();   // a new KOL made by an earlier row of this file: its name → that row
     const L = state.lookups, platforms = L.platform_list || [];
     const accKey = new Map(state.kol_accounts.map(a => [a.platform + '|' + String(a.handle).toLowerCase(), a]));
     const seen = new Map(), out = [];
     table.slice(1).forEach((cells, i) => {
       const n = i + 2, row = {};
-      head.forEach((h, j) => { row[h] = trim(cells[j]); });
+      if (!(cells || []).some(c => trim(c))) return;   // an empty row (the template keeps 500 of them)
+      head.forEach((h, j) => { if (IMPORT_COLS.includes(h) && !(h in row)) row[h] = trim(cells[j]); });
+      row.followers = importNum(row.followers);
+      R.PRICE_KEYS.forEach(k => { if (row[k] != null) row[k] = importNum(row[k]); });
       const errs = [], warns = [];
       const name = row.display_name;
       if (!name) errs.push(M.importNoName);
@@ -163,6 +177,11 @@ Object.assign(KT.rules, (function (R, C) {
       if (oldType) warns.push(C.kolTypes.importUnknown(oldType));
       const clean = { kol_category: row.kol_category || null, kol_type: typeKey, kol_type_legacy: isBlank(row.kol_type) ? null : row.kol_type, oldType, note: row.note || null };
       if (R.looksSensitive(clean.note)) { clean.note = null; warns.push(M.importSensitive('note')); }   // CR-08 §4.4
+      /* CR-14 §4.5 — a phone number in contact_id: the row is not imported · longer than 120: left out */
+      clean.contact_id = row.contact_id || null;
+      const cp = R.contactIdProblem(clean.contact_id);
+      if (cp === 'phone') { clean.contact_id = null; errs.push(M.importPhone); }
+      else if (cp === 'long') { clean.contact_id = null; warns.push(M.importIgnored('contact_id', row.contact_id.slice(0, 20) + '…')); }
       [['gender', R.GENDERS], ['pic', R.picNames(state)], ['contact_channel', R.CONTACT_CHANNELS]].forEach(([k, list]) => {
         if (isBlank(row[k])) { clean[k] = null; return; }
         const v = list.find(x => x.toLowerCase() === row[k].toLowerCase());
@@ -179,18 +198,23 @@ Object.assign(KT.rules, (function (R, C) {
           else {
             const same = state.kol_master.filter(k => trim(k.display_name).toLowerCase() === name.toLowerCase());
             if (same.length > 1) warns.push(M.importManyNames(same.map(k => k.kol_id).join(', ')));
-            kind = same.length === 1 ? 'new_account' : 'new_kol';
+            kind = same.length === 1 || (!same.length && fileNew.has(name.toLowerCase())) ? 'new_account' : 'new_kol';
             kol = same.length === 1 ? same[0] : null;
             if (isBlank(row.followers)) { errs.push(M.importNoFollowers); kind = 'error'; }
           }
         }
       }
       if (errs.length) kind = 'error';
+      /* the same name as a new KOL further up this file → an account of that KOL (ticked like any new account) */
+      const ofRow = kind === 'new_account' && !kol ? fileNew.get(name.toLowerCase()) : null;
+      if (kind === 'new_kol') fileNew.set(name.toLowerCase(), n);
+      /* existing values are never overwritten (CR-01) — a different contact ID in the file is said so */
+      if (kol && !isBlank(kol.contact_id) && clean.contact_id && clean.contact_id !== kol.contact_id) warns.push(M.importKeptContact);
       const prices = {}; R.PRICE_KEYS.forEach(k => { if (!isBlank(row[k]) && !isNaN(row[k])) prices[k] = Number(row[k]); });
       out.push({ n, name, platform, handle, link: row.profile_link, followers: isBlank(row.followers) || isNaN(row.followers) ? null : Number(row.followers),
-        clean, prices, kind, kol, account, errs, warns, needsConfirm: kind === 'new_account' });
+        clean, prices, kind, kol, account, ofRow, errs, warns, needsConfirm: kind === 'new_account' });
     });
-    return { headerError: null, rows: out };
+    return { headerError: null, rows: out, ignored };
   }
   const nextIdIn = (prefix, arr, key, width) => prefix + String(arr.reduce((m, x) => Math.max(m, parseInt(String(x[key]).replace(/\D/g, ''), 10) || 0), 0) + 1).padStart(width, '0');
   /* → the new collections + a summary; rows of kind new_account are applied only when their row number is in `confirmed` */
@@ -198,10 +222,10 @@ Object.assign(KT.rules, (function (R, C) {
     const kols = state.kol_master.map(k => Object.assign({}, k, { sources: (k.sources || []).slice() }));
     const accounts = state.kol_accounts.map(a => Object.assign({}, a));
     const quotes = state.kol_rate_quotes.slice();
-    const sum = { match: 0, new_account: 0, new_kol: 0, skipped: 0, error: 0, quotes: 0 };
+    const sum = { match: 0, new_account: 0, new_kol: 0, skipped: 0, error: 0, quotes: 0 }, made = new Map();   // the KOLs this file made, by name
     const fill = (k, clean) => {
       const hadType = !isBlank(k.kol_type);
-      ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'note'].forEach(f => { if (isBlank(k[f]) && !isBlank(clean[f])) k[f] = clean[f]; });
+      ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id', 'note'].forEach(f => { if (isBlank(k[f]) && !isBlank(clean[f])) k[f] = clean[f]; });
       if (!hadType && clean.oldType) k.note = R.withOldType(k.note, clean.oldType);
     };
     const addSource = k => { if (!k.sources.includes(fileName)) k.sources.push(fileName); };
@@ -222,12 +246,13 @@ Object.assign(KT.rules, (function (R, C) {
         fill(k, r.clean); addSource(k); addQuote(r, k.kol_id, a.account_id); sum.match++;
         return;
       }
-      let k;
-      if (r.kind === 'new_account') { k = kols.find(x => x.kol_id === r.kol.kol_id); fill(k, r.clean); }
+      let k = r.kind === 'new_account' ? (r.kol ? kols.find(x => x.kol_id === r.kol.kol_id) : made.get(r.name.toLowerCase())) : null;
+      if (k) fill(k, r.clean);
       else {
         k = { kol_id: nextIdIn('K', kols, 'kol_id', 4), display_name: r.name, kol_category: r.clean.kol_category, kol_type: r.clean.kol_type, kol_type_legacy: r.clean.kol_type_legacy, gender: r.clean.gender,
-          pic: r.clean.pic, kol_status: 'Active', status_reason: null, contact_channel: r.clean.contact_channel, note: r.clean.oldType ? R.withOldType(r.clean.note, r.clean.oldType) : r.clean.note, sources: [] };
-        kols.push(k);
+          pic: r.clean.pic, kol_status: 'Active', status_reason: null, contact_channel: r.clean.contact_channel, contact_id: r.clean.contact_id || null,
+          note: r.clean.oldType ? R.withOldType(r.clean.note, r.clean.oldType) : r.clean.note, sources: [] };
+        kols.push(k); made.set(r.name.toLowerCase(), k);
       }
       addSource(k);
       const a = { account_id: nextIdIn('A', accounts, 'account_id', 5), kol_id: k.kol_id, platform: r.platform, handle: r.handle, profile_link: r.link, followers: r.followers, is_legacy: false };
@@ -240,5 +265,5 @@ Object.assign(KT.rules, (function (R, C) {
 
   return { toCSV, parseCSV, DEALS_COLS, POSTS_COLS, LOG_COLS, KOL_COLS, ACCOUNT_COLS, QUOTE_COLS, PAYMENTS_COLS,
     dealsRows, paymentsRows, postsRows, logRows, kolRows, accountRows, quoteRows, templateExport,
-    IMPORT_COLS, IMPORT_SAMPLE, handleFromAnyLink, planImport, applyImport };
+    TEMPLATE_COLS, IMPORT_REQUIRED, IMPORT_COLS, templateCSV, handleFromAnyLink, planImport, applyImport };
 })(KT.rules, KT.content));

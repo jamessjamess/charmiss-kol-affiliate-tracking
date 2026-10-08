@@ -50,12 +50,17 @@ Object.assign(KT.rules, (function (R) {
       badge: badgeOf(rate, measured.length, set.minPosts), grace: set.grace, minPosts: set.minPosts,
     };
   }
-  /* Last worked: the latest post date, else the latest expected post date · null = Never */
-  function lastWorked(state, kolId, idx) {
+  /* Last worked: the latest post date of a deal that is not cancelled, else the latest expected post date · null = Never ·
+     CR-14 §4.4: and where it came from → {date, dealId, postId, campaignId} (the same day twice → the higher deal ID, then post ID) —
+     Last campaign is the Campaign of that same deal */
+  function lastWorkedInfo(state, kolId, idx) {
     const x = (idx || perfIndex(state)).get(kolId); if (!x || !x.deals.length) return null;
-    const posted = x.posts.map(w => w.post.post_date).filter(isISODate).sort().pop();
-    return posted || x.posts.map(w => w.post.expected_post_date).filter(isISODate).sort().pop() || null;
+    const latest = k => x.posts.filter(w => isISODate(w.post[k])).sort((a, b) => a.post[k].localeCompare(b.post[k]) || String(a.deal.deal_id).localeCompare(String(b.deal.deal_id)) ||
+      String(a.post.post_id).localeCompare(String(b.post.post_id))).pop();
+    const w = latest('post_date') || latest('expected_post_date'); if (!w) return null;
+    return { date: isISODate(w.post.post_date) ? w.post.post_date : w.post.expected_post_date, dealId: w.deal.deal_id, postId: w.post.post_id, campaignId: w.deal.campaign_id };
   }
+  function lastWorked(state, kolId, idx) { const i = lastWorkedInfo(state, kolId, idx); return i ? i.date : null; }
   /* the Last worked filter: 3 months = 91 days · 6 = 182 · 12 = 365 (a date still ahead counts as the last 3 months) */
   const LAST_WORKED = ['m3', 'm6', 'm12', 'over', 'never'];
   function lastWorkedBucket(date, today) {
@@ -66,7 +71,7 @@ Object.assign(KT.rules, (function (R) {
   /* the whole team at once (KOL Master): kol_id → {perf, last, bucket} */
   function kolPerfAll(state, today) {
     const idx = perfIndex(state), out = new Map();
-    state.kol_master.forEach(k => { const last = lastWorked(state, k.kol_id, idx); out.set(k.kol_id, { perf: kolPerformance(state, k.kol_id, today, idx), last, bucket: lastWorkedBucket(last, today) }); });
+    state.kol_master.forEach(k => { const info = lastWorkedInfo(state, k.kol_id, idx), last = info ? info.date : null; out.set(k.kol_id, { perf: kolPerformance(state, k.kol_id, today, idx), last, lastInfo: info, bucket: lastWorkedBucket(last, today) }); });
     return out;
   }
   /* Settings › KOL performance: grace 0–30 whole days · minimum posts 1–20 */
@@ -79,5 +84,5 @@ Object.assign(KT.rules, (function (R) {
     return { errs, warns: [], infos: [] };
   }
 
-  return { perfSettings, BADGES, badgeOf, perfIndex, kolPerformance, lastWorked, LAST_WORKED, lastWorkedBucket, kolPerfAll, validatePerfSettings };
+  return { perfSettings, BADGES, badgeOf, perfIndex, kolPerformance, lastWorked, lastWorkedInfo, LAST_WORKED, lastWorkedBucket, kolPerfAll, validatePerfSettings };
 })(KT.rules));

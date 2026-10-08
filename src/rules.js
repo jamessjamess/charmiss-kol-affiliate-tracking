@@ -10,6 +10,16 @@ KT.rules = (function (C) {
   const trim = v => (v == null ? '' : String(v).trim());
   /* CR-08 §4.4 — free text must not carry an account or ID number: 10+ digits in a row once '-' and spaces are taken out (links are skipped) */
   const looksSensitive = v => !isBlank(v) && /\d{10,}/.test(String(v).replace(/https?:\/\/\S+/gi, '|').replace(/[-\s]/g, ''));
+  /* CR-14 §4.5 — the contact ID of a KOL (LINE ID · Agency + person · work e-mail · the handle used for DM) */
+  const CONTACT_ID_MAX = 120;
+  /* a phone number: without - spaces and + only digits, 9 or more */
+  const looksLikePhone = t => /^\d{9,}$/.test(String(t == null ? '' : t).replace(/[-\s+]/g, ''));
+  /* → 'phone' (a phone number, or 10+ digits anywhere — they belong in the Payee vault) · 'long' (over 120) · null */
+  function contactIdProblem(v) {
+    if (isBlank(v)) return null;
+    if (looksLikePhone(v) || looksSensitive(v)) return 'phone';
+    return String(v).trim().length > CONTACT_ID_MAX ? 'long' : null;
+  }
   const num = v => (isBlank(v) || isNaN(v)) ? 0 : Number(v);
   const fmtNum = n => (isBlank(n) || isNaN(n)) ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
   const baht = n => { const v = Number(n) || 0; return (v < 0 ? '-' : '') + '฿' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); };
@@ -87,17 +97,22 @@ KT.rules = (function (C) {
     ? addDays(d.gencode_start_date, Math.round(num(d.gencode_period)) - 1) : null;
   const isCancelled = d => !!d && d.status === 'Cancel';
   /* paid_full → total · paid_50 only → half of total (estimate: the legacy files have no paid amounts) */
-  const paidEstimate = d => (d.paid_full ? totalCost(d) : d.paid_50 ? totalCost(d) * 0.5 : 0);
+  /* CR-20 §4.8 — a Package deal: its Rate card is paid with the package (package_paid, synced on save) · its own costs on top (extras) by its own line */
+  const extrasOf = d => (termOf(d) === 'package' ? Math.max(0, totalCost(d) - num(d.rate_card)) : totalCost(d));
+  const paidUp = d => (termOf(d) === 'package' ? !!d.package_paid && (extrasOf(d) <= 0 || !!d.paid_full) : !!d.paid_full);
+  const paidEstimate = d => (termOf(d) === 'package' ? (d.package_paid ? num(d.rate_card) : 0) + (d.paid_full ? extrasOf(d) : d.paid_50 ? extrasOf(d) * 0.5 : 0)
+    : d.paid_full ? totalCost(d) : d.paid_50 ? totalCost(d) * 0.5 : 0);
   /* the furthest payment tick reached (Docs → 50% → Paid) */
   const PAYMENT_PROGRESS = ['none', 'docs_done', 'paid_50', 'paid_full'];
   const paymentProgress = d => (d.paid_full ? 'paid_full' : d.paid_50 ? 'paid_50' : d.docs_done ? 'docs_done' : 'none');
 
   /* ===================== payment term (CR-02 §4.3) ===================== */
-  const PAYMENT_TERMS = ['prepaid', 'split_50', 'postpaid', 'free'];
+  const PAYMENT_TERMS = ['prepaid', 'split_50', 'postpaid', 'free', 'package'];   // CR-20 §4.8: + Package (a deal only — never a KOL's default)
+  const BASIC_TERMS = PAYMENT_TERMS.filter(t => t !== 'package');
   const isTerm = t => PAYMENT_TERMS.includes(t);
   const termOf = d => (d && isTerm(d.payment_term) ? d.payment_term : null);
   /* the ticks that apply to a term (null = the old Docs → 50% → Paid track) */
-  const paymentMilestones = term => (term === 'free' ? [] : term === 'prepaid' || term === 'postpaid' ? ['docs_done', 'paid_full'] : ['docs_done', 'paid_50', 'paid_full']);
+  const paymentMilestones = term => (term === 'free' || term === 'package' ? [] : term === 'prepaid' || term === 'postpaid' ? ['docs_done', 'paid_full'] : ['docs_done', 'paid_50', 'paid_full']);
   /* "reached Brief" = In process or Complete (Brief is the first In process step) */
   const reachedBrief = d => d.status === 'Inprocess' || d.status === 'Complete';
   const PAYMENT_STATES = ['paid', 'deposit_paid', 'overdue', 'due', 'not_due', 'free'];
@@ -105,6 +120,7 @@ KT.rules = (function (C) {
      Cancelled deals owe nothing: they are Paid, Free or Not due. */
   function paymentState(d, today) {
     const t = termOf(d);
+    if (t === 'package') return paidUp(d) ? 'paid' : d.status === 'Complete' ? 'due' : 'not_due';   // CR-20 §4.8
     if (d.paid_full) return 'paid';
     if (t === 'free') return 'free';
     if (d.status === 'Cancel') return 'not_due';
@@ -169,7 +185,7 @@ KT.rules = (function (C) {
   const statusOf = (lookups, sub) => (stepOf(lookups, sub) || {}).status || null;
   const isCancelStep = s => !!s && s.status === 'Cancel';
   const isPostStep = s => !!s && s.status === 'Complete';
-  /* Approve Draft n ↔ date_field approved_draft{n}_date */
+  /* Draft n ↔ date_field approved_draft{n}_date (the field names stay from before CR-15) */
   const draftNo = s => { const m = /approved_draft(\d)_date/.exec((s && s.date_field) || ''); return m ? Number(m[1]) : null; };
   const postsOf = (state, dealId) => state.deal_posts.filter(p => p.deal_id === dealId);
   const postDone = p => !isBlank(p.post_date) && !isBlank(p.post_link);
@@ -177,18 +193,25 @@ KT.rules = (function (C) {
   const postsDone = (state, dealId) => postsOf(state, dealId).filter(postDone).length;
   const logsOf = (state, dealId) => state.deal_status_log.filter(l => l.deal_id === dealId).sort((a, b) => a.log_id - b.log_id);
 
-  /* ---------- content plan (CR-02 §4.2): Brief → [Approve Script] → Approve Draft 1…draft_rounds → Post ---------- */
-  const SCRIPT_STEP = 'Approve Script';
+  /* ---------- content plan (CR-02 §4.2 · CR-15 §4.1): [Shortlist] → [Contacted] → Confirm QT → Brief → Script → Draft 1…draft_rounds → Approve → Post ·
+     a step's name = the last piece of work done, waiting for the next one · Script and Approve are in every deal's plan (no toggle · script_required unused) */
+  const SCRIPT_STEP = 'Script';
+  const APPROVE_STEP = 'Approve';
   const MAX_DRAFTS = 3;
-  const isScriptStep = s => !!s && s.sub_status === SCRIPT_STEP;
+  const isScriptStep = s => !!s && (s.date_field === 'script_date' || s.sub_status === SCRIPT_STEP);
+  const isApproveStep = s => !!s && (s.date_field === 'approved_date' || s.sub_status === APPROVE_STEP);
   const planOf = d => {
     const n = Number(d && d.draft_rounds);
-    return { drafts: Number.isInteger(n) && n >= 1 && n <= MAX_DRAFTS ? n : 1, script: !!(d && d.script_required) };
+    return { drafts: Number.isInteger(n) && n >= 1 && n <= MAX_DRAFTS ? n : 1 };
   };
-  /* Script and Draft n belong to the plan only when planned; every other step always does */
-  const inPlan = (s, plan) => { if (!s) return false; if (isScriptStep(s)) return plan.script; const n = draftNo(s); return n ? n <= plan.drafts : true; };
-  /* planned Script / Draft steps are required for this deal even if the journey marks them optional */
-  const requiredInPlan = (s, plan) => inPlan(s, plan) && (!s.is_optional || isScriptStep(s) || !!draftNo(s));
+  /* Draft n belongs to the plan only while n ≤ draft_rounds; every other step always does */
+  const inPlan = (s, plan) => { if (!s) return false; const n = draftNo(s); return n ? n <= plan.drafts : true; };
+  /* Script · the planned Drafts · Approve are required for every deal even if the journey marks them optional */
+  const requiredInPlan = (s, plan) => inPlan(s, plan) && (!s.is_optional || isScriptStep(s) || isApproveStep(s) || !!draftNo(s));
+  /* the field a step is expected by: Script → expected_script_date · Draft n → expected_draft{n}_date · Approve → expected_approve_date (Post: its posts) */
+  const expectedField = s => (!s ? null : s.expected_field || (draftNo(s) ? `expected_draft${draftNo(s)}_date` : isScriptStep(s) ? 'expected_script_date' : isApproveStep(s) ? 'expected_approve_date' : null));
+  /* CR-15 §4.1 — the steps of one deal, in order, without Cancel (= planSteps) */
+  const dealPlan = (lookups, deal) => planSteps(lookups, deal);
   /* the deal's journey without Cancel: active steps in its plan, plus the current step whatever it is */
   const planSteps = (lookups, deal) => {
     const plan = planOf(deal);
@@ -214,19 +237,24 @@ KT.rules = (function (C) {
     const optional = after.filter(s => !requiredInPlan(s, plan) && (!step || s.sort_order < step.sort_order));
     return { step, optional };
   }
-  function dueDate(state, deal) {
-    const { step } = nextStep(state.lookups, deal);
-    if (!step) return null;
-    const n = draftNo(step);
-    if (n) return deal[`expected_draft${n}_date`] || null;
-    if (isPostStep(step)) {
-      const pending = postsOf(state, deal.deal_id).filter(p => isBlank(p.post_date)).map(p => p.expected_post_date).filter(Boolean).sort();
-      return pending[0] || null;
-    }
-    return null;
+  /* CR-15 §4.3 — the date a deal is due by and the step it belongs to: the next step's expected date (Script · Draft k · Approve) · Post = the
+     earliest expected date of a post not posted yet · Approve with no date of its own → the Post's (§9 #5) · Script with none → no due */
+  function dueInfo(state, deal) {
+    const L = state.lookups, { step } = nextStep(L, deal);
+    if (!step) return { date: null, step: null };
+    const postDue = () => postsOf(state, deal.deal_id).filter(p => isBlank(p.post_date)).map(p => p.expected_post_date).filter(Boolean).sort()[0] || null;
+    if (isPostStep(step)) return { date: postDue(), step };
+    const f = expectedField(step), own = f ? deal[f] || null : null;
+    /* CR-20 §4.15 — Script with no date of its own: the Expected Draft 1 date asked at Brief is the next due · deals made in this app only
+       (an imported deal — legacy_job_ids — keeps CR-15's "no Script due → no due", so its old Draft 1 dates do not turn Overdue) */
+    if (!own && isScriptStep(step) && deal.expected_draft1_date && !(Array.isArray(deal.legacy_job_ids) && deal.legacy_job_ids.length)) { const d1 = stepsOf(L).find(s => draftNo(s) === 1); if (d1) return { date: deal.expected_draft1_date, step: d1 }; }
+    if (own || !isApproveStep(step)) return { date: own, step };
+    return { date: postDue(), step: stepsOf(L).find(isPostStep) || step };
   }
-  /* CR-07 §4.3 / §4.9 — a step's short name: Approve Draft 1 → Draft 1 · Approve Script → Script */
-  const stepShort = sub => String(sub || '').replace(/^Approve\s+/, '');
+  const dueDate = (state, deal) => dueInfo(state, deal).date;
+  const dueStep = (state, deal) => dueInfo(state, deal).step;
+  /* CR-07 §4.3 / §4.9 — a step's short name = its name (CR-15: Script · Draft 1 · Approve already are short) */
+  const stepShort = sub => String(sub || '');
   const isOverdue = (state, deal, today) => {
     const due = dueDate(state, deal);
     return !!due && due < today && (deal.status === 'List' || deal.status === 'Inprocess');
@@ -254,152 +282,58 @@ KT.rules = (function (C) {
 
   const issue = (field, msg, code) => (code ? { field, msg, code } : { field, msg });
 
-  /* the plan a move leads to: opts.addRound lets a move to Approve Draft k (k > plan) raise draft_rounds to k */
+  /* the plan a move leads to: opts.addRound lets a move to Draft k (k > plan) raise draft_rounds to k */
   const planAfterMove = (deal, to, opts) => {
     const plan = planOf(deal), k = draftNo(to);
-    return opts && opts.addRound && k && k > plan.drafts ? { drafts: k, script: plan.script } : plan;
+    return opts && opts.addRound && k && k > plan.drafts ? { drafts: k } : plan;
   };
-  /* §5.2 — checks before moving a deal to another SubStatus. opts: {date, note, cancelReason, addRound} */
-  function checkMove(state, deal, toSub, opts = {}) {
-    const errs = [], warns = [], infos = [];
+  /* CR-15 §4.2 — a move forward over steps of the plan: they are marked done on the day of the move (a log each, "auto-completed") —
+     never when leaving Cancel or going into it */
+  function skippedSteps(state, deal, toSub, opts) {
     const L = state.lookups, to = stepOf(L, toSub), from = stepOf(L, deal.sub_status);
-    if (!to) { errs.push(issue('to', M.moveStepUnknown)); return { errs, warns, infos }; }
-    if (campaignCancelled(state, deal.campaign_id)) errs.push(issue('to', M.campaignCancelledEdit));
-    if (!isActiveStep(to)) errs.push(issue('to', M.moveStepInactive));
-    if (deal.sub_status === toSub) errs.push(issue('to', M.moveSame));
-    if (!isISODate(opts.date)) errs.push(issue('date', M.moveDateRequired));
-    if (looksSensitive(opts.note)) errs.push(issue('note', M.sensitive));
-    if (looksSensitive(opts.cancelReason)) errs.push(issue('cancel_reason', M.sensitive));
-    const note = trim(opts.note), plan = planOf(deal), after = planAfterMove(deal, to, opts), k = draftNo(to);
-    /* CR-02 §4.2 — a step outside the plan: Draft k can be reached by adding rounds (max 3); Script is switched on in the plan first */
-    if (!isCancelStep(to) && !(from && isCancelStep(from)) && deal.sub_status !== toSub) {
-      if (k && k > plan.drafts) {
-        if (!opts.addRound) errs.push(issue('to', M.moveDraftNotInPlan(k, plan.drafts), 'add_round'));
-        else infos.push(issue('to', M.moveAddsRound(plan.drafts, k)));
-      } else if (isScriptStep(to) && !plan.script) errs.push(issue('to', M.moveScriptNotInPlan));
-    }
-    if (from && isCancelStep(from)) {
-      const prev = stepBeforeCancel(state, deal);
-      if (prev) { if (toSub !== prev) errs.push(issue('to', M.moveLeaveCancelOnly(prev))); }
-      else infos.push(issue('to', M.moveLeaveCancelUnknown));
-      if (!note) errs.push(issue('note', M.moveLeaveCancelNote));
-    } else if (isCancelStep(to)) {
-      if (!trim(opts.cancelReason)) errs.push(issue('cancel_reason', M.moveCancelReason));
-    } else {
-      const fromSort = from ? from.sort_order : -Infinity;
-      if (to.sort_order > fromSort) {
-        const skipped = stepsOf(L).filter(s => isActiveStep(s) && requiredInPlan(s, after) && !isCancelStep(s) && s.sort_order > fromSort && s.sort_order < to.sort_order);
-        if (skipped.length) warns.push(issue('to', M.moveSkip(skipped.map(s => s.sub_status).join(', '))));
-      } else if (to.sort_order < fromSort && !note) {
-        errs.push(issue('note', M.moveBackNote));
-      }
-    }
-    if (isPostStep(to) && !deal.is_legacy) {
-      const posts = postsOf(state, deal.deal_id);
-      if (!posts.length) errs.push(issue('to', M.moveNoPosts));
-      else { const bad = posts.filter(p => !postDone(p)).length; if (bad) errs.push(issue('to', M.movePostsIncomplete(bad))); }
-    }
-    const n = draftNo(to);
-    if (n && isBlank(deal[`expected_draft${n}_date`])) infos.push(issue('to', M.moveNoExpectedDraft(n)));
-    /* CR-03 §4.6 — the Move dialog has a Pillar field for this */
-    if (isBlank(deal.pillar) && isBlank(opts.pillar) && pillarStepReached(state.lookups, toSub)) {
-      if (deal.is_legacy) infos.push(issue('pillar', M.pillarNotSetInfo));
-      else errs.push(issue('pillar', M.movePillarRequired, 'pillar'));
-    }
-    /* CR-10 §4.12 — from Confirm QT on a deal needs a payment term (the Move dialog has a field for it · imported deals are only reminded) */
-    const fromSub = from && isCancelStep(from) ? stepBeforeCancel(state, deal) : deal.sub_status;   // leaving Cancel: where it was before
-    if (!isTerm(termOf(deal)) && !isTerm(opts.paymentTerm) && fromSub && pillarStepReached(state.lookups, toSub) && !pillarStepReached(state.lookups, fromSub)) {   // crossing into Confirm QT
-      if (deal.is_legacy) infos.push(issue('payment_term', M.termNotSetInfo));
-      else errs.push(issue('payment_term', M.moveTermRequired, 'term'));
-    }
-    return { errs, warns, infos };
+    if (!to || isCancelStep(to) || (from && isCancelStep(from))) return [];
+    const fromSort = from ? from.sort_order : -Infinity, after = planAfterMove(deal, to, opts);
+    if (to.sort_order <= fromSort) return [];
+    return stepsOf(L).filter(s => isActiveStep(s) && !isCancelStep(s) && requiredInPlan(s, after) && s.sort_order > fromSort && s.sort_order < to.sort_order);
   }
-
-  /* §5.2 — result of a move (does not touch state). ctx: {now: Date, logId, quoteId, eventId}
-     returns {deal, log, quote|null, event|null}; the caller appends log/quote/event and replaces the deal.
-     event = the plan change when opts.addRound raised draft_rounds */
-  function applyMove(state, deal, toSub, opts, ctx) {
-    const to = stepOf(state.lookups, toSub);
-    const d = Object.assign({}, deal, { sub_status: toSub, status: to.status });
-    const plan = planOf(deal), after = planAfterMove(deal, to, opts);
-    let event = null;
-    if (after.drafts !== plan.drafts) {
-      d.draft_rounds = after.drafts;
-      event = planEvent(deal, after, { eventId: ctx.eventId, now: ctx.now, user: ctx.user });
-    }
-    if (to.date_field && isBlank(deal[to.date_field])) d[to.date_field] = opts.date;
-    if (isCancelStep(to)) d.cancel_reason = trim(opts.cancelReason);
-    else if (isCancelled(deal)) d.cancel_reason = null;
-    const notes = [];
-    if (isCancelStep(to)) notes.push(trim(opts.cancelReason));
-    if (trim(opts.note)) notes.push(trim(opts.note));
-    const log = {
-      log_id: ctx.logId, deal_id: deal.deal_id, from_sub_status: deal.sub_status || null,
-      status: to.status, sub_status: toSub, effective_date: opts.date,
-      changed_at: (ctx.now || new Date()).toISOString(), changed_by: ctx.user || null, source: 'user',
-      note: notes.join(' · ') || null,
-    };
-    let quote = null;
-    if (toSub === 'Confirm QT' && !isBlank(deal.rate_card)) {
-      const accs = [...new Set(postsOf(state, deal.deal_id).map(p => p.account_id).filter(Boolean))];
-      quote = { quote_id: ctx.quoteId, kol_id: deal.kol_id, account_id: accs.length === 1 ? accs[0] : null, quoted_at: opts.date,
-        source: M.quoteFromDeal(deal.deal_id), source_row: null, note: null };
-      COST_KEYS.forEach(k => { quote[k] = isBlank(deal[k]) ? null : Number(deal[k]); });
-      quote.gencode_period = isBlank(deal.gencode_period) ? null : Number(deal.gencode_period);
-    }
-    /* a pillar picked in the Move dialog is saved with the move (and logged) */
-    let pillarEvent = null, termEv = null;
-    if (isBlank(deal.pillar) && !isBlank(opts.pillar)) {
-      d.pillar = opts.pillar;
-      pillarEvent = fieldChange(deal, 'pillar', opts.pillar, { eventId: (ctx.eventId || 0) + (event ? 1 : 0), now: ctx.now, user: ctx.user }).event;
-    }
-    /* CR-10 §4.12 — a payment term picked in the Move dialog is saved with the move (and logged) */
-    if (!isTerm(termOf(deal)) && isTerm(opts.paymentTerm)) {
-      d.payment_term = opts.paymentTerm;
-      termEv = termEvent(deal, opts.paymentTerm, { eventId: (ctx.eventId || 0) + (event ? 1 : 0) + (pillarEvent ? 1 : 0), now: ctx.now, user: ctx.user });
-    }
-    return { deal: d, log, quote, event, events: [event, pillarEvent, termEv].filter(Boolean) };
-  }
+  /* checkMove · applyMove · dropPlan: rules-move.js (CR-20 — what a move needs comes from stageRequirements) */
 
   /* ---------- changing the content plan from the drawer (CR-02 §4.2) ---------- */
-  const planValue = p => ({ draft_rounds: p.drafts, script_required: p.script });
+  const planValue = p => ({ draft_rounds: p.drafts });
   function planEvent(deal, next, ctx) {
     return { event_id: ctx.eventId, deal_id: deal.deal_id, type: 'plan', from: planValue(planOf(deal)), to: planValue(next),
       changed_at: (ctx.now || new Date()).toISOString(), changed_by: ctx.user || null, note: ctx.note || null };
   }
-  /* what the [−] [+] and Script toggle may do: rounds already passed cannot be removed, Script cannot be switched off once passed.
-     "passed" = the current step (or the step before Cancel) is at or after it, or its approved date is filled.
-     A Cancel whose step before is unknown keeps the plan as it is. */
+  /* what [−] [+] may do: rounds already passed cannot be removed ("passed" = the current step (or the step before Cancel) is at or after it,
+     or its date is filled) · a Cancel whose step before is unknown keeps the plan as it is */
   function planLimits(state, deal) {
     const L = state.lookups, plan = planOf(deal);
     let cur = stepOf(L, deal.sub_status);
     if (cur && isCancelStep(cur)) {
       const prev = stepBeforeCancel(state, deal);
-      if (!prev) return { minDrafts: plan.drafts, maxDrafts: MAX_DRAFTS, scriptLocked: plan.script };
+      if (!prev) return { minDrafts: plan.drafts, maxDrafts: MAX_DRAFTS };
       cur = stepOf(L, prev);
     }
     const curSort = cur ? cur.sort_order : -Infinity;
-    let minDrafts = 1, scriptLocked = false;
+    let minDrafts = 1;
     stepsOf(L).forEach(s => {
       const n = draftNo(s);
       if (n && n <= plan.drafts && (s.sort_order <= curSort || !isBlank(deal[`approved_draft${n}_date`]))) minDrafts = Math.max(minDrafts, n);
-      if (isScriptStep(s) && plan.script && s.sort_order <= curSort) scriptLocked = true;
     });
-    return { minDrafts, maxDrafts: MAX_DRAFTS, scriptLocked };
+    return { minDrafts, maxDrafts: MAX_DRAFTS };
   }
-  /* next: {drafts, script} */
+  /* next: {drafts} */
   function checkPlan(state, deal, next) {
-    const errs = [], lim = planLimits(state, deal), plan = planOf(deal);
+    const errs = [], lim = planLimits(state, deal);
     if (!Number.isInteger(next.drafts) || next.drafts < 1 || next.drafts > MAX_DRAFTS) errs.push(issue('draft_rounds', M.planDraftsRange(MAX_DRAFTS)));
     else if (next.drafts < lim.minDrafts) errs.push(issue('draft_rounds', M.planDraftsPassed(lim.minDrafts)));
-    if (plan.script && !next.script && lim.scriptLocked) errs.push(issue('script_required', M.planScriptPassed));
     return { errs, warns: [], infos: [] };
   }
   /* → {deal, event} (no change → event null) · ctx: {eventId, now, note} */
   function applyPlan(deal, next, ctx) {
     const plan = planOf(deal);
-    if (plan.drafts === next.drafts && plan.script === !!next.script) return { deal, event: null };
-    const to = { drafts: next.drafts, script: !!next.script };
+    if (plan.drafts === next.drafts) return { deal, event: null };
+    const to = { drafts: next.drafts };
     return { deal: Object.assign({}, deal, planValue(to)), event: planEvent(deal, to, ctx) };
   }
 
@@ -431,14 +365,18 @@ KT.rules = (function (C) {
 
   /* CR-02 §4.8 — status from the dates (never typed) */
   const PHASE_STATUSES = ['ongoing', 'not_started', 'complete'];
+  /* CR-17 §4.5 — a Campaign / Phase made by Staff waits for a manager (pending · rejected) · no approval_status (older data) = approved */
+  const isApproved = x => !x || !x.approval_status || x.approval_status === 'approved';
   function phaseStatus(phase, today) {
+    if (phase && phase.approval_status === 'rejected') return 'rejected';   // CR-17 v1.2: Rejected > Pending approval > the dates
+    if (phase && !isApproved(phase)) return 'pending';   // CR-17: not a Phase yet
     if (!phase || !phase.start_date || today < phase.start_date) return 'not_started';
     if (phase.end_date && today > phase.end_date) return 'complete';
     return 'ongoing';
   }
   /* any Phase on going → On going · all not started → Not started · all ended → Complete · ended + not started (between Phases) → On going */
   function campaignStatus(phases, today) {
-    const st = phases.map(p => phaseStatus(p, today));
+    const st = phases.map(p => phaseStatus(p, today)).filter(x => x !== 'pending' && x !== 'rejected');   // CR-17: a Phase waiting for approval (or rejected) does not count
     if (!st.length || st.every(s => s === 'not_started')) return 'not_started';
     if (st.every(s => s === 'complete')) return 'complete';
     return 'ongoing';
@@ -447,12 +385,17 @@ KT.rules = (function (C) {
   const sortPhases = phases => [...phases].sort((a, b) => String(a.start_date || '9999').localeCompare(String(b.start_date || '9999'))
     || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')));
   /* CR-05 §4.7 — a Campaign may be put On hold or Cancelled (status_override); that wins over its dates */
-  const CAMPAIGN_STATUSES = ['ongoing', 'not_started', 'on_hold', 'complete', 'cancelled'];
+  /* CR-17 §4.5 — + Pending approval · Rejected (a Campaign Staff made): not in the Dashboard by default · v1.2: the order of the tabs, and which wins —
+     Cancelled > Rejected > Pending approval > On hold > by the dates (Not started · On going · Complete) */
+  const CAMPAIGN_STATUSES = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled'];
   const CAMPAIGN_OVERRIDES = ['on_hold', 'cancelled'];
-  const campaignEffectiveStatus = (campaign, phases, today) => (campaign && CAMPAIGN_OVERRIDES.includes(campaign.status_override) ? campaign.status_override : campaignStatus(phases, today));
+  const campaignEffectiveStatus = (campaign, phases, today) => (campaign && campaign.status_override === 'cancelled' ? 'cancelled'
+    : campaign && campaign.approval_status === 'rejected' ? 'rejected' : campaign && !isApproved(campaign) ? 'pending'
+    : campaign && CAMPAIGN_OVERRIDES.includes(campaign.status_override) ? campaign.status_override : campaignStatus(phases, today));
   /* a Campaign that takes no new deal: On hold · Cancelled → the message, else null */
   function campaignBlocksNew(state, campaignId) {
     const c = state.campaigns.find(x => x.campaign_id === campaignId); if (!c) return null;
+    if (!isApproved(c)) return M.campaignNotApproved(c.campaign_name);   // CR-17 §4.5: no deal before a manager approves it
     return c.status_override === 'on_hold' ? M.campaignOnHold(c.campaign_name) : c.status_override === 'cancelled' ? M.campaignCancelledNew(c.campaign_name) : null;
   }
   const campaignCancelled = (state, campaignId) => { const c = state.campaigns.find(x => x.campaign_id === campaignId); return !!c && c.status_override === 'cancelled'; };
@@ -465,7 +408,7 @@ KT.rules = (function (C) {
   }
   /* On going (end soonest first) → Not started (start soonest first) → On hold → Complete (latest end first) → Cancelled · ties: start, then name */
   function sortCampaigns(campaigns, phases, today) {
-    const RANK = { ongoing: 0, not_started: 1, on_hold: 2, complete: 3, cancelled: 4 };
+    const RANK = { ongoing: 0, not_started: 1, pending: 1.5, on_hold: 2, complete: 3, rejected: 3.5, cancelled: 4 };
     const info = new Map(campaigns.map(c => {
       const ps = phases.filter(p => p.campaign_id === c.campaign_id);
       const starts = ps.map(p => p.start_date).filter(Boolean).sort(), ends = ps.map(p => p.end_date).filter(Boolean).sort();
@@ -474,7 +417,7 @@ KT.rules = (function (C) {
     return [...campaigns].sort((a, b) => {
       const x = info.get(a.campaign_id), y = info.get(b.campaign_id);
       if (x.st !== y.st) return RANK[x.st] - RANK[y.st];
-      const c = x.st === 'ongoing' ? x.end.localeCompare(y.end) : x.st === 'not_started' || x.st === 'on_hold' ? x.start.localeCompare(y.start) : y.end.localeCompare(x.end);
+      const c = x.st === 'ongoing' ? x.end.localeCompare(y.end) : x.st === 'not_started' || x.st === 'on_hold' || x.st === 'pending' ? x.start.localeCompare(y.start) : y.end.localeCompare(x.end);
       return c || x.start.localeCompare(y.start) || String(a.campaign_name).localeCompare(String(b.campaign_name));
     });
   }
@@ -527,12 +470,6 @@ KT.rules = (function (C) {
     return { accounts: group(state.kol_accounts, 'kol_id'), deals: group(state.deals, 'kol_id'), quotes, postsByAccount,
       phases: new Map(state.phases.map(p => [p.phase_id, p])) };
   }
-  /* latest Phase a KOL worked in (by Phase start date) — a deal counts in its primary Phase (CR-03 §4.2) */
-  function latestPhaseOf(deals, phases, idx) {
-    let best = null;
-    deals.forEach(d => { const p = phases.get(((idx && idx.deal.get(d.deal_id)) || {}).primary); if (p && (!best || String(p.start_date) > String(best.start_date))) best = p; });
-    return best;
-  }
 
   /* §7.1 — draft: {kol_id, display_name, …, accounts: [{account_id, platform, handle, profile_link, followers, is_legacy}]}
      Accounts that are new or changed must be complete; untouched (legacy) accounts are left as they are. */
@@ -580,6 +517,11 @@ KT.rules = (function (C) {
     }
     const dup = name && state.kol_master.find(k => k.kol_id !== draft.kol_id && trim(k.display_name).toLowerCase() === name.toLowerCase());
     if (dup) warns.push(issue('display_name', M.kolNameDup(dup.kol_id)));
+    /* CR-14 §4.5 — the contact ID: never a phone number (that is in the Payee vault) · 120 characters at most · a channel without it = a reminder */
+    const cp = contactIdProblem(draft.contact_id);
+    if (cp === 'phone') errs.push(issue('contact_id', M.contactPhone));
+    else if (cp === 'long') errs.push(issue('contact_id', M.contactLong(CONTACT_ID_MAX)));
+    if (!isBlank(draft.contact_channel) && isBlank(draft.contact_id)) infos.push(issue('contact_id', M.contactMissing));
     return { errs, warns, infos };
   }
   /* an account counts as legacy only while it stays untouched and incomplete */
@@ -604,10 +546,11 @@ KT.rules = (function (C) {
     docs_done: false, docs_done_date: null, paid_50: false, paid_50_date: null, paid_full: false, paid_full_date: null,
     pic: null, rate_card: null, gencode_expense: null, gencode_period: null, gencode_start_date: null,
     basket_fee: null, asset_fee: null, expediting_fee: null, delivered: false, delivery_date: null,
-    brief_date: null, expected_draft1_date: null, approved_draft1_date: null, expected_draft2_date: null, approved_draft2_date: null,
-    expected_draft3_date: null, approved_draft3_date: null, expected_post_date: null, link_brief: null, cta: null,
+    brief_date: null, expected_script_date: null, script_date: null, expected_draft1_date: null, approved_draft1_date: null, expected_draft2_date: null, approved_draft2_date: null,
+    expected_draft3_date: null, approved_draft3_date: null, expected_approve_date: null, approved_date: null, expected_post_date: null, link_brief: null, cta: null,
     cancel_reason: null, remark: null, legacy_job_ids: [], source_record_ids: [], is_legacy: false,
-    draft_rounds: 1, script_required: false, payment_term: null,
+    draft_rounds: 1, payment_term: null, payee_id: null,   // CR-16: payee_id null = the KOL's default payee
+    package_id: null, package_units: 1, package_paid: false, script_link: null,   // CR-20 §3
   };
   /* a new deal takes the KOL's default payment term (null = not set yet) */
   const kolTerm = (state, kolId) => { const k = kolById(state, kolId); return k && isTerm(k.default_payment_term) ? k.default_payment_term : null; };
@@ -675,9 +618,34 @@ KT.rules = (function (C) {
       quotes: state.kol_rate_quotes.filter(q => q.kol_id === fromId).length,
     };
   }
+  /* ===================== CR-14 §4.2 — ui.multiSelect, the part without a screen ===================== */
+  /* text to compare: one Unicode form · trimmed · no case (Thai is kept as it is) */
+  const foldText = t => String(t == null ? '' : t).normalize('NFC').trim().toLowerCase();
+  /* the options a search shows (by label, or o.search when given) */
+  const msFilter = (options, q) => { const k = foldText(q); return !k ? options.slice() : options.filter(o => foldText(o.search != null ? o.search : o.label).includes(k)); };
+  /* the values in the options' order */
+  const msOrder = (options, set) => options.map(o => o.value).filter(v => set.has(v));
+  /* tick / untick one value · min: the last ticked one(s) cannot go (the list stays as it was) */
+  function msToggle(options, value, v, on, min) {
+    const set = new Set(value || []);
+    if (on) set.add(v);
+    else if (!(set.has(v) && set.size <= (min || 0))) set.delete(v);
+    return msOrder(options, set);
+  }
+  /* Select all: every option · with a search, the ones it shows are added to what is ticked */
+  const msSelectAll = (options, value, q) => msOrder(options, new Set(msFilter(options, q).map(o => o.value).concat(value || [])));
+  /* a ticked value that may not be taken off (it is the last of min) */
+  const msLocked = (value, v, min) => !!min && (value || []).includes(v) && (value || []).length <= min;
+  /* a value kept for each person in one JSON {userId: value} (deals.stateTab.v2 · dash.all.statuses) */
+  function userPrefGet(json, uid) { try { const m = JSON.parse(json || '{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m[uid || ''] : undefined; } catch (e) { return undefined; } }
+  function userPrefSet(json, uid, v) {
+    let m = {}; try { m = JSON.parse(json || '{}') || {}; } catch (e) { m = {}; }
+    if (typeof m !== 'object' || Array.isArray(m)) m = {};
+    m[uid || ''] = v; return JSON.stringify(m);
+  }
   function mergedKol(state, fromId, intoId) {
     const from = kolById(state, fromId), k = Object.assign({}, kolById(state, intoId));
-    ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'status_reason', 'default_payment_term'].forEach(f => { if (isBlank(k[f]) && !isBlank(from[f])) k[f] = from[f]; });
+    ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id', 'status_reason', 'default_payment_term'].forEach(f => { if (isBlank(k[f]) && !isBlank(from[f])) k[f] = from[f]; });
     k.sources = [...new Set([...(k.sources || []), ...(from.sources || [])])];
     k.note = [trim(k.note) || trim(from.note), M.mergedFrom(from.kol_id, from.display_name)].filter(Boolean).join(' · ');
     return k;
@@ -698,18 +666,18 @@ KT.rules = (function (C) {
     TZ, looksSensitive, isBlank, trim, num, fmtNum, baht, dmy, todayISO, isISODate, addDays, dayDiff, weekStart, fmtDateTime, dateOfTimestamp,
     TRACKING_PARAMS, normLink, tiktokDate, isShortTiktok, handleFromLink, platformFromLink, isHttpLink,
     tierOf,
-    COST_KEYS, totalCost, gencodeEndDate, isCancelled, paidEstimate, PAYMENT_PROGRESS, paymentProgress,
+    COST_KEYS, totalCost, gencodeEndDate, isCancelled, paidEstimate, extrasOf, paidUp, PAYMENT_PROGRESS, paymentProgress, BASIC_TERMS,
     PAYMENT_TERMS, isTerm, termOf, paymentMilestones, reachedBrief, PAYMENT_STATES, paymentState, isOpenDeal, termEvent, applyTermToOpenDeals, checkNewDealTerm,
     picChange, picChanges, pillarChange, pillarChanges, fieldChange, fieldChanges, pillarStepReached, needsPillar, checkNewDealPillar, stageDots,
     stepsOf, stepOf, statusOf, isCancelStep, isPostStep, draftNo, postsOf, postDone, postsPlanned, postsDone, logsOf,
-    SCRIPT_STEP, MAX_DRAFTS, isScriptStep, planOf, inPlan, requiredInPlan, planSteps,
-    nextStep, dueDate, stepShort, isOverdue, daysInStep, stepBeforeCancel, checkMove, applyMove, planEvent, planLimits, checkPlan, applyPlan,
+    SCRIPT_STEP, APPROVE_STEP, MAX_DRAFTS, isScriptStep, isApproveStep, expectedField, planOf, inPlan, requiredInPlan, planSteps, dealPlan, skippedSteps,
+    nextStep, dueInfo, dueDate, dueStep, stepShort, isOverdue, daysInStep, stepBeforeCancel, planEvent, planLimits, checkPlan, applyPlan,
     validateCampaign, canDeleteCampaign, campaignIdFor, phaseIdFor, defaultPhaseId, defaultCampaignId,
     PHASE_STATUSES, phaseStatus, campaignStatus, sortPhases, sortCampaigns, orderedPhases, kolTerm,
-    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignBlocksNew, campaignCancelled, validateCampaignStatus,
+    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignBlocksNew, isApproved, campaignCancelled, validateCampaignStatus,
     KOL_STATUSES, GENDERS, CONTACT_CHANNELS, ACCOUNT_FIELDS, PRICE_KEYS, kolById, accountsOfKol, dealsOfKol, postsOnAccount, maxFollowers,
-    sortQuotes, quotesOfKol, latestQuote, latestPricedQuote, prefillFromQuote, kolDealAverage, kolIndex, latestPhaseOf,
+    sortQuotes, quotesOfKol, latestQuote, latestPricedQuote, prefillFromQuote, kolDealAverage, kolIndex,
     validateKol, accountComplete, validateQuote, DEAL_TEMPLATE, shortlistStep, openDealsInCampaign, checkAddToCampaign, planShortlist, shortlistDeal,
-    mergePreview, mergedKol, applyMerge,
+    mergePreview, mergedKol, applyMerge, CONTACT_ID_MAX, looksLikePhone, contactIdProblem, foldText, msFilter, msToggle, msSelectAll, msLocked, userPrefGet, userPrefSet,
   };
 })(KT.content);

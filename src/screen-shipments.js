@@ -3,7 +3,8 @@
    scope bar (Campaign · PIC + Mine · Purpose · Search · Filters · Clear all filters) · queue cards · rows are text (changes go through ⋯
    or a bulk dialog) · pick lists (Items summary per TR code · Print A4 · Export shipping list · Mark all shipped with the tracking nos. pasted
    from a sheet) · New shipment (with or without a deal — the recipient is always a KOL; the address stays in the Payee vault) ·
-   a row opens its Deal drawer at Shipments, or the Shipment drawer when there is no deal. Rules: rules-ship.js. → KT.screens.shipments */
+   a row opens its Deal drawer at Shipments, or the Shipment drawer when there is no deal. Rules: rules-ship.js.
+   CR-17 §4.3 — Simple mode: Shipped / Delivered are buttons on the row · bulk Mark shipped / Mark delivered · pick lists move into ⋯. → KT.screens.shipments */
 KT.screens.shipments = (function () {
   'use strict';
   const U = KT.ui;
@@ -18,7 +19,9 @@ KT.screens.shipments = (function () {
   const kolName = sh => { const k = kolOf(sh); return (k && k.display_name) || sh.kol_id || ''; };
   const dealOf = id => (id ? state().deals.find(d => d.deal_id === id) || null : null);
   const shOf = id => (state().sample_shipments || []).find(x => x.shipment_id === id) || null;
-  const onFile = kolId => { const p = R.payeeOfKol(state(), kolId); return !!(p && p.shipping_on_file && p.secure_ship); };
+  /* CR-16 §4.3 — the KOL's default shipping address on file · a shipment's own address (its address_id, else that default) */
+  const onFile = kolId => { const a = R.defaultAddress(state(), kolId); return !!(a && a.secure); };
+  const shipAddr = sh => R.addressOfShipment(state(), sh);
   const ctxOf = () => { let e = 0; return { eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }; };
   const canWork = () => R.canShipWork(actor());
   const canEditSh = sh => R.canEditShip(actor(), dealOf(sh.deal_id), sh);
@@ -96,6 +99,7 @@ KT.screens.shipments = (function () {
   }
   function pickMenuHTML(s) {
     const open = (s.pick_lists || []).filter(pl => R.pickListShipments(s, pl).some(sh => !['shipped', 'delivered', 'not_required'].includes(sh.status)));
+    if (!open.length && KT.samples.isSimple()) return '';   // CR-17 §4.3: Simple — pick lists live in ⋯ (shown here only while one is open)
     return `<details class="menu sh-picks"><summary class="btn small">${esc(SH.pickLists(open.length))}</summary><div class="menu-list right">` +
       (open.length ? open.slice().reverse().map(pl => `<button type="button" class="mi" data-shpl="${esc(pl.pick_list_id)}">${esc(pl.name)} <span class="muted small">${esc(SH.parcels(pl.shipment_ids.length))}</span></button>`).join('') : `<div class="mi muted">${esc(SH.noPickLists)}</div>`) +
       `</div></details>`;
@@ -157,6 +161,13 @@ KT.screens.shipments = (function () {
     bar.classList.toggle('hidden', !n);
     if (!n) { bar.innerHTML = ''; return; }
     const B = SH.bulk, btn = (k, l) => `<button type="button" class="btn" data-shbulk="${k}">${esc(l)}</button>`;
+    /* CR-17 §4.3 — Simple: Mark shipped (one click form) · ⋯ Create pick list / Set ship-by / Not required */
+    if (KT.samples.isSimple()) {
+      bar.innerHTML = `<b>${esc(SH.selected(n))}</b>` + (sv.tab === 'to-ship' ? `<button type="button" class="btn primary" data-shbulk="qshipped">${esc(SM.quick.markShipped)}</button>` +
+          `<details class="menu"><summary class="btn" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list">${['pick', 'ship_by', 'not_required'].map(k => `<button type="button" class="mi" data-shbulk="${k}">${esc({ pick: B.pick, ship_by: B.shipBy, not_required: B.notRequired }[k])}</button>`).join('')}</div></details>`
+        : sv.tab === 'in-transit' ? `<button type="button" class="btn primary" data-shbulk="qdelivered">${esc(SM.quick.markDelivered)}</button>` : '') + `<button type="button" class="btn ghost" data-shbulk="clear">${esc(B.clear)}</button>`;
+      return;
+    }
     bar.innerHTML = `<b>${esc(SH.selected(n))}</b>` + (sv.tab === 'to-ship' ? btn('pick', B.pick) + btn('shipped', B.shipped) + btn('ship_by', B.shipBy) + btn('not_required', B.notRequired)
       : sv.tab === 'in-transit' ? btn('delivered', B.delivered) : '') + `<button type="button" class="btn ghost" data-shbulk="clear">${esc(B.clear)}</button>`;
   }
@@ -164,7 +175,9 @@ KT.screens.shipments = (function () {
     const b = e.target.closest('[data-shbulk]'); if (!b) return;
     const k = b.dataset.shbulk, ids = [...sv.sel];
     if (k === 'clear') { sv.sel.clear(); draw(); return; }
+    const m = b.closest('details'); if (m) m.open = false;
     if (k === 'pick') { createPickList(ids, b); return; }
+    if (k === 'qshipped' || k === 'qdelivered') { KT.samples.quick(k === 'qshipped' ? 'shipped' : 'delivered', ids, b, () => { sv.sel.clear(); draw(); }); return; }   // CR-17
     KT.samples.action(k, ids, () => { sv.sel.clear(); draw(); });
   }
 
@@ -173,6 +186,16 @@ KT.screens.shipments = (function () {
     const sh = r.sh, st = r.status, work = canWork(), edit = canEditSh(sh), old = R.isLegacyDelivered(sh), it = (k, l, cls) => `<button type="button" class="mi${cls ? ' ' + cls : ''}" data-shact="${k}" data-sh="${esc(sh.shipment_id)}">${esc(l)}</button>`;
     if (old) return '';
     const items = [];
+    /* CR-17 §4.3 — Simple: the main step is the button on the row · the rest here */
+    if (KT.samples.isSimple()) {
+      const mi = (k, l, cls) => ((['ship_by', 'not_required', 'items', 'delete'].includes(k) ? edit : work) ? it(k, l, cls) : '');
+      const more = KT.samples.simpleMenuItems(sh, st === 'problem' ? 'problem' : st, mi);
+      if (more) items.push(more);
+      if (work && sh.pick_list_id && sh.status === 'to_ship') items.push(it('unpick', SH.removePick));
+      if (st === 'delivered' && canNew()) items.push(it('reship', SH.reship));
+      if (r.deal) items.push(`<button type="button" class="mi" data-shdeal="${esc(r.deal.deal_id)}">${esc(SH.openDeal)}</button>`);
+      return items.length ? `<details class="menu sh-menu"><summary class="icon-btn" aria-label="${esc(SH.menu)}" title="${esc(SH.menu)}">⋯</summary><div class="menu-list right">${items.join('')}</div></details>` : '';
+    }
     if (['overdue', 'this_week', 'to_ship', 'problem'].includes(st)) {
       if (work) items.push(it('shipped', SM.markShipped));
       if (work && st !== 'problem') items.push(it('problem', SM.reportProblem));
@@ -191,27 +214,30 @@ KT.screens.shipments = (function () {
     if (!rows.length) { el.innerHTML = (sv.used.length ? U.noMatchHTML(SH.noMatch, sv.used) : `<div class="card empty"><b>${esc(SH.empty[sv.tab])}</b></div>`) + more; return; }
     const kolCell = r => `<td class="sh-kol stk${pick ? '' : ' at0'}"><span class="kname"><b>${U.nameHTML((r.kol && r.kol.display_name) || r.sh.kol_id || '')}</b>${U.copyBtnHTML((r.kol && r.kol.display_name) || '')}</span>${r.deal ? '' : `<span class="muted small">${esc(SH.noDeal)}</span>`}</td>`;
     const cb = r => (pick ? `<td class="cb"><input type="checkbox" data-shsel="${esc(r.sh.shipment_id)}"${sv.sel.has(r.sh.shipment_id) ? ' checked' : ''} aria-label="${esc((r.kol && r.kol.display_name) || r.sh.shipment_id)}"></td>` : '');
-    const addr = r => { const kid = r.kol && r.kol.kol_id; return `<td class="nowrap">${kid && onFile(kid) ? `<span class="chip ok-chip" title="${esc(SM.addressOnFile)}">${esc(SM.onFile)}</span>` : `<span class="muted small" title="${esc(SM.noAddress)}">${esc(SM.missing)}</span>`}</td>`; };
-    const pl = r => { const p = r.sh.pick_list_id && R.pickListById(s, r.sh.pick_list_id); return `<td>${p ? `<button type="button" class="link small" data-shpl="${esc(p.pick_list_id)}">${esc(p.name)}</button>` : dash}</td>`; };
+    /* CR-16 §4.3 — Address: the label of the address it goes to + on file / missing */
+    const addr = r => { const a = shipAddr(r.sh); return `<td class="nowrap sh-addr">${a ? `<span class="sh-al">${esc(a.label)}</span> ` : ''}${a && a.secure ? `<span class="chip ok-chip" title="${esc(SM.addressOnFile)}">${esc(SM.onFile)}</span>` : `<span class="muted small" title="${esc(SM.noAddress)}">${esc(SM.missing)}</span>`}</td>`; };
+    /* CR-17 §4.3 — Simple mode: the Pick list column only when a row is on one */
+    const plCol = !KT.samples.isSimple() || rows.some(r => r.sh.pick_list_id && R.pickListById(s, r.sh.pick_list_id));
+    const pl = r => { if (!plCol) return ''; const p = r.sh.pick_list_id && R.pickListById(s, r.sh.pick_list_id); return `<td>${p ? `<button type="button" class="link small" data-shpl="${esc(p.pick_list_id)}">${esc(p.name)}</button>` : dash}</td>`; };
     const old = r => R.isLegacyDelivered(r.sh), tip = r => (old(r) ? ` title="${esc(SH.importedNote)}"` : '');
     const tdv = (v, cls) => `<td class="${cls || 'nowrap'}">${v}</td>`, d = x => (x ? esc(R.dmy(x)) : dash);
     let head, row, span;
     if (sv.tab === 'to-ship') {
-      head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipBy)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.address)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th><th>${esc(T.pickList)}</th><th></th>`;
-      span = pick ? 11 : 10;
+      head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipBy)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.address)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th>${plCol ? `<th>${esc(T.pickList)}</th>` : ''}<th></th>`;
+      span = (pick ? 11 : 10) - (plCol ? 0 : 1);
       row = r => `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.ship_by))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
-        `<td>${chip(r.status)}${r.status === 'problem' && r.sh.problem_reason ? ` <span class="muted small">${esc(r.sh.problem_reason)}</span>` : ''}</td>${pl(r)}<td class="sh-act">${rowMenu(r)}</td></tr>`;
+        `<td>${chip(r.status)}${r.status === 'problem' && r.sh.problem_reason ? ` <span class="muted small">${esc(r.sh.problem_reason)}</span>` : ''}</td>${pl(r)}<td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     } else if (sv.tab === 'in-transit') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipped)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th class="num">${esc(T.days)}</th><th>${esc(T.pic)}</th><th></th>`;
       span = pick ? 11 : 10;
       row = r => { const n = R.daysInTransit(r.sh, td), slow = n != null && n > R.TRANSIT_SLOW;
         return `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.shipped_date))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
-          `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td><td class="num">${n == null ? dash : `<span class="${slow ? 'sh-slow' : ''}"${slow ? ` title="${esc(SH.slowTip(R.TRANSIT_SLOW))}"` : ''}>${esc(SH.daysN(n))}</span>`}</td><td>${r.pic ? esc(r.pic) : dash}</td><td class="sh-act">${rowMenu(r)}</td></tr>`; };
+          `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td><td class="num">${n == null ? dash : `<span class="${slow ? 'sh-slow' : ''}"${slow ? ` title="${esc(SH.slowTip(R.TRANSIT_SLOW))}"` : ''}>${esc(SH.daysN(n))}</span>`}</td><td>${r.pic ? esc(r.pic) : dash}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`; };
     } else {
       head = `<th>${esc(T.delivered)}</th><th class="stk at0">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th>${esc(T.shipped)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th><th></th>`;
       span = 11;
       row = r => `<tr class="click${old(r) ? ' sm-legacy' : ''}" data-shrow="${esc(r.sh.shipment_id)}"${tip(r)}>${tdv(d(r.sh.delivered_date))}${kolCell(r).replace(' at0', ' at0')}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
-        `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td>${tdv(d(r.sh.shipped_date))}<td>${r.pic ? esc(r.pic) : dash}</td><td>${chip(r.status)}${r.status === 'not_required' && r.sh.not_required_reason ? ` <span class="muted small">${esc(r.sh.not_required_reason)}</span>` : ''}</td><td class="sh-act">${rowMenu(r)}</td></tr>`;
+        `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td>${tdv(d(r.sh.shipped_date))}<td>${r.pic ? esc(r.pic) : dash}</td><td>${chip(r.status)}${r.status === 'not_required' && r.sh.not_required_reason ? ` <span class="muted small">${esc(r.sh.not_required_reason)}</span>` : ''}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     }
     let body;
     if (sv.tab === 'to-ship') {
@@ -229,6 +255,7 @@ KT.screens.shipments = (function () {
     const cb = e.target.closest('[data-shsel]'); if (cb) { cb.checked ? sv.sel.add(cb.dataset.shsel) : sv.sel.delete(cb.dataset.shsel); drawBulk(); return; }
     if (e.target.closest('td.cb')) return;
     const a = e.target.closest('[data-shact]'); if (a) { const m = a.closest('details'); if (m) m.open = false; rowAction(a.dataset.shact, a.dataset.sh, a); return; }
+    if (KT.samples.click(e, draw)) return;   // CR-17: Shipped · Delivered · Shipped & delivered · Undo delivered · Change address
     const dd = e.target.closest('[data-shdeal]'); if (dd) { go('deals', { deal: dd.dataset.shdeal, section: 'shipments' }); return; }
     const p = e.target.closest('[data-shpl]'); if (p) { openPickList(p.dataset.shpl); return; }
     const r = e.target.closest('[data-shrow]'); if (r) { const sh = shOf(r.dataset.shrow); if (!sh) return; if (sh.deal_id && dealOf(sh.deal_id)) go('deals', { deal: sh.deal_id, section: 'shipments' }); else openShipment(sh.shipment_id); }
@@ -307,17 +334,23 @@ KT.screens.shipments = (function () {
       st.deal_events.push(...evs); U.closeModal(); commit(SH.shippedN(evs.length)); draw(); openPickList(pl.pick_list_id);
     });
   }
-  /* the shipping details of these shipments' KOLs, decrypted in memory only while Payee details are unlocked (CR-10 §4.14) */
+  /* the address of each shipment (CR-16 §4.3: its own, else the KOL's default), decrypted in memory only while Payee details are unlocked (CR-10 §4.14) ·
+     recs: shipment_id → { recipient, phone, address } */
   async function shippingRecs(list) {
-    const s = state(), vault = s.lookups.payee_vault, open = !!vault && KT.vault.isUnlocked(vault) && can('payee.unlock'), recs = new Map();
-    if (open) for (const sh of list) { const k = kolOf(sh), p = k && R.payeeOfKol(s, k.kol_id); if (p && p.secure_ship && !recs.has(k.kol_id)) recs.set(k.kol_id, await KT.vault.decrypt(p.secure_ship)); }
+    const s = state(), vault = s.lookups.payee_vault, open = !!vault && KT.vault.isUnlocked(vault) && can('payee.unlock'), recs = new Map(), byAddr = new Map();
+    if (open) for (const sh of list) {
+      const a = R.addressOfShipment(s, sh); if (!a || !a.secure) continue;
+      if (!byAddr.has(a.address_id)) byAddr.set(a.address_id, R.readShip(await KT.vault.decrypt(a.secure)));
+      if (byAddr.get(a.address_id)) recs.set(sh.shipment_id, byAddr.get(a.address_id));
+    }
+    byAddr.clear();
     return { open, recs };
   }
   /* Print (A4): KOL · items × qty · a box to tick · the address only while unlocked, else "See shipping list" — a frame of its own, gone after printing */
   async function printPickList(pl) {
     const s = state(), list = R.pickListShipments(s, pl), sum = R.itemsSummary(list), { open, recs } = await shippingRecs(list);
-    const rows = list.map((sh, i) => { const k = kolOf(sh), rec = (k && recs.get(k.kol_id)) || null;
-      return `<tr><td class="n">${i + 1}</td><td class="t">☐</td><td><b>${esc(kolName(sh))}</b></td><td>${esc((sh.items || []).map(x => `${x.tr_code} × ${x.qty}`).join(', ') || '—')}</td><td>${open && rec ? esc([rec.ship_name, rec.ship_phone, rec.ship_address].filter(Boolean).join(' · ')) : `<i>${esc(SH.seeList)}</i>`}</td></tr>`; }).join('');
+    const rows = list.map((sh, i) => { const rec = recs.get(sh.shipment_id) || null;
+      return `<tr><td class="n">${i + 1}</td><td class="t">☐</td><td><b>${esc(kolName(sh))}</b></td><td>${esc((sh.items || []).map(x => `${x.tr_code} × ${x.qty}`).join(', ') || '—')}</td><td>${open && rec ? esc([rec.recipient, rec.phone, rec.address].filter(Boolean).join(' · ')) : `<i>${esc(SH.seeList)}</i>`}</td></tr>`; }).join('');
     recs.clear();
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(pl.name)}</title><style>@page{size:A4;margin:14mm}body{font:12px/1.4 system-ui,sans-serif;color:#111}h1{font-size:18px;margin:0 0 4px}` +
       `.m{color:#555;margin:0 0 10px}.c{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.c span{border:1px solid #999;border-radius:4px;padding:2px 6px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:6px;text-align:left;vertical-align:top}` +
@@ -333,10 +366,10 @@ KT.screens.shipments = (function () {
   async function exportList(fmt, list, pl) {
     const s = state(), { open, recs } = await shippingRecs(list), C2 = SM.col, idx = R.phaseIndex(s);
     const header = [C2.kol, C2.phase, SH.col.purpose, C2.items, C2.qty, C2.shipBy, C2.pic, C2.carrier, C2.tracking, C2.status].concat(open ? [SM.recipient, SM.phone, SM.address] : []);
-    const rows = list.map(sh => { const deal = dealOf(sh.deal_id), k = kolOf(sh), rec = (k && recs.get(k.kol_id)) || {}, ph = deal ? R.primaryPhase(idx, deal.deal_id) : null, camp = sh.campaign_id || (deal && deal.campaign_id);
+    const rows = list.map(sh => { const deal = dealOf(sh.deal_id), rec = recs.get(sh.shipment_id) || {}, ph = deal ? R.primaryPhase(idx, deal.deal_id) : null, camp = sh.campaign_id || (deal && deal.campaign_id);
       return [kolName(sh), [camp ? R.campaignName(s, camp) : '', ph && ph !== R.UNSCHEDULED && ph !== R.NEEDS ? R.phaseName(s, ph) : ''].filter(Boolean).join(' › '), SH.purposes[sh.purpose || 'review'], R.itemsText(sh.items),
         (sh.items || []).reduce((a, x) => a + (Number(x.qty) || 0), 0), sh.ship_by ? R.dmy(sh.ship_by) : '', R.shipPic(s, sh, deal), sh.carrier || '', sh.tracking_no || '', SM.status[R.sampleStatus(sh, today())]]
-        .concat(open ? [rec.ship_name || '', rec.ship_phone || '', rec.ship_address || ''] : []); });
+        .concat(open ? [rec.recipient || '', rec.phone || '', rec.address || ''] : []); });
     recs.clear();
     const name = KT.export.fileName(SM.file, KT.export.safeName(pl ? pl.name : sv.f.campaign ? R.campaignName(s, sv.f.campaign) : SH.allCampaigns), today(), fmt);
     if (fmt === 'csv') { U.downloadCSV(name, header, rows); return; }
@@ -354,7 +387,8 @@ KT.screens.shipments = (function () {
     const html = `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(SH.drawerTitle(sh.shipment_id))}</h2><div class="dr-sub muted small">${esc(kolName(sh))} · ${esc(SH.purposes[r.purpose])}</div></div>${closeBtn()}</div>` +
       (menu ? `<div class="dr-actions">${menu}</div>` : '') + `</div>` +
       `<div class="dr-body"><section class="sec"><div class="sec-h"><span>${esc(SM.sec)}</span></div>` +
-      kv(SH.recipient, `${esc(kolName(sh))} ${k && onFile(k.kol_id) ? `<span class="chip ok-chip">${esc(SH.addressOnFile)}</span>` : `<span class="chip">${esc(SH.noAddress)}</span>`}`) +
+      kv(SH.recipient, esc(kolName(sh))) +
+      kv(SM.shipTo, (a => (a ? `${esc(a.label)} ` : '') + (a && a.secure ? `<span class="chip ok-chip">${esc(SH.addressOnFile)}</span>` : `<span class="chip">${esc(SH.noAddress)}</span>`))(shipAddr(sh))) +
       kv(SH.purpose, esc(SH.purposes[r.purpose])) + kv(SH.campaign, r.campaign_id ? esc(R.campaignName(s, r.campaign_id)) : dash) + kv(SH.col.items, itemsCell(sh)) +
       kv(SH.col.shipBy, sh.ship_by ? esc(R.dmy(sh.ship_by)) : dash) + kv(SH.col.status, chip(st)) + kv(SH.col.carrier, sh.carrier ? esc(sh.carrier) : dash) + kv(SH.col.tracking, trackCell(sh) || dash) +
       kv(SH.col.shipped, sh.shipped_date ? esc(R.dmy(sh.shipped_date)) : dash) + kv(SH.col.delivered, sh.delivered_date ? esc(R.dmy(sh.delivered_date)) : dash) +
@@ -369,7 +403,7 @@ KT.screens.shipments = (function () {
   function newShipment(o) {
     if (!U.guard('shipment.edit')) return;
     const s = state(), d0 = o.dealId ? dealOf(o.dealId) : null;
-    const ns = { d: { purpose: o.purpose || (d0 ? 'review' : ''), kol_id: o.kolId || (d0 && d0.kol_id) || '', deal_id: d0 ? d0.deal_id : '', campaign_id: o.campaignId || (d0 && d0.campaign_id) || '', items: [], ship_by: '', note: '' },
+    const ns = { d: { purpose: o.purpose || (d0 ? 'review' : ''), kol_id: o.kolId || (d0 && d0.kol_id) || '', deal_id: d0 ? d0.deal_id : '', campaign_id: o.campaignId || (d0 && d0.campaign_id) || '', items: [], ship_by: '', note: '', address_id: '' },
       lock: !!o.lockDeal && !!d0, submitted: false, createKol: null, onlyProduct: false };
     ns.d.items = o.items ? o.items.slice() : R.shipItemsDefault(s, ns.d);
     ns.onlyProduct = !o.items && !ns.d.deal_id && ns.d.items.length === 1;
@@ -389,6 +423,8 @@ KT.screens.shipments = (function () {
         : U.field('ns_kol', SH.recipient, `<select id="ns_kol" data-ns="kol_id" data-key="kol_id" data-combo="kol" aria-label="${esc(SH.recipient)}"><option value="">${esc(SH.choose)}</option>${kolOpts}</select>`, { req: 1, hint: `${esc(SH.recipientHint)} ${addr ? '<br>' + addr : ''} <button type="button" class="link small" data-nsck>${esc(SH.createKol)}</button>` })) +
       (ns.lock ? '' : U.field('ns_deal', SH.deal, `<select id="ns_deal" data-ns="deal_id" data-key="deal_id"${d.kol_id ? '' : ' disabled'}><option value="">${esc(SH.noDealOpt)}</option>${deals.map(x => `<option value="${esc(x.deal_id)}"${x.deal_id === d.deal_id ? ' selected' : ''}>${esc(`${x.deal_id} · ${R.campaignName(s, x.campaign_id)} · ${x.sub_status}`)}</option>`).join('')}</select>`, { hint: esc(SH.dealHint) })) +
       U.field('ns_camp', SH.campaign, deal ? `<div><b>${esc(R.campaignName(s, deal.campaign_id))}</b></div>` : `<select id="ns_camp" data-ns="campaign_id" data-key="campaign_id" data-combo="campaign">${U.campaignOptionsHTML(d.campaign_id, C.common.none)}</select>`, { hint: esc(SH.campaignHint) }) +
+      /* CR-16 §4.3 — Ship to ▾ (blank = the KOL's default when it is marked shipped) */
+      (d.kol_id ? U.field('ns_shipto', SM.shipTo, `<select id="ns_shipto" data-ns="address_id" data-key="address_id"><option value="">${esc(SM.shipToDefault)}</option>${R.shipToOptions(s, d.kol_id).map(x => `<option value="${esc(x.value)}"${x.value === d.address_id ? ' selected' : ''}>${esc(x.secure ? x.label : SM.noDetails(x.label))}</option>`).join('')}</select>`, { hint: esc(SM.shipToHint) }) : '') +
       U.field('ns_shipby', SH.col.shipBy, U.dateHTML('id="ns_shipby" data-ns="ship_by" data-key="ship_by"', d.ship_by || (deal ? R.shipBy(deal, s.lookups.sample_settings) || '' : ''), { label: SH.col.shipBy })) +
       `<div class="field wide"><label for="ns_items_q">${esc(SH.items)}${ns.onlyProduct ? ` <span class="chip sh-from">${esc(SH.onlyProduct)}</span>` : ''}</label>${U.productPickerHTML('ns_items', codes)}` +
       (d.items.length ? `<div class="ns-qty">${d.items.map((x, i) => `<label class="ns-qrow"><span>${esc(x.tr_code)}</span><input type="number" min="1" step="1" data-nsqty="${i}" value="${esc(x.qty)}" aria-label="${esc(SH.qty)} ${esc(x.tr_code)}"></label>`).join('')}</div>` : '') +
@@ -411,7 +447,7 @@ KT.screens.shipments = (function () {
     body.oninput = e => { const q = e.target.closest('[data-nsqty]'); if (q) { const x = ns.d.items[+q.dataset.nsqty]; if (x) x.qty = Math.max(1, Math.round(Number(q.value) || 1)); ns.dirty = true; return; }
       const k = e.target.dataset.ns; if (k === 'note') { ns.d.note = e.target.value; ns.dirty = true; } };
     body.onchange = e => { const k = e.target.dataset.ns; if (!k) return; ns.dirty = true;
-      if (k === 'kol_id') { ns.d.kol_id = e.target.value; ns.d.deal_id = ''; drawNew(o); return; }
+      if (k === 'kol_id') { ns.d.kol_id = e.target.value; ns.d.deal_id = ''; ns.d.address_id = ''; drawNew(o); return; }
       if (k === 'deal_id') { ns.d.deal_id = e.target.value; const dd = dealOf(ns.d.deal_id); if (dd) { ns.d.campaign_id = dd.campaign_id; ns.d.items = R.shipItemsDefault(state(), ns.d); ns.d.ship_by = ''; } drawNew(o); return; }
       if (k === 'campaign_id') { ns.d.campaign_id = e.target.value; if (!ns.d.items.length) { ns.d.items = R.shipItemsDefault(state(), ns.d); ns.onlyProduct = ns.d.items.length === 1; drawNew(o); } return; }
       if (k === 'ship_by') { ns.d.ship_by = e.target.value; return; }
@@ -440,6 +476,7 @@ KT.screens.shipments = (function () {
     if (e.target.closest('#ns_ok')) {
       ns.submitted = true; const res = nsCheck(); if (!res || res.errs.length) return;
       const s = state(), sh = R.newManualShipment(s, ns.d, { id: store.newId('shipment'), user: userId(), now: new Date().toISOString() });
+      const pick = ns.d.address_id && R.addressById(s, ns.d.address_id); sh.address_id = pick && pick.kol_id === sh.kol_id ? pick.address_id : null;   // CR-16 §4.3
       if (sh.deal_id && !R.canEditShip(actor(), dealOf(sh.deal_id), sh)) { toast(SM.onlyEdit); return; }
       s.sample_shipments.push(sh);
       s.deal_events.push({ event_id: store.newEventId(), deal_id: sh.deal_id, shipment_id: sh.shipment_id, type: 'shipment', from: null, to: 'to_ship', changed_at: sh.created_at, changed_by: userId(), note: SH.purposes[sh.purpose] });

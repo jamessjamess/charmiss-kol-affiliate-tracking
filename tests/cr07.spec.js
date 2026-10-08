@@ -70,20 +70,20 @@
     });
     test('TC-13: only the chosen PIC · due today … today + 7 · by date · the step that is due', () => {
       const s = fresh(), deal = id => s.deals.find(d => d.deal_id === id), pending = id => s.deal_posts.filter(p => p.deal_id === id && !p.post_date);
-      deal('D000291').expected_draft1_date = '2026-10-08';                         // Amp · Brief → Draft 1
+      deal('D000291').expected_script_date = '2026-10-08';                         // Amp · Brief → Script (CR-15)
       pending('D000287').forEach(p => { p.expected_post_date = TD; });            // Amp · Draft 1 → Post, today
       pending('D000270').forEach(p => { p.expected_post_date = '2026-10-13'; });  // Amp · last day of the window
       pending('D000290').forEach(p => { p.expected_post_date = '2026-10-14'; });  // Amp · one day too late
-      deal('D000114').expected_draft1_date = '2026-10-07';                         // Pizza
+      deal('D000114').expected_script_date = '2026-10-07';                         // Pizza · Brief → Script (CR-15)
       const rows = R.upcomingDues(s, 'Amp', TD, 7);
       assert.deepEqual(rows.map(r => [r.deal.deal_id, r.due, R.stepShort(r.step.sub_status)]),
-        [['D000287', TD, 'Post'], ['D000291', '2026-10-08', 'Draft 1'], ['D000270', '2026-10-13', 'Post']]);
+        [['D000287', TD, 'Post'], ['D000291', '2026-10-08', 'Script'], ['D000270', '2026-10-13', 'Post']]);
       assert.deepEqual(R.upcomingDues(s, 'Pizza', TD, 7).map(r => r.deal.deal_id), ['D000114']);
       assert.deepEqual(R.upcomingDues(s, { pic: 'Amp', campaign: 'XX' }, TD, 7), [], 'the Campaign scope narrows it');
       assert.deepEqual(R.upcomingDues(s, 'Amp', '2026-10-07', 7).map(r => r.deal.deal_id), ['D000291', 'D000270', 'D000290'], 'a past due date drops out');
     });
-    test('stepShort: Approve Draft 2 → Draft 2 · Approve Script → Script · Post → Post', () => {
-      assert.deepEqual(['Approve Draft 2', 'Approve Script', 'Post', 'Confirm QT'].map(R.stepShort), ['Draft 2', 'Script', 'Post', 'Confirm QT']);
+    test('stepShort: Draft 2 → Draft 2 · Script → Script · Post → Post', () => {
+      assert.deepEqual(['Draft 2', 'Script', 'Post', 'Confirm QT'].map(R.stepShort), ['Draft 2', 'Script', 'Post', 'Confirm QT']);
     });
   });
 
@@ -251,34 +251,38 @@
     const dealOf = (s, id) => s.deals.find(d => d.deal_id === id);
     test('TC-42 / §5.0: D000119 — Confirm QT done (no date) · Brief 06/08 · Draft 1 done (no date) · Draft 2 14/08 ⏱ 8 d on time · Post 15/08 ⏱ 1 d · Brief → Post 9 d', () => {
       const s = fresh(), t = tl(s, dealOf(s, 'D000119'));
+      /* CR-15: Script and Approve were passed before they existed — "—" (not recorded), no warning */
       assert.deepEqual(t.steps.map(row), [['Confirm QT', 'nodate', null, null, null, null, null], ['Brief', 'done', '2026-08-06', null, null, null, null],
-        ['Draft 1', 'nodate', null, null, null, null, null], ['Draft 2', 'done', '2026-08-14', 8, null, null, null], ['Post', 'done', '2026-08-15', 1, null, null, null]]);
+        ['Script', 'nodate', null, null, null, null, null], ['Draft 1', 'nodate', null, null, null, null, null], ['Draft 2', 'done', '2026-08-14', 8, null, null, null],
+        ['Approve', 'nodate', null, null, null, null, null], ['Post', 'done', '2026-08-15', 1, null, null, null]]);
       assert.deepEqual(t.summary, { kind: 'complete', days: 9 });
       assert.ok(t.steps.every(x => !x.late_days), 'no late label');
     });
     test('TC-43 / §5.0: D000044 — Brief 03/09 done · Draft 1 waiting 33 d (no expected) · Post due 07/09, 29 d overdue · payment track Docs → 50% → Paid', () => {
       const s = fresh(), d = dealOf(s, 'D000044'), t = tl(s, d);
+      /* CR-15: at Brief the deal waits on Script */
       assert.deepEqual(t.steps.map(row), [['Confirm QT', 'nodate', null, null, null, null, null], ['Brief', 'done', '2026-09-03', null, null, null, null],
-        ['Draft 1', 'current', null, null, null, null, 33], ['Post', 'overdue', null, null, null, 29, null]]);
-      assert.equal(t.steps[3].expected, '2026-09-07');
+        ['Script', 'current', null, null, null, null, 33], ['Draft 1', 'upcoming', null, null, null, null, null], ['Approve', 'upcoming', null, null, null, null, null],
+        ['Post', 'overdue', null, null, null, 29, null]]);
+      assert.equal(t.steps[5].expected, '2026-09-07');
       assert.deepEqual(t.summary, { kind: 'progress', days: 33 });
       const p = R.paymentTimeline(d, TD);
       assert.deepEqual([p.term, p.state, p.items.map(x => [x.flag, x.done])], [null, 'not_due', [['docs_done', false], ['paid_50', false], ['paid_full', false]]]);
     });
     test('TC-44: Draft 1 approved 3 days after its expected date → done late "+3 d late"', () => {
-      const s = fresh(), d = Object.assign({}, dealOf(s, 'D000044'), { sub_status: 'Approve Draft 1', expected_draft1_date: '2026-09-10', approved_draft1_date: '2026-09-13' });
+      const s = fresh(), d = Object.assign({}, dealOf(s, 'D000044'), { sub_status: 'Draft 1', expected_draft1_date: '2026-09-10', approved_draft1_date: '2026-09-13' });
       const x = tl(s, d).steps.find(y => y.short === 'Draft 1');
       assert.deepEqual([x.state, x.date, x.late_days, x.days], ['late', '2026-09-13', 3, 10]);
       assert.equal(C.journey.late(x.late_days), '+3 d late');
-      const cur = tl(s, Object.assign({}, dealOf(s, 'D000044'), { expected_draft1_date: '2026-10-01' })).steps.find(y => y.short === 'Draft 1');
-      assert.deepEqual([cur.state, cur.waiting, cur.overdue_days], ['current', 33, 5], 'a waiting step past its expected date');
+      const cur = tl(s, Object.assign({}, dealOf(s, 'D000044'), { sub_status: 'Script', expected_draft1_date: '2026-10-01' })).steps.find(y => y.short === 'Draft 1');
+      assert.deepEqual([cur.state, cur.overdue_days], ['current', 5], 'a waiting step past its expected date (CR-15: after Script)');
     });
-    test('TC-45: Script + 3 drafts = 8 steps (Shortlist / Contacted only when the deal was there)', () => {
-      const s = fresh(), d = Object.assign({}, dealOf(s, 'D000044'), { draft_rounds: 3, script_required: true });
+    test('TC-45: 3 drafts = 8 steps with Script and Approve (CR-15) · Shortlist / Contacted only when the deal was there', () => {
+      const s = fresh(), d = Object.assign({}, dealOf(s, 'D000044'), { draft_rounds: 3 });
       const t = tl(s, d);
-      assert.deepEqual(t.steps.map(x => x.short), ['Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Post']);
+      assert.deepEqual(t.steps.map(x => x.short), ['Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Approve', 'Post']);
       const logs = R.logsOf(s, 'D000044').concat([{ log_id: 1, deal_id: 'D000044', sub_status: 'Contacted', effective_date: '2026-08-20' }]);
-      assert.deepEqual(R.dealTimeline(s.lookups, d, logs, R.postsOf(s, 'D000044'), TD).steps.map(x => x.short), ['Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Post']);
+      assert.deepEqual(R.dealTimeline(s.lookups, d, logs, R.postsOf(s, 'D000044'), TD).steps.map(x => x.short), ['Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Approve', 'Post']);
     });
     test('TC-46: a cancelled deal stops at the step it reached, then "Cancelled" with its date and reason', () => {
       const s = fresh(), d = Object.assign({}, dealOf(s, 'D000044'), { status: 'Cancel', sub_status: 'Cancel', cancel_reason: 'KOL ไม่ตอบ' });

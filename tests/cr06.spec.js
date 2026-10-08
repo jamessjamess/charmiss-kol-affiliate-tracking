@@ -51,7 +51,7 @@
     test('Phase Planner: overlap names and the impact list use "Phase n · label" · labels may repeat', () => {
       const s = fresh(), row = (label, a, z) => ({ key: label + a, phase_id: null, label, start_date: a, end_date: z, budget_kol: 10 });
       const v = R.validatePhasePlan(s, { campaign_id: null, campaign_name: 'New', budget_kol: 100 }, [row('B', '2026-11-08', '2026-11-12'), row('A', '2026-11-01', '2026-11-10')], []);
-      assert.deepEqual(v.warns.map(w => w.msg), [C.msg.phaseOverlap('Phase 2 · B', 'Phase 1 · A', '08/11', '10/11')]);
+      assert.deepEqual(v.warns.filter(w => w.kind !== 'under').map(w => w.msg), [C.msg.phaseOverlap('Phase 2 · B', 'Phase 1 · A', '08/11', '10/11')]);   // (CR-18: + the red Unallocated line)
       assert.deepEqual(R.validatePhasePlan(s, { campaign_id: null, campaign_name: 'New', budget_kol: 100 }, [row('Same', '2026-11-01', '2026-11-05'), row('Same', '2026-11-06', '2026-11-08')], []).errs, []);
       const rows = R.sortPhases(s.phases.filter(p => p.campaign_id === 'PH')).map(p => ({ key: p.phase_id, phase_id: p.phase_id, label: p.label, start_date: p.start_date, end_date: p.end_date, budget_kol: p.budget_kol }));
       assert.deepEqual(R.planImpact(s, 'PH', rows, []).rows.map(r => r.name), names(s, 'PH'));
@@ -266,12 +266,12 @@
     });
     /* CR-13 §4.4 supersedes the tabs Open · Needs action · Complete · Cancelled · All → All · List · In process · Complete · Cancelled
        (Open = List + In process) · Needs action → attention chips without Unpaid after posting (cr13.spec.js TC-13 / TC-15) */
-    test('TC-26 (CR-13): Charming, All PICs — All 101 · List 3 + In process 11 (= the 14 open) · Complete 87 · Cancelled 0 · Overdue 3', () => {
+    test('TC-26 (CR-13 · CR-15): Charming, All PICs — All 101 · List 3 + In process 11 (= the 14 open) · Complete 87 · Cancelled 0 · Overdue 2', () => {
       const s = fresh(), t = R.dealTabs(s, scoped(s, ''), TD, null, { tab: 'all' });
       assert.deepEqual(R.DEAL_TABS.map(k => t.counts[k]), [101, 3, 11, 87, 0]);
-      assert.equal(t.chips.overdue, 3);
+      assert.equal(t.chips.overdue, 2, 'CR-15: pangxnstory (Brief) waits on Script — no due date yet');
       const rows = scoped(s, '');
-      assert.equal(rows.filter(d => R.hasReason(d, 'overdue', t.why)).length, 3);
+      assert.equal(rows.filter(d => R.hasReason(d, 'overdue', t.why)).length, 2);
       assert.equal(rows.filter(d => R.inDealTab(d, 'list') || R.inDealTab(d, 'inprocess')).every(d => d.status === 'List' || d.status === 'Inprocess'), true);
     });
     test('TC-23 / TC-24 (CR-13): Me (Ja) open 9 · Pang open 3 · Unassigned open 1 (List + In process)', () => {
@@ -285,7 +285,7 @@
       const byPic = R.groupDeals(s, open, 'pic', ctx, TD);
       assert.equal(byPic.reduce((a, g) => a + g.rows.length, 0), 14);
       assert.equal(byPic[byPic.length - 1].key, '', 'Unassigned last');
-      assert.deepEqual(R.attentionReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx).map(x => x.key), ['overdue', 'shipOverdue'], 'CR-13 §4.5: its sample is past Ship by too');
+      assert.deepEqual(R.attentionReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx).map(x => x.key), ['shipOverdue'], 'CR-13 §4.5: its sample is past Ship by · CR-15: at Brief it waits on Script (no due)');
     });
     test('summary of the scope: Committed ฿863,700 / ฿850,000 · Pending ฿5,100 · Paid ฿233,500', () => {
       const s = fresh(), ctx = R.dealContext(s), t = R.dealTiles(s, scoped(s, ''), { campaignId: 'CH', phaseIds: null }, TD, ctx.phaseIdx);
@@ -295,37 +295,41 @@
 
   describe('CR-06 R5 · Pipeline drag & drop', () => {
     const dealOf = (s, name) => { const k = s.kol_master.find(x => x.display_name === name); return s.deals.find(d => d.kol_id === k.kol_id && (d.status === 'List' || d.status === 'Inprocess')); };
-    test('TC-29: nanomona777 (Brief) → Approve Draft 1 goes straight away · the approved date is today', () => {
+    test('TC-29 (CR-15 TC-05): nanomona777 (Brief) → Script goes straight away · → Draft 1 opens Move stage (Script is marked done the same day)', () => {
       const s = fresh(), d = dealOf(s, 'nanomona777');
       assert.equal(d.sub_status, 'Brief');
       /* the seed deal has no Pillar (its old pillar sits in Remark) → §4.7: the dialog asks for it first */
-      assert.deepEqual(R.dropPlan(s, d, 'Approve Draft 1', TD), { kind: 'dialog' });
-      d.pillar = 'Awareness';
-      assert.deepEqual(R.dropPlan(s, d, 'Approve Draft 1', TD), { kind: 'instant' });
-      const r = R.applyMove(s, d, 'Approve Draft 1', { date: TD, note: '' }, { logId: 999, quoteId: 'Q9', eventId: 9, now: new Date(), user: 'U000' });
-      assert.deepEqual([r.deal.sub_status, r.deal.approved_draft1_date, r.log.from_sub_status], ['Approve Draft 1', TD, 'Brief']);
+      assert.deepEqual(R.dropPlan(s, d, 'Draft 1', TD), { kind: 'dialog' });
+      Object.assign(d, { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, expected_draft1_date: '2026-10-15' });   // CR-20 §4.7 · §4.15: the term, and the expected Draft 1 date that Script asks for
+      assert.deepEqual(R.dropPlan(s, d, 'Script', TD), { kind: 'instant' });
+      assert.deepEqual(R.dropPlan(s, d, 'Draft 1', TD), { kind: 'dialog' }, 'a step passed on the way → the dialog says so');
+      assert.ok(R.checkMove(s, d, 'Draft 1', { date: TD }).warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TD).slice(0, 5), 'Script')));
+      const r = R.applyMove(s, d, 'Draft 1', { date: TD, note: '' }, { logId: 999, quoteId: 'Q9', eventId: 9, now: new Date(), user: 'U000' });
+      assert.deepEqual([r.deal.sub_status, r.deal.approved_draft1_date, r.deal.script_date, r.log.from_sub_status], ['Draft 1', TD, TD, 'Script']);
+      assert.deepEqual(r.logs.map(l => [l.sub_status, l.note]), [['Script', C.msg.autoCompleted], ['Draft 1', null]]);
       assert.deepEqual(R.dropPlan(s, d, 'Brief', TD), { kind: 'same' });
     });
-    test('TC-30: tuckpx (Approve Draft 2) back to Brief opens Move stage (a note is needed)', () => {
+    test('TC-30: tuckpx (Draft 2) back to Brief opens Move stage (a note is needed)', () => {
       const s = fresh(), d = dealOf(s, 'tuckpx');
-      assert.equal(d.sub_status, 'Approve Draft 2');
+      assert.equal(d.sub_status, 'Draft 2');
       assert.equal(R.dropPlan(s, d, 'Brief', TD).kind, 'dialog');
       assert.ok(R.checkMove(s, d, 'Brief', { date: TD }).errs.some(e => e.msg === C.msg.moveBackNote));
       assert.equal(R.dropPlan(s, d, 'Cancel', TD).kind, 'dialog', 'Cancel needs a reason');
     });
-    test('TC-31: Post while a post has no link / date cannot be dropped ("1 post missing link/date")', () => {
+    test('TC-31 (CR-20 §4.9 · §4.14): Post while a post has no link / date → the Move stage dialog asks for the posted link (no longer blocked)', () => {
       const s = fresh(), d = dealOf(s, 'tuckpx'), posts = R.postsOf(s, d.deal_id), bad = posts.filter(p => !R.postDone(p)).length;
       assert.ok(bad > 0);
-      assert.deepEqual(R.dropPlan(s, d, 'Post', TD), { kind: 'blocked', msg: C.msg.dropPostsMissing(bad) });
+      assert.deepEqual(R.dropPlan(s, d, 'Post', TD), { kind: 'dialog' });
+      assert.ok(R.stageRequirements(s, d, 'Post', {}).post);
       assert.equal(C.msg.dropPostsMissing(1), '1 post missing link/date');
     });
     test('TC-32: a Draft beyond the plan opens Move stage with "+ Add draft round" · skipping steps asks too · a cancelled Campaign blocks', () => {
       const s = fresh(), d = dealOf(s, 'nanomona777');
       assert.equal(R.planOf(d).drafts < 3, true);
-      assert.equal(R.dropPlan(s, d, 'Approve Draft 3', TD).kind, 'dialog');
-      assert.equal(R.checkMove(s, d, 'Approve Draft 3', { date: TD }).errs[0].code, 'add_round');
+      assert.equal(R.dropPlan(s, d, 'Draft 3', TD).kind, 'dialog');
+      assert.equal(R.checkMove(s, d, 'Draft 3', { date: TD }).errs[0].code, 'add_round');
       s.campaigns.find(c => c.campaign_id === d.campaign_id).status_override = 'cancelled';
-      assert.equal(R.dropPlan(s, d, 'Approve Draft 1', TD).kind, 'blocked');
+      assert.equal(R.dropPlan(s, d, 'Draft 1', TD).kind, 'blocked');
     });
   });
 

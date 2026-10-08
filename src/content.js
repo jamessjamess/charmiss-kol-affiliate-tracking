@@ -118,13 +118,15 @@ KT.content = (function () {
     /* CR-07 §4.9 — the Journey timeline (like an SLA) and the payment track */
     journey: {
       took: n => `⏱ ${n} d`, late: n => `+${n} d late`, overdue: n => `${n} d overdue`, waiting: n => `Waiting ${n} d`, due: d => `Due ${d}`,
-      dateNotRecorded: 'Date not recorded', cancelled: d => (d ? `Cancelled ${d}` : 'Cancelled'), briefToPost: n => `Brief → Post: ${n} d`, inProgress: n => `In progress ${n} d since Brief`,
+      dateNotRecorded: 'Not recorded', cancelled: d => (d ? `Cancelled ${d}` : 'Cancelled'), briefToPost: n => `Brief → Post: ${n} d`, inProgress: n => `In progress ${n} d since Brief`,
       passedOn: d => `Passed ${d}`, expected: d => `Expected ${d}`, by: n => `By ${n}`, noExpected: 'No expected date', notYet: 'Not reached yet',
       state: { done: 'Done', late: 'Done late', nodate: 'Done (no date)', current: 'In progress', upcoming: 'Upcoming', overdue: 'Overdue', cancelled: 'Cancelled' },
       before_brief: 'Before Brief', after_post: 'After Post', payment: 'Payment',
     },
     /* CR-07 §4.8 — copy a KOL name */
     copy: { name: 'Copy name', aria: n => `Copy name ${n}`, copied: n => `Copied: ${n}`, failed: "Couldn't copy" },
+    /* CR-14 §4.2 — ui.multiSelect */
+    ms: { search: 'Search', noMatches: 'No matches', selectAll: 'Select all', clear: 'Clear', reset: 'Reset', nSelected: n => `${n} selected` },
     /* CR-07 §4.5 — costs are typed by hand, next to a Price reference */
     priceRef: {
       title: 'Price reference', latest: 'Latest rate', average: 'Average of past deals', use: 'Use', useTip: l => `Fill the five costs with ${l}`,
@@ -169,7 +171,7 @@ KT.content = (function () {
       permTitle: 'Permissions', permAction: 'Action',
       perm: { view: 'See every page (except Role Management) · Export CSV · Backup', 'deal.edit': 'Create / edit deals, posts, Move stage, payment, PIC inline, Set pillar',
         'kol.edit': 'Create / edit KOLs, accounts, rates · Import KOL CSV', 'deal.money': "Change costs after a payment (with a reason) · move a deal to another Campaign",
-        'kol.merge': 'Merge KOL · delete deals / KOLs', 'campaign.products': 'Campaign products · + New product (into the catalog)', 'campaign.edit': 'Create / edit Campaign & Phase · Phase Planner · Campaign budget · % Phase · CTA · pillar target',
+        'kol.merge': 'Merge KOL · delete deals / KOLs', 'campaign.products': 'Campaign products · + New product (into the catalog)', 'campaign.edit': 'Approve / Reject Campaigns & Phases (CR-17) · change budget, period, pillar target and phases at once · On hold / Cancelled',
         'settings.lists': 'Settings › Lists (Journey steps, Pillar, CTA, Platform) · Pillar targets · Products', 'settings.tiers': 'Settings › Tier rules',
         'data.restore': 'Restore / Reset to seed', roles: 'Role Management',
         /* CR-08 §4.9 */
@@ -188,8 +190,8 @@ KT.content = (function () {
 
     common: {
       save: 'Save', cancel: 'Cancel', close: 'Close', none: '—',
-      ok: 'ข้อมูลครบ บันทึกได้',
-      blockWhileEditing: 'กดบันทึกหรือยกเลิกการแก้ไขก่อน',
+      ok: 'Ready to save',
+      blockWhileEditing: 'Save or cancel the edit first',
       savedToast: label => `บันทึก ${label} แล้ว`,
       deletedToast: label => `ลบ ${label} แล้ว`,
       days: n => `${n} days`,
@@ -197,7 +199,7 @@ KT.content = (function () {
       allOf: id => `All ${id}`,
       datePh: 'dd/mm/yyyy', pickDate: 'Pick a date',
       about: 'About this number',
-      discardTitle: 'Discard changes?', discardBody: 'การแก้ไขที่ยังไม่ได้บันทึกจะหายไป', discard: 'Discard', keepEditing: 'Keep editing', back: 'Back',
+      discardTitle: 'Discard changes?', discardBody: 'What you typed and did not save will be lost.', discard: 'Discard', keepEditing: 'Keep editing', back: 'Back',
       /* CR-11 §4.2 — after Create: "<Thing> created · Open" */
       created: thing => `${thing} created`, open: 'Open',
       /* CR-07 §4.4 — the chip row of Deals and KOL Master */
@@ -215,7 +217,7 @@ KT.content = (function () {
       firstLoad: 'โหลดข้อมูลตั้งต้นแล้ว',
     },
 
-    counts: { campaigns: 'Campaigns', phases: 'Phases', kol_master: 'KOLs', kol_accounts: 'Accounts', kol_rate_quotes: 'Rates', deals: 'Deals', deal_posts: 'Posts', deal_status_log: 'Status log', deal_events: 'Change log', users: 'Users', campaign_events: 'Campaign log', products: 'Products', campaign_products: 'Campaign products', deal_products: 'Deal products',
+    counts: { campaigns: 'Campaigns', phases: 'Phases', kol_master: 'KOLs', kol_accounts: 'Accounts', kol_rate_quotes: 'Rates', deals: 'Deals', deal_posts: 'Posts', deal_status_log: 'Status log', deal_events: 'Change log', users: 'Users', campaign_events: 'Campaign log', products: 'Products', campaign_products: 'Campaign products', deal_products: 'Deal products', kol_packages: 'Packages', step_notes: 'Draft notes',
       payee_profiles: 'Payees', payment_lines: 'Payment lines', payment_runs: 'Payment runs' },
 
     /* CR-08 — Payments (R1: settings) */
@@ -224,7 +226,7 @@ KT.content = (function () {
         defInd: 'Default WHT · Individual', defCo: 'Default WHT · Company', band1: 'Amount ranges · first limit (฿)', band2: 'Amount ranges · second limit (฿)', bandsHint: 'Payment runs group lines: under band 1 · band 1 – band 2 · band 2 and above',
         weekday: 'Payment run day', accounting: 'Confirm tax settings with Accounting.', saved: 'บันทึก Payment settings แล้ว' },
       weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-      milestone: { deposit: 'Deposit', final: 'Final', full: 'Full', manual: 'Manual' },
+      milestone: { deposit: 'Deposit', final: 'Final', full: 'Full', manual: 'Manual', package: 'Package', extras: 'Extras' },
       /* CR-08 §4.2 / §4.5 — Payments page · To pay */
       title: 'Payments', tabs: { topay: 'To pay', runs: 'Payment runs', accounting: 'Accounting' },
       /* CR-09 §4.15 — who uses each tab · the Accounting tab */
@@ -237,7 +239,7 @@ KT.content = (function () {
       runsToPay: 'Runs to pay', noRunsToPay: 'No run is waiting for Accounting', whtCerts: 'WHT certificates', noWhtToSend: 'Every WHT certificate has been sent', paidSec: 'Paid',
       markSent: 'Mark sent', sendTo: 'Send to', sendToLocked: 'Unlock to see', open: 'Open', outsidePickTitle: 'Mark paid outside the app — pick the lines',
       dueNow: 'Due now', inRuns: 'In runs', paidMonth: 'Paid this month',
-      pic: 'PIC', campaign: 'Campaign', allCampaigns: 'All campaigns', source: 'Source', allSources: 'All', sources: { deal: 'Deals', affiliate: 'Affiliate', other: 'Other', legacy: 'Paid outside app' },
+      pic: 'PIC', campaign: 'Campaign', allCampaigns: 'All campaigns', source: 'Source', allSources: 'All', sources: { deal: 'Deals', affiliate: 'Affiliate', other: 'Other', legacy: 'Paid outside app', package: 'Package' },
       search: 'Search KOL, @handle or payee ID', cards: { ready: 'Ready', missing: 'Missing docs', hold: 'On hold', upcoming: 'Upcoming 14 days', check: 'Needs check' },
       groupBy: { readiness: 'Readiness', amount: 'Amount', pic: 'PIC', campaign: 'Campaign' }, csv: 'Payments CSV',
       /* CR-09 §4.14 — Amount ranges · fold · one Status column */
@@ -332,9 +334,9 @@ KT.content = (function () {
     stage: { posted: 'Posted', cancelled: 'Cancelled', script: 'Script', draftOf: (n, m) => `Draft ${n} of ${m}`, ofPlan: (n, m) => `(${n} of ${m})` },
     payment: { none: 'Not started', docs_done: 'Docs done', paid_50: '50% paid', paid_full: 'Paid' },
     /* CR-02 §3.1 / §4.3 */
-    term: { prepaid: 'Prepaid', split_50: '50/50', postpaid: 'Pay after post', free: 'Free', none: 'Not set' },
+    term: { prepaid: 'Prepaid', split_50: '50/50', postpaid: 'Pay after post', free: 'Free', package: 'Package', none: 'Not set' },
     payState: { paid: 'Paid', deposit_paid: 'Deposit paid', overdue: 'Overdue', due: 'Due', not_due: 'Not due', free: 'Free' },
-    termShort: { prepaid: 'Prepaid', split_50: '50/50', postpaid: 'After post', free: 'Free', none: 'Not set' },
+    termShort: { prepaid: 'Prepaid', split_50: '50/50', postpaid: 'After post', free: 'Free', package: 'Package', none: 'Not set' },
     payStep: { docs_done: 'Docs', paid_50: '50%', deposit: 'Deposit 50%', paid_full: 'Paid' },
     /* CR-02 §4.8 */
     phaseStatus: { ongoing: 'On going', not_started: 'Not started', complete: 'Complete', on_hold: 'On hold', cancelled: 'Cancelled' },
@@ -343,6 +345,9 @@ KT.content = (function () {
       title: 'Dashboard',
       /* CR-05 §4.6 — tabs · All campaigns · Operations */
       tabs: { all: 'All campaigns', campaign: 'By campaign', ops: 'Operations' },
+      /* CR-14 §4.1 — Status (instead of Include cancelled) */
+      statusL: 'Status', statusBtn: v => `Status: ${v}`, statusAllExcept: 'All except cancelled', statusAll: 'All', statusMin: 'Select at least one status',
+      statusTip: 'The status of each campaign today · every card, table and chart of this tab follows it',
       presets: { this_year: 'This year', this_quarter: 'This quarter', this_month: 'This month', last_month: 'Last month', custom: 'Custom', last30: 'Last 30 days', last90: 'Last 90 days' },
       apply: 'Apply', customInvalid: 'ใส่วันเริ่มและวันสิ้นสุดให้ถูกต้อง (วันสิ้นสุดต้องไม่ก่อนวันเริ่ม)',
       inCampaigns: n => `in ${n} campaign${n === 1 ? '' : 's'}`,
@@ -377,11 +382,11 @@ KT.content = (function () {
       attentionTitle: 'Needs attention',
       attnOverdue: 'Overdue', attnBeforeBrief: 'Payment before brief', attnTermNotSet: 'Payment term not set', attnPhaseToAssign: 'Phase to assign', attnPillarNotSet: 'Pillar not set', attnNoDate: 'Posted without date', attnOutside: (a, b) => `Post date outside ${a} – ${b}`,
       allClear: 'All clear',
-      /* CR-03 §4.7 — Campaign / Phase filters, summary cards, Activity by date, Phase budget, Allocation vs target */
+      /* CR-03 §4.7 — Campaign / Phase filters, summary cards, Activity by date, Phase budget, Pillar allocation (CR-19) */
       campaign: 'Campaign', phase: 'Phase', allCampaigns: 'All campaigns', allPhases: 'All phases',
       rangeRunning: (a, b, d, n) => `${a} – ${b} · Day ${d} of ${n}`, rangeEnded: d => `Ended ${d}`, rangeStarts: (d, n) => `Starts ${d} · in ${n} day${n === 1 ? '' : 's'}`,
       activityTitle: 'Activity by date', mPosts: 'Posts', mSpend: 'Spend', colorBy: 'Color by', byPhase: 'Phase', byCampaign: 'Campaign', byPillar: 'Pillar',
-      phaseBudgetTitle: 'Phase budget', allocTitle: 'Allocation vs target', actualOf: n => `Actual · ${n}`, workloadTip: 'Open a PIC in Operations',
+      phaseBudgetTitle: 'Phase budget', allocTitle: 'Pillar allocation', actualOf: n => `Actual · ${n}`, workloadTip: 'Open a PIC in Operations',
       shortlistTip: 'Deals at Shortlist or Contacted — not counted in Committed', shortlistLine: x => `+ ${x} pending`,
       completedLine: (n, p) => `${n} completed · ${p}%`, cancelledN: n => `${n} cancelled`, budgetCard: 'Budget', paidOfCommitted: 'Dark = Paid (est.) · light = Committed',
       paidLine: x => `Paid ${x}`, overBy: x => `Over by ${x}`, remainingLine: x => `Remaining ${x}`,
@@ -418,20 +423,19 @@ KT.content = (function () {
       tierSlice: (tier, money, n, pct) => `${tier} · ${money} · ${n} deal${n === 1 ? '' : 's'} · ${pct}%`,
       /* CR-13 §4.2 — Pillar mix */
       pillarTitle: 'Pillar mix', pillarTip: 'Committed deals (Confirm QT on, not cancelled) of the campaigns in this range, by the pillar of the deal.',
-      pillarLabel: 'Pillar', pctTotal: '% of total', target: 'Target', delta: 'Δ',
-      deltaTip: '% within the deals that have a pillar, minus the target (the same as Allocation vs target) · the target is each campaign\'s, weighted by its budget',
-      pillarSlice: (p, money, n, pct, ofSet, target) => `${p} · ${money} · ${n} deal${n === 1 ? '' : 's'} · ${pct}% of total${ofSet != null ? ` · ${ofSet}% of set (target ${target}%)` : ''}`,
+      pillarLabel: 'Pillar', pctTotal: '% of total',
+      pillarSlice: (p, money, n, pct) => `${p} · ${money} · ${n} deal${n === 1 ? '' : 's'} · ${pct}% of total`,
       noPillarLine: pct => `${pct}% of spend has no pillar`, setDefaults: 'Set default pillar per phase', notSet: 'Not set',
       colDaysLeft: 'Days left', daysLeftTip: 'On going: days to the last day · Not started: days to the start.',
       daysLeft: { left: n => `${n} day${n === 1 ? '' : 's'} left`, last: 'Last day', starts: n => `Starts in ${n} day${n === 1 ? '' : 's'}`, hold: 'On hold', none: '—' },
       exportTab: 'Export', exportTip: 'One Excel file: a sheet for each part of this tab', download: 'Download', dlXlsx: 'Download Excel (.xlsx)', dlCsv: 'Download CSV',
       sheet: { summary: 'Summary', activity: 'Activity', tiermix: 'KOL tier mix', pillarmix: 'Pillar mix', portfolio: 'Campaign portfolio', activityCamp: 'Activity by date', phasebudget: 'Phase budget',
-        allocation: 'Allocation vs target', workload: 'Workload by PIC', queue: 'Queue', pipeline: 'Active pipeline', due: 'Due in next 7 days' },
+        allocation: 'Pillar allocation', workload: 'Workload by PIC', queue: 'Queue', pipeline: 'Active pipeline', due: 'Due in next 7 days' },
       file: { summary: 'Summary', activity: 'Activity_by_campaign', tiermix: 'KOL_tier_mix', portfolio: 'Campaign_portfolio', tab_all: 'Dashboard_All_campaigns',
-        activity_camp: 'Activity_by_date', phasebudget: 'Phase_budget', allocation: 'Allocation_vs_target', workload: 'Workload_by_PIC', tab_campaign: 'Dashboard_By_campaign',
+        activity_camp: 'Activity_by_date', phasebudget: 'Phase_budget', allocation: 'Pillar_allocation', workload: 'Workload_by_PIC', tab_campaign: 'Dashboard_By_campaign',
         queue: 'Operations_queue', tab_ops: 'Dashboard_Operations' },
       colRow: 'Row', queuesL: 'Queues', queueShown: 'Queue shown', byTier: 'KOL Tier', allPicsOps: 'All PICs', phaseTip: p => `Phase · ${p}`,
-      meta: { tab: 'Tab', scope: 'Scope', exported: 'Exported', by: 'Exported by' }, colCard: 'Card', colMetric: 'Metric', colValue: 'Value',
+      meta: { tab: 'Tab', scope: 'Scope', status: 'Status', exported: 'Exported', by: 'Exported by' }, colCard: 'Card', colMetric: 'Metric', colValue: 'Value',
       colFrom: 'From', colTo: 'To', colWeekStart: 'Week starting', sortBy: l => `Sort by ${l}`,
       dueTitle: 'Due in next 7 days', dueNone: 'Nothing due in the next 7 days', collectMetrics: 'Collect metrics', dueToday: 'Today', dueTomorrow: 'Tomorrow', colDue: 'Due', colStep: 'Step',
       campaignTotal: 'Campaign', target: 'Target', actual: 'Actual', gapTip: 'Actual share of the deals with a pillar, minus the target (percentage points)', noCommitted: 'Nothing committed',
@@ -451,7 +455,7 @@ KT.content = (function () {
       createKolOpt: t => `+ Create KOL "${t}"`, moveTermHint: 'Needed from Confirm QT on — saved with the move',
       histEdit: 'Edited', histMetrics: id => `Metrics ${id}`, histCost: 'Costs changed after payment', histCta: (a, b) => `CTA ${a || '—'} → ${b || '—'}`, postWord: 'Post', postAdded: 'added', postRemoved: 'removed',
       tierTip: (h, n) => `Based on @${h} · ${n} followers`, tierUnknownTip: 'No followers recorded for this KOL',
-      groupBy: 'Group by', groupByOpt: { stage: 'Stage', phase: 'Phase', tier: 'KOL Tier', pic: 'PIC', none: 'None' }, expandAll: 'Expand all groups', collapseAll: 'Collapse all groups',
+      groupBy: 'Group by', groupByOpt: { stage: 'Stage', phase: 'Phase', tier: 'KOL Tier', pic: 'Assigned to', none: 'None' }, expandAll: 'Expand all groups', collapseAll: 'Collapse all groups',
       /* CR-06 §4.6 */
       views: { table: 'Table', pipeline: 'Pipeline', payments: 'Payments', samples: 'Samples', performance: 'Performance' },
       /* CR-06 §4.8 — Payments view */
@@ -472,7 +476,7 @@ KT.content = (function () {
       colDaysIn: 'Days in stage', colWarnings: 'Needs doing', popSearch: 'Search KOL, PIC or deal ID', popMoveTo: 'Move to', popNext: 'next', popMove: 'Move',
       popExport: 'Export', popNone: 'No deals at this stage', backTo: k => `← Back to ${k}`,
       popMoved: (n, left, to) => `ย้าย ${n} deal ไป ${to}` + (left ? ` · ${left} deal ต้องย้ายทีละรายการด้วย Move stage` : ''),
-      movedTo: s => `Moved to ${s}`, moveUndone: 'ย้อนการย้ายขั้นแล้ว', moveToMenu: 'Move to…', cardMenu: 'Card actions', dragHint: 'Drag a card to another stage, or use ⋯ › Move to…', picMe: n => `Me (${n})`, allPics: 'All PICs', unassigned: 'Unassigned', density: 'View density', paidShort: 'Paid',
+      movedTo: s => `Moved to ${s}`, moveUndone: 'Move undone', moveToMenu: 'Move to…', cardMenu: 'Card actions', dragHint: 'Drag a card to another stage, or use ⋯ › Move to…', picMe: n => `Me (${n})`, allPics: 'All PICs', unassigned: 'Unassigned', density: 'View density', paidShort: 'Paid',
       /* CR-13 §4.4 — state tabs = the groups of the Pipeline · §4.5 attention chips (the words of Dashboard › Operations › To do) */
       tabs: { all: 'All', list: 'List', inprocess: 'In process', complete: 'Complete', cancelled: 'Cancelled' },
       attn: { overdue: 'Overdue', needsPhase: 'Needs phase', shipOverdue: 'Shipment overdue', metricsDue: 'Metrics due', docs: 'Docs to collect' },
@@ -485,13 +489,13 @@ KT.content = (function () {
       groupOverdue: n => `${n} overdue`, avgDeal: x => `avg ${x} / deal`, groupViews: x => `Views ${x}`, groupCpv: x => `CPV ฿${x}`,
       followersRange: (a, b) => `${a} – ${b}`, followersFrom: a => `${a}+`, noFollowers: 'No followers',
       f: {
-        campaign_id: 'Campaign', phase_id: 'Phase', phase_override: 'Phase', kol_id: 'KOL', sub_status: 'Stage', pillar: 'Pillar', pic: 'PIC', cta: 'CTA', products: 'Products',
+        campaign_id: 'Campaign', phase_id: 'Phase', phase_override: 'Phase', kol_id: 'KOL', sub_status: 'Stage', pillar: 'Pillar', pic: 'Assigned to', cta: 'CTA', products: 'Products',
         delivered: 'Product delivered', delivery_date: 'Delivery date', link_brief: 'Brief link', remark: 'Remark', cancel_reason: 'Cancel reason',
         rate_card: 'Rate card', gencode_expense: 'Gencode fee', gencode_period: 'Gencode days', gencode_start_date: 'Gencode start', gencode_end_date: 'Gencode end',
         basket_fee: 'Basket fee', asset_fee: 'Asset fee', expediting_fee: 'Expediting fee', total_cost: 'Total',
         docs_done: 'Docs done', docs_done_date: 'Docs date', paid_50: '50% paid', paid_50_date: '50% paid date', paid_full: 'Paid', paid_full_date: 'Paid date',
-        brief_date: 'Brief', expected_draft1_date: 'Draft 1 due', approved_draft1_date: 'Draft 1 approved', expected_draft2_date: 'Draft 2 due',
-        approved_draft2_date: 'Draft 2 approved', expected_draft3_date: 'Draft 3 due', approved_draft3_date: 'Draft 3 approved', expected_post_date: 'Post due',
+        brief_date: 'Brief', expected_script_date: 'Script due', script_date: 'Script date', expected_draft1_date: 'Draft 1 due', approved_draft1_date: 'Draft 1 date', expected_draft2_date: 'Draft 2 due',
+        approved_draft2_date: 'Draft 2 date', expected_draft3_date: 'Draft 3 due', approved_draft3_date: 'Draft 3 date', expected_approve_date: 'Approve due', approved_date: 'Approve date', expected_post_date: 'Post due',
         account_id: 'Account', post_date: 'Posted on', post_link: 'Post link', gencode_code: 'Gencode', views: 'Views', likes: 'Likes', comments: 'Comments',
         saves: 'Saves', shares: 'Shares', metrics_updated_at: 'Metrics as of',
       },
@@ -513,14 +517,14 @@ KT.content = (function () {
       assign: 'Assign', changePic: 'Change PIC', reassignTitle: n => `Reassign PIC · ${n} deal${n === 1 ? '' : 's'}`, choosePic: 'Choose a person',
       reassignAsk: (n, p) => `Change PIC of ${n} deal${n === 1 ? '' : 's'} to ${p}?`, reassignOk: 'Change PIC',
       picChanged: (p, n) => (n > 1 ? `เปลี่ยน PIC ของ ${n} deals เป็น ${p} แล้ว` : `PIC changed to ${p}`), picUndone: 'ยกเลิกการเปลี่ยน PIC แล้ว', undo: 'Undo',
-      filters: 'Filters', any: 'Any', subStatus: 'Sub-status', pic: 'PIC', pillar: 'Pillar', payment: 'Payment', payState: 'Payment status', term: 'Payment term',
+      filters: 'Filters', any: 'Any', subStatus: 'Sub-status', pic: 'Assigned to', pillar: 'Pillar', payment: 'Payment', payState: 'Payment status', term: 'Payment term',
       clearAll: 'Clear all', remove: 'Remove',
       chipOpen: 'Open deals', chipNoDate: 'Posted without date', includeImported: 'Include imported', chipNoImported: 'Imported: hidden', chipOutside: (a, b) => `Post date outside ${a} – ${b}`,
       export: 'Export', exportDeals: 'Deals CSV', exportPosts: 'Posts CSV', exportTemplate: 'Template layout',
       newDeal: '+ New deal', all: 'All',
       committed: 'Committed', noBudget: 'no budget', paidEst: 'Paid (est.)', overdue: 'Overdue',
       columns: 'Columns', compact: 'Compact', template: 'Template',
-      colKol: 'KOL', colPhase: 'Phase', colStage: 'Stage', colPlatforms: 'Platforms', colPic: 'PIC', colTotal: 'Total', colPayment: 'Payment', colNextDue: 'Next due',
+      colKol: 'KOL', colPhase: 'Phase', colStage: 'Stage', colPlatforms: 'Platforms', colPic: 'Assigned to', colTotal: 'Total', colPayment: 'Payment', colNextDue: 'Next due',
       warnTip: 'What needs doing — the reasons of the chips above (Overdue · Needs phase · Shipment overdue · Metrics due · Docs to collect)',
       noMatch: 'No deals match these filters', clearFilters: 'Clear filters',
       loadMore: n => `Load more (${n})`, late: n => `${n}d late`,
@@ -534,8 +538,8 @@ KT.content = (function () {
       gencodeRange: 'Gencode period', posted: 'Posted', planned: 'Planned', asOf: d => `as of ${d}`, noPosts: 'No posts yet',
       budget: 'Budget', committedOthers: 'Committed (other deals)', thisDeal: 'This deal', remaining: 'Remaining',
       noHistory: 'No history yet', histFrom: (a, b) => `${a || '—'} → ${b}`,
-      histPic: (a, b) => `PIC ${a || '—'} → ${b || '—'}`, histTerm: (a, b) => `Payment term ${a} → ${b}`,
-      histPlan: (a, b) => `Content plan ${a} → ${b}`, planText: (n, script) => `${n} draft${n === 1 ? '' : 's'}${script ? ' + Script' : ''}`, histUndo: 'Undo',
+      histPic: (a, b) => `Assigned to ${a || '—'} → ${b || '—'}`, histTerm: (a, b) => `Payment term ${a} → ${b}`,
+      histPlan: (a, b) => `Content plan ${a} → ${b}`, planText: n => `${n} draft${n === 1 ? '' : 's'}`, histUndo: 'Undo',
       source: { user: 'User', legacy_derived: 'From old files', legacy_import: 'Import snapshot' },
       newTitle: 'New deal', editTitle: id => `Edit ${id}`, kolSearch: 'Type a KOL name or ID', newKol: '+ New KOL',
       startStep: 'Start at', stage: 'Stage', moveInView: 'Use Move stage (in view mode) to change the stage', none: '—',
@@ -544,26 +548,26 @@ KT.content = (function () {
       saveNext: 'Save & next', postN: n => `Post ${n}`, removePost: 'Remove post', otherAccount: id => `${id} (another KOL)`, chooseAccount: 'Choose an account',
       tiktokHint: 'Paste a full TikTok link and the post date is read from the video ID', tiktokDate: d => `Video ID says posted on ${d}`, useThisDate: 'Use this date',
       shortLink: 'Short links (vt.tiktok.com) do not carry the date — use the full video link to check it',
-      created: id => `สร้าง ${id} แล้ว`, saved: id => `บันทึก ${id} แล้ว`,
+      created: id => `${id} created`, saved: id => `${id} saved`,
       /* CR-11 §4.4 — New deal in the create modal (L): Deal on the left · KOL & cost on the right */
-      createDeal: 'Create deal', createNext: 'Create & next', dealThing: 'Deal', addingTo: c => `Adding to ${c}`,
+      createDeal: 'Create deal', createNext: 'Create & next', dealThing: 'Deal',   // (CR-20: no "Adding to …" line)
       phaseField: 'Phase', phaseAuto: 'Auto by post date', phaseHint: 'The Phase of the posts ticked below · Auto = from each post date',
       kolCardEmpty: 'Choose a KOL to see the accounts, tier and track record', cardTier: 'Tier', cardPerf: 'Performance', cardLast: 'Last worked', cardNever: 'Never',
       cardNoAccount: 'No account yet', secKolCost: 'KOL & cost',
       noProductsYet: 'This campaign has no products yet', addProductsToCampaign: '+ Add products to campaign',
-      apTitle: c => `Products of ${c}`, apSub: 'The products this Campaign uses — then back to the new deal', apSave: 'Save products', apSaved: c => `บันทึกสินค้าของ ${c} แล้ว`,
-      aaTitle: k => `Add account · ${k}`, aaSub: 'A new account of this KOL — then back to the new deal', aaCreate: 'Add account', aaDone: h => `เพิ่มบัญชี @${h} แล้ว`,
+      apTitle: c => `Products of ${c}`, apSub: 'The products this Campaign uses — then back to the new deal', apSave: 'Save products', apSaved: c => `Products of ${c} saved`,
+      aaTitle: k => `Add account · ${k}`, aaSub: 'A new account of this KOL — then back to the new deal', aaCreate: 'Add account', aaDone: h => `Account @${h} added`,
       backToNew: '← Back to the new deal',
-      addPostTitle: k => `Add post · ${k}`, addPostSub: id => `To deal ${id}`, addPostOk: 'Add post', postAdded: id => `เพิ่มโพสต์ใน ${id} แล้ว`,
+      addPostTitle: k => `Add post · ${k}`, addPostSub: id => `To deal ${id}`, addPostOk: 'Add post', postAdded: id => `Post added to ${id}`,
       /* move stage */
       moveTitle: (id, kol) => `Move stage · ${id} · ${kol}`, moveFrom: 'Now:', moveTo: 'Move to', chooseStep: 'Choose a stage', moveDate: 'Date',
       moveReason: 'Cancel reason', moveNote: 'Note', moveNoteHint: 'Required when moving back or out of Cancelled', moveConfirm: 'Move',
       moveDone: (id, step) => `${id} → ${step}`, moveNext: 'next', moveOptional: 'optional',
       moveNotPlanned: 'not in plan', addRound: '+ Add draft round (adds the round and moves in one step)',
       /* content plan + payment term (CR-02) */
-      contentPlan: 'Content plan', drafts: 'Drafts', script: 'Script', fewerDrafts: 'One draft round fewer', moreDrafts: 'One more draft round',
+      contentPlan: 'Content plan', drafts: 'Drafts', planAlways: 'Script and Approve are in every plan', dueOf: (st, d) => `${st} due ${d}`, fewerDrafts: 'One draft round fewer', moreDrafts: 'One more draft round',
       cannotFewer: n => `Rounds up to Draft ${n} are already passed`, maxDrafts: n => `${n} rounds at most`,
-      planSaved: t => `บันทึกแผนแล้ว: ${t}`, chooseTerm: 'Choose a term', saveAsDefault: "Save as this KOL's default",
+      planSaved: t => `Content plan: ${t}`, chooseTerm: 'Choose a term', saveAsDefault: "Save as this KOL's default",
       freeNoPay: 'Free — no payment to track',
     },
 
@@ -578,14 +582,18 @@ KT.content = (function () {
       applyOk: 'Apply', applied: n => `เปลี่ยน Payment term ของ ${n} deals แล้ว`,
       category: 'Category', type: 'Type', pic: 'PIC', kolStatus: 'KOL status', dealHistory: 'Deal history', hasDeals: 'Has deals', noDeals: 'No deals', source: 'Source',
       importCsv: 'Import CSV', exportKols: 'Export KOLs', exportAccounts: 'Export accounts', exportRates: 'Export rates', newKol: '+ New KOL',
-      selected: n => `${n} selected`, bulkAdd: 'Add to campaign shortlist…', clear: 'Clear', selectAll: 'Select all rows that match the filters',
-      colKol: 'KOL', colPlatforms: 'Platforms', colFollowers: 'Followers', colTier: 'Tier', colCategory: 'Category', colCategoryType: 'Category · Type', colPic: 'PIC', colRate: 'Latest rate', colDeals: 'Deals', colLastPhase: 'Last phase',
+      selected: n => `${n} selected`, bulkAdd: 'Add to campaign…', clear: 'Clear', selectAll: 'Select all rows that match the filters',
+      colKol: 'KOL', colPlatforms: 'Platforms', colFollowers: 'Followers', colTier: 'Tier', colCategory: 'Category', colCategoryType: 'Category · Type', colPic: 'PIC', colRate: 'Latest rate', colDeals: 'Deals', colLastCampaign: 'Last campaign', lastCampTip: (c, p) => (p ? `${c} › ${p}` : c), searchType: 'Search type',
       noMatch: 'No KOLs match these filters', clearFilters: 'Clear filters', loadMore: n => `Load more (${n})`,
       backToDeal: id => (id === '__new__' ? '← Back to the new deal' : `← Back to ${id}`),
       /* drawer */
       tierMax: t => `Tier ${t}`, picOf: p => `PIC ${p}`, followersShort: n => `${n} followers`, addToPhase: 'Add to campaign', edit: 'Edit',
       secProfile: 'Profile', secAccounts: n => `Accounts (${n})`, secRates: n => `Rates (${n})`, secCurrent: 'Current deals', secHistory: 'History',
-      gender: 'Gender', contact: 'Contact via', note: 'Note',
+      gender: 'Gender', contact: 'Contact', note: 'Note',
+      /* CR-14 §4.5 — the contact ID (what the channel needs to reach the KOL) · never a phone number */
+      contactId: 'Contact ID', contactIdHint: 'LINE ID · Agency + contact person · work e-mail · no phone numbers (they go in the Payee vault)',
+      contactIdPh: { LINE: 'LINE ID', Agency: 'Agency name + contact person', Email: 'Work e-mail', TikTok: 'TikTok handle for DM', Instagram: 'Instagram handle for DM', Facebook: 'Facebook name for DM', Other: 'Contact ID', '': 'Contact ID' },
+      hasContact: 'Has contact ID', missingContact: 'Missing contact ID', copyContact: 'Copy contact ID',
       incomplete: 'Incomplete', legacyTip: 'Imported without link or followers', followersTier: (f, t) => `${f} · ${t}`, posts: n => `${n} post${n === 1 ? '' : 's'}`,
       addRate: '+ Add rate', qDate: 'Date', qSource: 'Source', qAccount: 'Account', qRate: 'Rate card', qGencode: 'Gencode fee', qGencodeDays: 'Gencode days',
       qBasket: 'Basket fee', qAsset: 'Asset fee', qExpedite: 'Expediting fee', qTotal: 'Total', qNote: 'Note', undated: 'No date',
@@ -599,7 +607,7 @@ KT.content = (function () {
       sourceManual: 'Added in KOL Tracker', saved: id => `บันทึก ${id} แล้ว`,
       /* rate dialog */
       quoteTitle: name => `Add rate · ${name}`, noAccount: 'No specific account', quoteSourceDefault: 'Manual', rateSaved: id => `เพิ่มราคา ${id} แล้ว`, addRateOk: 'Add rate',
-      thing: 'KOL', lockedFrom: 'Opened from KOL Master', perfNeeds: n => `Needs ${n}+ posts with a post date and a due date`, change: 'Change', newSub: 'A new KOL in KOL Master — add more accounts and rates from its drawer',
+      thing: 'KOL', lockedFrom: 'Opened from KOL Master', perfNeeds: n => `Needs ${n}+ posts with a post date and a due date`, change: 'Change', newSub: 'A new KOL in KOL Master — add more accounts and rates from its profile',
       /* add to phase */
       addTitle: name => `Add ${name} to a campaign`, campaign: 'Campaign', chooseCampaign: 'Choose a campaign', startsAt: step => `The deal starts at ${step}`, createDeal: 'Create deal',
       createdOne: (id, step) => `สร้าง ${id} (${step}) แล้ว`, shortlistNote: 'Added from KOL Master',
@@ -638,7 +646,7 @@ KT.content = (function () {
       fStart: 'Start', fEnd: 'End', fBudget: 'KOL budget (฿)', thisPhase: 'This phase',
       /* CR-02 §4.8 — status, year, search, timeline */
       year: 'Year', allYears: 'All years', all: 'All', search: 'Search campaign or phase', colStatus: 'Status',
-      noMatch: 'No campaigns match', clearFilters: 'Clear filters', viewTable: 'Table', viewTimeline: 'Timeline', today: 'Today', timeline: 'Timeline',
+      noMatch: 'No campaigns match', clearFilters: 'Clear filters', noSearchMatch: q => `No campaigns or phases match "${q}"`, clearSearch: 'Clear search', viewTable: 'Table', viewTimeline: 'Timeline', today: 'Today', timeline: 'Timeline',
       months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
       daysLeft: n => `${n} day${n === 1 ? '' : 's'} left`, endsToday: 'Ends today', startsIn: n => `Starts in ${n} day${n === 1 ? '' : 's'}`, ended: 'Ended',
       budgetOf: (c, b) => `${c} / ${b}`,
@@ -653,7 +661,7 @@ KT.content = (function () {
       newCampaignBtn: '+ New campaign',
       /* CR-05 §4.7 — Table | Timeline · On hold / Cancelled */
       includeCancelled: 'Include cancelled', zoom: 'Zoom', zoomMonth: 'Month', zoomQuarter: 'Quarter', zoomFit: 'Fit', zoomFitTip: 'From a week before the first Phase to a week after the last one of the Campaigns shown',
-      campFilter: 'Campaign', allCampaigns: 'All campaigns', campN: n => `${n} campaigns`, searchCampaign: 'Search campaign', campChip: n => `Campaign: ${n}`, clearCampaigns: 'Clear', totalWithCancelled: 'Total (incl. cancelled)',
+      campFilter: 'Campaign', allCampaigns: 'All campaigns', searchCampaign: 'Search campaign', campChip: n => `Campaign: ${n}`, totalWithCancelled: 'Total (incl. cancelled)',
       phaseBudgetNoCampaign: 'The campaign has no budget to compare with', pctOfCampaign: (p, b) => `${p}% of campaign budget (${b})`, budgetOfPhase: n => `Budget of ${n}`,
       putOnHold: 'Put on hold', cancelCampaign: 'Cancel campaign', resume: 'Resume campaign', statusReason: 'Reason',
       holdTitle: n => `Put ${n} on hold`, cancelTitle: n => `Cancel ${n}`,
@@ -666,12 +674,12 @@ KT.content = (function () {
       fCta: 'CTA', ctaHint: 'Where this Campaign sends people to buy · new deals take it', ctaTip: 'CTA of the Campaign', ctaLabel: c => `CTA · ${c}`,
       ctaApplyTitle: n => `Apply to ${n} open deal${n === 1 ? '' : 's'}?`, ctaApplyBody: (a, b, n) => `${n} deals ที่ยังไม่ปิดยังใช้ CTA "${a}" — เปลี่ยนเป็น "${b}" ด้วยไหม`,
       ctaApplyOk: 'Apply', ctaApplied: n => `เปลี่ยน CTA ของ ${n} deals แล้ว`, ctaNote: 'campaign CTA',
-      pillarTarget: 'Pillar target', ownTarget: 'Use its own pillar target (otherwise the default in Settings)', targetDefault: 'default',
+      pillarTarget: 'Pillar target', targetDefault: 'default',
     },
 
     settings: {
       title: 'Settings', lists: 'Lists', dataGroup: 'Data',
-      navJourney: 'Journey steps', navPillar: 'Pillar', navCta: 'CTA', navPic: 'PIC', navPlatform: 'Platform', navTiers: 'Tier rules', navTargets: 'Pillar targets', navProducts: 'Products', navPerf: 'KOL performance', navKolTypes: 'KOL types', navPayments: 'Payments', navData: 'Data',
+      navJourney: 'Journey steps', navPillar: 'Pillar', navCta: 'CTA', navPic: 'PIC', navPlatform: 'Platform', navTiers: 'Tier rules', navProducts: 'Products', navPerf: 'KOL performance', navKolTypes: 'KOL types', navPayments: 'Payments', navData: 'Data',
       storageLine: 'Data is saved in this browser only. Back up regularly.',
       lastBackup: 'Last backup', never: 'Never', dataSize: 'Data size', sizeOf: (mb, q) => `${mb} MB of about ${q} MB`,
       backupNow: 'Backup now', restore: 'Restore…', reset: 'Reset to seed',
@@ -684,8 +692,6 @@ KT.content = (function () {
       usedBy: n => `${n} in use`, unused: 'not used', inUse: n => `In use by ${n} records — switch it off instead`, ctaEmpty: 'No values yet',
       addPh: 'New value', add: '+ Add', saved: 'บันทึก Lists แล้ว', addTitle: t => `Add to ${t}`, addOk: 'Add', value: 'Value', added: v => `เพิ่ม ${v} แล้ว`,
       tierHint: 'Tier = the highest tier whose minimum is not above the followers. Saved when every row is valid.',
-      targetHint: 'Default share of the committed budget per pillar, used by Allocation vs target. A Campaign can set its own. Saved when the three add up to 100.',
-      targetSum: n => `Total ${n}%`,
       tierName: 'Tier name', tierMin: 'Minimum followers', addTier: '+ Add tier',
     },
 
@@ -699,9 +705,10 @@ KT.content = (function () {
 
     io: {
       exported: (name, n) => `Export ${name} (${n} แถว)`, exportedAll: 'Export CSV ทั้ง 6 ไฟล์แล้ว',
-      importTitle: 'Import KOLs from CSV', importSample: 'Download sample file',
-      importCols: cols => `CSV columns: ${cols}`,
-      importRules: 'Rates create a rate record · followers only go up · existing values are never overwritten',
+      importTitle: 'Import KOLs (CSV or the Excel template)', downloadTemplate: 'Download template', templateDone: 'Downloaded KOL_Master_Import_Template.csv',
+      importCols: (req, opt) => `Required columns: ${req} · optional: ${opt} (any order)`,
+      importRules: 'Followers only go up · existing values are never overwritten (contact ID too) · old files with rates still create a rate record',
+      importIgnoredCol: c => `Ignored column: ${c}`,
       importKind: { match: 'Matches account', new_account: 'New account', new_kol: 'New KOL', error: 'Cannot import' },
       importConfirmCol: 'Confirm', importRow: 'Row', cName: 'Name', cPlatform: 'Platform', cHandle: 'Handle', cFollowers: 'Followers', cRate: 'Rate card', cNotes: 'Notes',
       importSummary: (m, a, k, e) => `Matches ${m} · New accounts ${a} · New KOLs ${k} · Cannot import ${e}`,
@@ -728,19 +735,19 @@ KT.content = (function () {
 
     /* CR-10 §4.10–4.12 — New deal tabs · Create KOL · Bulk shortlist · Move to / Set details for many deals */
     bulk: {
-      tabSingle: 'Single KOL', tabBulk: 'Bulk shortlist',
+      tabMaster: 'From KOL Master', tabNewKol: 'New KOL',
       campaign: 'Campaign', chooseCampaign: 'Choose a Campaign', phase: 'Phase', autoPhase: 'Auto by post date', pic: 'PIC', picMe: n => `Me (${n})`, picMeNone: 'Me',
       picKol: "KOL's PIC", pillar: 'Pillar', stage: 'Stage', stageTip: 'Bulk adds start at Shortlist. Move them forward later.',
       type: 'Type', category: 'Category', picCol: 'PIC', status: 'Status', perf: 'Performance', any: 'Any', notInCampaign: 'Not in this campaign yet',
       colKol: 'KOL', colFollowers: 'Followers', colRate: 'Latest rate', inCampaign: 'In this campaign',
       selectPage: 'Select this page', pageSelected: n => `${n} on this page selected`, selectAllMatching: n => `Select all ${n} matching`, allSelected: n => `All ${n} matching selected`,
       clearSel: 'Clear selection', selectedN: n => `Selected ${n}`, noneSelected: 'Tick KOLs on the left', remove: n => `Remove ${n}`,
-      willAdd: n => `Will add ${n}`, willSkip: n => `Skip ${n}`, addN: n => `Add ${n} to shortlist`, maxPerBatch: n => `Max ${n} per batch`,
+      willAdd: n => `Will add ${n}`, willSkip: n => `Skip ${n}`, maxPerBatch: n => `Max ${n} per batch`,
       pageOf: (a, b, n) => `Page ${a} of ${b} · ${n} KOLs`,
       previewTitle: 'Add to shortlist', previewLine: (n, c, m) => `Create ${n} deal${n === 1 ? '' : 's'} in ${c}${m ? ` · Skip ${m}` : ''}`, reason: 'Why skipped',
       skipReason: { in_campaign: 'Already in this campaign', blacklisted: 'Blacklisted' },
       previewHint: 'Shortlist deals start without costs, so Pending does not change. Payment term comes from each KOL (it can stay empty until Confirm QT).',
-      back: 'Back', confirm: n => `Confirm · create ${n}`, added: n => `${n} KOL${n === 1 ? '' : 's'} added to shortlist`, undone: n => `ยกเลิกแล้ว — ลบ ${n} deals`,
+      back: 'Back', confirm: n => `Confirm · create ${n}`, added: n => `${n} deal${n === 1 ? '' : 's'} added`, undone: n => `Undone — ${n} deal${n === 1 ? '' : 's'} removed`,
       logNote: 'Bulk shortlist',
       moveTo: 'Move to…', setDetails: 'Set details', moveTitle: n => `Move ${n} deal${n === 1 ? '' : 's'}`, moveHint: 'Each deal moves today when Move stage would let it; one that needs something first stays and is listed.',
       moveResult: (n, m, st) => `Moved ${n} to ${st}${m ? ` · Blocked ${m}` : ''}`, blockedTerm: n => `(${n} Payment term not set)`, blockedOther: n => `${n} need the Move stage dialog`,
@@ -748,7 +755,7 @@ KT.content = (function () {
       sd: { title: n => `Set details · ${n} deal${n === 1 ? '' : 's'}`, hint: 'Only the ticked fields change; the others stay as they are.', apply: n => `Apply to ${n}`,
         nothing: 'Tick at least one field', done: n => `อัปเดตรายละเอียด ${n} deals แล้ว` },
       ck: { title: 'Create KOL', sub: 'A new KOL in KOL Master — then back to the new deal', back: 'Back to the new deal', name: 'Name', platform: 'Platform', handle: 'Handle',
-        handleHint: 'Without @', followers: 'Followers', profileLink: 'Profile link', type: 'Type', category: 'Category', gender: 'Gender', contact: 'Contact via',
+        handleHint: 'Without @', followers: 'Followers', profileLink: 'Profile link', type: 'Type', category: 'Category', gender: 'Gender', contact: 'Contact',
         pic: 'PIC', term: 'Default payment term', termHint: 'Used for this deal too', choose: 'Choose', notSet: 'Not set', create: 'Create KOL',
         already: (n, h) => `Already in KOL Master: ${n}${h ? ` (@${h})` : ''}`, useThis: 'Use this KOL', createAnyway: 'Create anyway', created: n => `KOL created: ${n}` },
     },
@@ -871,7 +878,7 @@ KT.content = (function () {
         engagement: 'Engagement', cpe: 'CPE', gencode: 'Gencode', pillar: 'Pillar', expected: 'Expected post', ontime: 'On-time' },
       colTip: { tier: "Tier of the account that posted (its followers)", vpf: 'Views ÷ followers of the account — how far the clip went beyond its fans', cost: 'The deal total ÷ its number of posts', cpe: 'Cost ÷ engagement' },
       groupBy: 'Group by', groupOpt: { none: 'None', tier: 'Post tier', platform: 'Platform', phase: 'Phase', pic: 'PIC' }, expandAll: 'Expand all', collapseAll: 'Collapse all',
-      columns: 'Columns', defaultCols: 'Default columns', export: 'Export',
+      columns: 'Columns', minCol: 'Keep at least one column', export: 'Export',
       open: 'Open', openTip: 'Open the post in a new tab', noLink: 'No link', noLinkTip: 'No post link — open the deal to add it',
       /* CR-11 §4.12 — collected at checkpoints (D+7 …) */
       status: { due: 'Due', waiting: 'Waiting', collected: 'Collected', not_posted: 'Not posted', not_tracked: 'Not tracked', imported: 'Imported' },
@@ -902,8 +909,12 @@ KT.content = (function () {
 
     msg: {
       countInvalid: 'Enter a whole number, e.g. 12,500 or 12.5K',
-      moveTermRequired: 'Payment term not set — choose one to move to Confirm QT or later', termNotSetInfo: 'Payment term not set (imported deal)',
+      moveTermRequired: 'Choose a payment term to move to Confirm QT or later', termNotSetInfo: 'Payment term not set (imported deal)',
       bulkMax: n => `Max ${n} per batch`, ckPicRequired: 'Choose a PIC',
+      /* CR-14 §4.5 / §4.6 — contact ID · import */
+      contactPhone: "Phone numbers can't be saved here. Use Payee vault.", contactLong: n => `Contact ID can be up to ${n} characters`,
+      contactMissing: 'Add the contact ID so the team can reach this KOL',
+      importMissingCol: cols => `Missing required column${cols.length > 1 ? 's' : ''}: ${cols.join(', ')}`, importPhone: 'Phone number in contact_id', importKeptContact: 'Kept existing contact ID',
       sampleReason: 'Give a reason', shipPurpose: 'Choose a purpose', shipKol: 'Choose the recipient (a KOL in KOL Master)', shipDeal: 'This deal is not of that KOL',
       shipCarrier: 'Choose the carrier', shipMoreLines: (l, n) => `${l} tracking lines for ${n} parcels — the extra lines are left out`, shipNoTracking: n => `${n} parcel${n === 1 ? '' : 's'} without a tracking no.`,
       pickName: 'Give the pick list a name', pickNone: 'Select the shipments to pack', pickNotOpen: 'Only shipments still to ship and not in another pick list', holdReason: 'Give the reason for the hold', cleanupDate: 'Paid date: use dd/mm/yyyy', cleanupNote: 'Add a note (where it was paid)', sampleLead: 'Lead days: 0–60', sampleTracking: 'A tracking link starts with http and has {tracking} in it',
@@ -935,58 +946,56 @@ KT.content = (function () {
       productImportRename: old => `ชื่อเดิม: ${old}`,
       campaignProductsRequired: 'Campaign ใหม่ต้องมีสินค้าอย่างน้อย 1 รายการ', campaignNoProducts: 'Campaign นี้ยังไม่มีสินค้า — เพิ่มได้ภายหลัง',
       productUsedByDeals: (name, n) => `เอา ${name} ออกไม่ได้ เพราะมี ${n} deals เลือกสินค้านี้อยู่`,
-      productNotInCampaign: name => `${name} ไม่ได้อยู่ในสินค้าของ Campaign นี้`,
-      productRemovedUsed: (name, n) => `${name} มี ${n} deals เลือกอยู่ — deal เหล่านั้นยังเก็บสินค้านี้ไว้`, productKeptNotInCampaign: name => `Product not in campaign: ${name}`, productQty: name => `${name}: จำนวนต้องเป็นจำนวนเต็ม 1 ขึ้นไป`,
+      productNotInCampaign: name => `${name} is not a product of this campaign`,
+      productRemovedUsed: (name, n) => `${name} มี ${n} deals เลือกอยู่ — deal เหล่านั้นยังเก็บสินค้านี้ไว้`, productKeptNotInCampaign: name => `Product not in campaign: ${name}`, productQty: name => `${name}: qty is a whole number of 1 or more`,
       noProductsSelected: 'No products selected',
 
-      moveStepUnknown: 'ไม่พบขั้นนี้ในรายการ Journey',
-      moveStepInactive: 'ขั้นนี้ถูกปิดใช้งานในหน้า ตั้งค่า',
-      moveSame: 'Deal อยู่ที่ขั้นนี้แล้ว',
-      moveDateRequired: 'ใส่วันที่ของขั้นนี้',
-      moveSkip: names => `ข้ามขั้น ${names}`,
-      moveBackNote: 'ถอยสถานะกลับต้องใส่หมายเหตุ',
-      moveCancelReason: 'ยกเลิก Deal ต้องใส่เหตุผล',
-      moveLeaveCancelOnly: step => `ออกจาก Cancel ได้แค่กลับไปขั้นก่อนยกเลิก (${step})`,
-      moveLeaveCancelNote: 'ออกจาก Cancel ต้องใส่หมายเหตุ',
-      moveLeaveCancelUnknown: 'ไม่ทราบขั้นก่อนยกเลิก (ข้อมูลเดิม) จึงเลือกขั้นได้เอง',
-      moveNoPosts: 'ยังไม่มีโพสต์ ต้องเพิ่มโพสต์อย่างน้อย 1 รายการก่อนขยับไป Post',
-      movePostsIncomplete: n => `โพสต์ยังไม่ครบ ${n} รายการ (ต้องมีทั้งวันที่โพสต์และลิงก์)`,
-      moveNoExpectedDraft: n => `ยังไม่ได้ใส่กำหนดส่ง Draft ${n}`,
-      pillarCannotClear: 'ล้าง Pillar ไม่ได้ เพราะ deal ถึง Confirm QT แล้ว',
-      campaignOnHold: n => `Campaign is on hold — ${n} ยังรับ deal ใหม่ไม่ได้`, campaignCancelledNew: n => `${n} ถูกยกเลิกแล้ว — สร้าง deal ใหม่ไม่ได้`,
-      campaignCancelledEdit: 'Campaign นี้ถูกยกเลิกแล้ว — แก้ deal ไม่ได้ (ยกเว้น Remark)', campaignStatusReason: 'ใส่เหตุผล', campaignStatusUnknown: 'สถานะไม่ถูกต้อง',
-      costReasonRequired: 'มีการจ่ายเงินแล้ว — ใส่เหตุผลที่แก้ค่าใช้จ่าย',
+      moveStepUnknown: 'Choose a stage',
+      moveStepInactive: 'This stage is switched off in Settings',
+      moveSame: 'The deal is at this stage already',
+      moveDateRequired: 'Enter the date (dd/mm/yyyy)',
+      moveAutoDone: (date, names) => `These steps will be marked done on ${date}: ${names}`, autoCompleted: 'auto-completed', completedByMove: 'completed by this move',
+      moveBackNote: 'Add a note to move back',
+      moveCancelReason: 'Give the cancel reason',
+      moveLeaveCancelOnly: step => `A cancelled deal can only go back to where it was (${step})`,
+      moveLeaveCancelNote: 'Add a note to bring the deal back',
+      moveLeaveCancelUnknown: 'The stage before Cancel is not recorded (old data) — any stage can be picked',
+      moveNoPosts: 'Add the posted link to move to Post',
+      movePostsIncomplete: n => `${n} post${n === 1 ? '' : 's'} still without a link and post date`,
+      moveNoExpectedDraft: n => `No expected Draft ${n} date yet`,
+      pillarCannotClear: "The pillar can't be cleared from Confirm QT on",
+      campaignOnHold: n => `${n} is on hold — no new deals for now`, campaignCancelledNew: n => `${n} is cancelled — no new deals`,
+      campaignCancelledEdit: 'This campaign is cancelled — its deals take only a remark', campaignStatusReason: 'ใส่เหตุผล', campaignStatusUnknown: 'สถานะไม่ถูกต้อง',
+      costReasonRequired: 'Paid already — give the reason for the change',
       userNameRequired: 'ต้องใส่ชื่อ', userEmailDomain: d => `Email ต้องลงท้ายด้วย ${d}`, userRoleRequired: 'ต้องเลือก Role',
       userPicTaken: n => `ชื่อ PIC "${n}" มีคนใช้แล้ว`, userLastAdmin: 'ต้องมี Admin ที่ใช้งานอยู่อย่างน้อย 1 คน — เปลี่ยน Role หรือปิดคนนี้ไม่ได้',
       userOpenDeals: (n, c) => `${n} ยังเป็น PIC ของ ${c} deals ที่ยังไม่ปิด — ย้าย PIC ก่อนหรือหลังก็ได้`,
       userPicRename: (a, b, d, k) => `ชื่อ PIC จะเปลี่ยนจาก ${a} เป็น ${b} ใน ${d} deals และ ${k} KOLs`,
       pillarTargetNumber: 'Target ของแต่ละ Pillar ต้องเป็นตัวเลข 0–100', pillarTargetSum: n => `Target ต้องรวมกันได้ 100% (ตอนนี้ ${n}%)`,
-      movePillarRequired: 'เลือก Pillar ก่อนขยับไป Confirm QT หรือขั้นที่เลยกว่านั้น',
-      pillarRequired: 'Deal ที่เริ่มตั้งแต่ Confirm QT ต้องเลือก Pillar',
-      pillarNotSetInfo: 'ยังไม่ได้เลือก Pillar',
-      moveDraftNotInPlan: (k, m) => `แผนของ deal นี้มี Draft ${m} รอบ — ต้องเพิ่มรอบ Draft ก่อนจึงจะย้ายไป Draft ${k} ได้`,
-      moveAddsRound: (m, k) => `จะเพิ่มรอบ Draft จาก ${m} เป็น ${k} รอบ`,
-      moveScriptNotInPlan: 'แผนของ deal นี้ไม่มี Script — เปิด Script ในแผนก่อน',
-      planDraftsRange: max => `จำนวนรอบ Draft ต้องอยู่ระหว่าง 1–${max}`,
-      planDraftsPassed: n => `ลดรอบ Draft ต่ำกว่า ${n} ไม่ได้ เพราะผ่าน Draft ${n} แล้ว`,
-      planScriptPassed: 'ปิด Script ไม่ได้ เพราะผ่านขั้น Script แล้ว',
+      movePillarRequired: 'Choose a pillar to move to Confirm QT or later',
+      pillarRequired: 'Choose a pillar to start at Confirm QT or later',
+      pillarNotSetInfo: 'Pillar not set',
+      moveDraftNotInPlan: (k, m) => `The plan has ${m} draft round${m === 1 ? '' : 's'} — tick Add draft round to move to Draft ${k}`,
+      moveAddsRound: (m, k) => `Draft rounds ${m} → ${k}`,
+      planDraftsRange: max => `Draft rounds: 1–${max}`,
+      planDraftsPassed: n => `Draft ${n} is passed already — the plan can't have fewer rounds`,
       quoteFromDeal: id => `deal:${id}`,
 
-      kolNameRequired: 'ยังไม่ได้ใส่ชื่อ KOL',
-      kolNoAccount: 'ต้องมีบัญชีโซเชียลอย่างน้อย 1 บัญชี',
+      kolNameRequired: 'Enter the display name',
+      kolNoAccount: 'Add at least one account',
       kolBlacklistReason: 'สถานะ Blacklist ต้องใส่เหตุผล',
-      kolNameDup: id => `มี KOL ชื่อนี้แล้ว (${id}) ถ้าเป็นคนเดียวกันให้เพิ่มบัญชีในคนเดิม หรือใช้ "รวมกับ KOL อื่น…"`,
-      accPlatform: n => `บัญชีที่ ${n}: ยังไม่ได้เลือก Platform`,
-      accHandle: n => `บัญชีที่ ${n}: ยังไม่ได้ใส่ชื่อบัญชี`,
-      accHandleFormat: n => `บัญชีที่ ${n}: ชื่อบัญชีห้ามมีช่องว่าง และห้ามมี @ นำหน้า`,
-      accLink: n => `บัญชีที่ ${n}: ยังไม่ได้ใส่ลิงก์โปรไฟล์`,
-      accLinkFormat: n => `บัญชีที่ ${n}: ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https:// และมีลิงก์เดียว`,
-      accFollowers: n => `บัญชีที่ ${n}: ยังไม่ได้ใส่ Followers`,
-      accFollowersFormat: n => `บัญชีที่ ${n}: Followers ต้องเป็นตัวเลข 0 ขึ้นไป`,
-      accDupInList: (n, m) => `บัญชีที่ ${n}: ซ้ำกับบัญชีที่ ${m} ในรายการนี้`,
-      accTaken: (n, handle, platform, name, id) => `บัญชีที่ ${n}: @${handle} บน ${platform} เป็นของ ${name} (${id}) อยู่แล้ว`,
-      accLinkHandle: (n, h, handle) => `บัญชีที่ ${n}: ลิงก์เป็นของ @${h} ไม่ตรงกับชื่อบัญชี ${handle}`,
-      accLinkPlatform: (n, p, platform) => `บัญชีที่ ${n}: ลิงก์เป็นของ ${p} แต่เลือก ${platform}`,
+      kolNameDup: id => `A KOL with this name exists (${id}) — if it is the same person, add the account there or merge later`,
+      accPlatform: n => `Account ${n}: choose the platform`,
+      accHandle: n => `Account ${n}: enter the handle`,
+      accHandleFormat: n => `Account ${n}: a handle has no spaces and no @ in front`,
+      accLink: n => `Account ${n}: enter the profile link`,
+      accLinkFormat: n => `Account ${n}: use one link that starts with https://`,
+      accFollowers: n => `Account ${n}: enter the followers`,
+      accFollowersFormat: n => `Account ${n}: followers is a number of 0 or more`,
+      accDupInList: (n, m) => `Account ${n}: the same as account ${m}`,
+      accTaken: (n, handle, platform, name, id) => `Account ${n}: @${handle} on ${platform} belongs to ${name} (${id})`,
+      accLinkHandle: (n, h, handle) => `Account ${n}: the link is @${h}, not ${handle}`,
+      accLinkPlatform: (n, p, platform) => `Account ${n}: the link is ${p}, not ${platform}`,
       accDeleteUsed: (handle, platform, n) => `ลบบัญชี @${handle} (${platform}) ไม่ได้ เพราะมีโพสต์ผูกอยู่ ${n} โพสต์`,
 
       quoteDateInvalid: 'วันที่ไม่ถูกต้อง',
@@ -995,11 +1004,11 @@ KT.content = (function () {
       quoteSourceRequired: 'ใส่ที่มาของราคา',
       quoteAccountOther: 'บัญชีนี้ไม่ใช่ของ KOL คนนี้',
 
-      addCampaignRequired: 'ยังไม่ได้เลือก Campaign',
+      addCampaignRequired: 'Choose a campaign',
       addPicRequired: 'ยังไม่ได้เลือก PIC',
       addPicMissing: names => `ยังไม่มี PIC: ${names} — เลือก PIC สำหรับคนกลุ่มนี้`,
       addTermMissing: n => `${n} คนยังไม่มี Payment term — เลือก Payment term สำหรับคนกลุ่มนี้`,
-      addKolStatus: (name, status) => `${name} มีสถานะ ${status}`,
+      addKolStatus: (name, status) => `${name} is ${status}`,
       addExisting: n => `KOL นี้มี deal ใน Campaign นี้แล้ว ${n} รายการ`,
 
       mergeSame: 'เลือก KOL คนอื่น (ไม่ใช่คนเดียวกัน)',
@@ -1008,45 +1017,45 @@ KT.content = (function () {
       mergedFrom: (id, name) => `รวมจาก ${id} (${name})`,
 
       /* Deals (§8) */
-      postN: (n, label) => `โพสต์ที่ ${n}${label ? ` (${label})` : ''}`,
-      dealCampaignRequired: 'ยังไม่ได้เลือก Campaign',
-      dealCampaignMissing: 'ไม่พบ Campaign นี้',
-      dealKolRequired: 'ยังไม่ได้เลือก KOL',
-      dealKolMissing: 'ไม่พบ KOL นี้ใน KOL Master ให้เลือกจากรายการ หรือเพิ่ม KOL ใหม่ก่อน',
-      dealPicRequired: 'ยังไม่ได้เลือก PIC',
-      dealStepRequired: 'ยังไม่ได้เลือกขั้น (SubStatus)',
-      dealMoney: label => `${label} ต้องเป็นตัวเลข 0 ขึ้นไป`,
-      dealPeriodInt: 'Gencode (วัน) ต้องเป็นจำนวนเต็ม 0 ขึ้นไป',
-      dateInvalid: label => `${label}: วันที่ไม่ถูกต้อง`,
-      dealLinkFormat: label => `${label} ต้องขึ้นต้นด้วย http:// หรือ https:// และมีลิงก์เดียว`,
+      postN: (n, label) => `Post ${n}${label ? ` (${label})` : ''}`,
+      dealCampaignRequired: 'Choose a campaign',
+      dealCampaignMissing: 'This campaign is not in the list',
+      dealKolRequired: 'Choose a KOL',
+      dealKolMissing: 'This KOL is not in KOL Master — pick one from the list or add a new KOL',
+      dealPicRequired: 'Choose who the deal is assigned to',
+      dealStepRequired: 'Choose a stage',
+      dealMoney: label => `${label}: enter ฿0 or more`,
+      dealPeriodInt: 'Gencode days: a whole number of 0 or more',
+      dateInvalid: label => `${label}: use dd/mm/yyyy`,
+      dealLinkFormat: label => `${label}: use one link that starts with https://`,
       dealKolLocked: n => `เปลี่ยน KOL ของ deal นี้ไม่ได้ เพราะมีโพสต์แล้ว ${n} รายการ`,
-      postAccountRequired: n => `${n}: ยังไม่ได้เลือกบัญชี`,
-      postAccountOther: n => `${n}: บัญชีนี้ไม่ใช่ของ KOL ใน deal`,
+      postAccountRequired: n => `${n}: choose the account`,
+      postAccountOther: n => `${n}: this account is not of the deal's KOL`,
       postNumber: (n, k) => `${n}: ${({ views: 'Views', likes: 'Likes', comments: 'Comments', saves: 'Saves', shares: 'Shares' })[k] || k} ต้องเป็นตัวเลข 0 ขึ้นไป`,
-      postLinkFormat: n => `${n}: ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https:// และมีลิงก์เดียว (ถ้ามีหลายคลิปให้เพิ่มโพสต์)`,
-      postDup: (n, dealId, kol) => `${n}: ลิงก์นี้ถูกบันทึกแล้วใน ${dealId} (${kol}) — บันทึกซ้ำจะนับงานเกิน`,
+      postLinkFormat: n => `${n}: use one link that starts with https:// (more clips = more posts)`,
+      postDup: (n, dealId, kol) => `${n}: this link is already saved in ${dealId} (${kol}) — saving it again counts the work twice`,
       postDupLegacy: (n, dealId, kol) => `${n}: ลิงก์ซ้ำกับ ${dealId} (${kol}) ในข้อมูลเดิม — รอ James ตัดสินว่าจะเก็บแถวไหน`,
-      postDupInDeal: (n, m) => `${n}: ลิงก์ซ้ำกับโพสต์ที่ ${m} ใน deal นี้`,
+      postDupInDeal: (n, m) => `${n}: the same link as post ${m} of this deal`,
       postLinkHandle: (n, h, handle) => `${n}: ลิงก์เป็นของ @${h} ไม่ตรงกับบัญชี @${handle}`,
       postLinkPlatform: (n, p, platform) => `${n}: ลิงก์เป็นของ ${p} แต่บัญชีเป็น ${platform}`,
       postTiktokDate: (n, td, pd) => `${n}: ตาม ID ของคลิปโพสต์วันที่ ${td} แต่กรอกไว้ ${pd}`,
-      postNeedsPhase: n => `${n}: วันที่ไม่ได้อยู่ใน Phase เดียว — เลือก Phase ของโพสต์นี้`,
-      postFarOutside: (n, d) => `${n}: วันที่ ${d} ห่างจากช่วงของ Campaign เกิน 60 วัน — อาจพิมพ์ปีผิด`,
-      postLate: (n, d) => `${n}: เลยกำหนดโพสต์ (${d}) แล้วแต่ยังไม่มีวันที่โพสต์`,
+      postNeedsPhase: n => `${n}: the date is not in exactly one phase — pick the phase of this post`,
+      postFarOutside: (n, d) => `${n}: ${d} is more than 60 days outside the campaign — check the year`,
+      postLate: (n, d) => `${n}: post due ${d} and not posted yet`,
       postNoViews: n => `${n}: โพสต์แล้วแต่ยังไม่มี Views (กรอกทีหลังได้)`,
       metricsNoDate: n => `${n}: มียอดแต่ยังไม่มีวันที่อัปเดตยอด — ตอนบันทึกจะใส่วันนี้ให้`,
       completeNeedsPosts: 'สถานะ Complete ต้องมีโพสต์อย่างน้อย 1 รายการ',
       completePostsIncomplete: n => `สถานะ Complete แต่โพสต์ยังไม่ครบ ${n} รายการ (ต้องมีทั้งวันที่โพสต์และลิงก์)`,
-      draftLate: (n, d) => `เลยกำหนดส่ง Draft ${n} (${d}) แล้ว แต่ยังไม่ผ่าน Approve Draft ${n}`,
+      draftLate: (n, d) => `Draft ${n} was due ${d} and is not in yet`,
       payNoDocs: 'ติ๊กจ่ายเงินแล้ว แต่ยังไม่ได้ติ๊กทำเอกสาร',
       payCancelPaid: 'จ่ายครบแล้ว แต่ deal เป็น Cancel',
-      gencodeNoPeriod: 'มีค่า Gencode แต่ยังไม่ได้ใส่จำนวนวัน',
-      draftBeforeBrief: n => `วันอนุมัติ Draft ${n} มาก่อนวันส่ง Brief`,
-      campaignOver: amount => `รวม deal นี้แล้วจะเกินงบ KOL ของ Campaign ${amount}`,
+      gencodeNoPeriod: 'Enter how many days the Gencode runs',
+      draftBeforeBrief: n => `The Draft ${n} date is before the Brief date`,
+      campaignOver: amount => `Adding this will exceed the campaign KOL budget by ${amount}`,
       completeUnpaid: 'Complete แล้วแต่ยังไม่จ่ายครบ',
       draftOutsidePlan: (n, m) => `มีวันที่ Draft ${n} แต่แผนมี ${m} รอบ`,
-      termRequired: 'เลือก Payment term ก่อนบันทึก',
-      termInvalid: 'Payment term ไม่ถูกต้อง',
+      termRequired: 'Choose a payment term',
+      termInvalid: 'Choose a payment term from the list',
       freeWithCost: amount => `Free แต่มีค่าใช้จ่าย ${amount}`,
 
       /* Lists */
@@ -1094,5 +1103,267 @@ KT.content = (function () {
       importSource: file => `import:${file}`,
     },
   };
+
+  /* ===================== CR-16 — the KOL profile (modal L + tabs) · more than one payee / shipping address · profile photos ===================== */
+  C.profile = {
+    tabs: { overview: 'Overview', deals: 'Deals & history', performance: 'Performance', rates: 'Rates', payee: 'Payee & shipping' }, tabsLabel: 'KOL profile',
+    payeeCount: (p, a) => `${p} payee${p === 1 ? '' : 's'} · ${a} address${a === 1 ? '' : 'es'}`,
+    prevKol: 'Previous KOL (↑)', nextKol: 'Next KOL (↓)',
+    sDeals: 'Deals', sCommitted: 'Committed', committedTip: 'Every deal of this KOL that is not cancelled', sLatest: 'Latest rate',
+    histFilter: 'Show', hist: { all: 'All', open: 'Open', posted: 'Posted', cancelled: 'Cancelled' }, histNone: 'No deals here',
+    campSum: (n, total) => `${n} deal${n === 1 ? '' : 's'} · ${total}`,
+    colDeal: 'Deal', colPhase: 'Phase', colStage: 'Stage', colAmount: '฿', colPosted: 'Post date', colCampaign: 'Campaign', colPostDate: 'Post date', colViews: 'Views', colEr: 'ER', colLink: 'Link',
+    plannedFor: d => `Planned ${d}`, notPosted: 'Not posted', openPost: 'Open', noPosts: 'No posts yet', postsN: n => `Posts (${n})`,
+    rateHistory: 'Rate history', rateHistoryHint: 'What was quoted (rate quotes) and what was agreed in a deal, newest first — free jobs and cancelled deals are not counted',
+    kind: { quoted: 'Quoted', agreed: 'Agreed' }, colKind: 'Kind', colFrom: 'Source / Campaign', noRates: 'No rates yet',
+    photo: 'Profile photo', uploadPhoto: 'Upload photo', removePhoto: 'Remove photo', photoHint: "Use the KOL's public profile picture only",
+    photoDrop: 'Or drop a picture here · paste one (Ctrl / ⌘ + V)', photoOff: "Photos aren't available in this browser",
+    photoType: 'ใช้ได้เฉพาะไฟล์ JPG · PNG · WebP', photoTooBig: mb => `ไฟล์ใหญ่ ${mb} MB — ใช้ได้ไม่เกิน 5 MB`, photoFailed: 'บันทึกรูปไม่ได้ — ลองอีกครั้ง',
+    cropTitle: n => `Profile photo · ${n}`, cropDrag: 'Drag the picture to place it in the circle', zoom: 'Zoom', savePhoto: 'Save photo',
+    photoSaved: kb => `บันทึกรูปโปรไฟล์แล้ว (${kb} KB)`, removeTitle: 'Remove photo?', removeBody: 'รูปจะถูกลบจากเบราว์เซอร์นี้ แสดงเป็นวงกลมตัวอักษรแทน', photoRemoved: 'ลบรูปโปรไฟล์แล้ว',
+  };
+  Object.assign(C.payee, {
+    primary: 'Primary', default: 'Default', defaultTip: 'Used when a deal does not pick another payee / address', defaultOpt: l => `Default · ${l}`,
+    payeesN: n => `Payees (${n})`, addressesN: n => `Shipping addresses (${n})`, addPayeeBtn: '+ Add payee', addAddressBtn: '+ Add address',
+    noAddresses: 'No shipping address yet', addressHint: 'Each shipment picks one (Ship to) — blank = the default when it is marked shipped',
+    lockedNote: 'Bank details and addresses are encrypted', editBtn: 'Edit', setDefault: 'Set as default', archive: 'Archive', restore: 'Restore', del: 'Delete', archived: 'Archived',
+    showArchived: n => `Show archived (${n})`, hideArchived: n => `Hide archived (${n})`,
+    cannotArchiveDefault: 'Set another payee as default first', cannotArchiveDefaultAddr: 'Set another address as default first',
+    cannotDeleteUsed: (l, d) => `Used by ${[l ? `${l} payment line${l === 1 ? '' : 's'}` : '', d ? `${d} deal${d === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')} — archive it instead`,
+    cannotDeleteDefault: 'Set another one as default first', cannotDeleteAddr: n => `Used by ${n} shipment${n === 1 ? '' : 's'} — archive it instead`, addrUsed: n => `Used by ${n} shipment${n === 1 ? '' : 's'}`,
+    defaultSet: l => `ตั้ง ${l} เป็น default แล้ว`, archivedToast: l => `Archive ${l} แล้ว`, restoredToast: l => `กู้ ${l} กลับมาแล้ว`, deletedToast: l => `ลบ ${l} แล้ว`,
+    deleteTitle: l => `Delete ${l}?`, deleteBody: 'ลบ payee นี้ถาวร (ยังไม่เคยใช้ใน payment line หรือ deal)', deleteAddrBody: 'ลบที่อยู่นี้ถาวร (ยังไม่เคยใช้ใน shipment)',
+    label: 'Label', labelPh: 'e.g. Self · Agency ABC · Manager', labelHint: 'A name for the team — no account numbers or full names', makeDefault: 'Set as default',
+    addrLabelPh: 'e.g. Home · Office · Agency', recipient: 'Recipient', replaceAddress: 'Replace address', replaceAddressHint: 'Type the whole address again — the saved one is replaced',
+    addAddressTitle: n => `Add address · ${n}`, editAddressTitle: l => `Edit address · ${l}`, addAddressOk: 'Add address',
+  });
+  Object.assign(C.samples, {
+    shipTo: 'Ship to', shipToDefault: 'Default (when marked shipped)', shipToDefaultL: 'Ship to (default)', noDetails: l => `${l} (no details)`, defaultOpt: l => `Default · ${l}`,
+    addAddress: 'Add address', shipToHint: "One of the KOL's shipping addresses — kept on the shipment once it is shipped", shipToMany: "Each shipment goes to its own address (else its KOL's default)",
+  });
+  Object.assign(C.deal, {
+    payTo: 'Pay to', payToDefault: 'Default', payToLocked: n => `${n} payment line${n === 1 ? '' : 's'} already in a run keep${n === 1 ? 's' : ''} its payee`,
+    payToSaved: l => `เปลี่ยนผู้รับเงินเป็น ${l} แล้ว`, histPayee: (a, b) => `Pay to: ${a} → ${b}`,
+  });
+  Object.assign(C.pay, {
+    changePayee: 'Change payee', changePayeeTitle: n => `Change payee · ${n}`, changePayeeSub: id => `For ${id} — its lines not in a run follow · the deal's Pay to changes too`,
+    payToTip: "Paid to this payee (not the KOL's default)", payeeChanged: l => `เปลี่ยนผู้รับเงินเป็น ${l} แล้ว`,
+  });
+  Object.assign(C.data, {
+    backupTitle: 'Backup', backupDownload: 'Download backup', includePhotos: 'Include photos & draft images', includePhotosHint: (n, size) => `${n} profile photo${n === 1 ? '' : 's'} and draft image${n === 1 ? '' : 's'} (${size}) in this browser — added to the file so a restore elsewhere gets them back`,
+    backupSize: mb => `About ${mb} MB`, photosRow: 'Photos', photosKept: 'No photos in the file — the ones in this browser stay', photosRestored: n => `ใส่รูปโปรไฟล์กลับ ${n} รูปแล้ว`,
+  });
+  Object.assign(C.settings, { photos: 'Photos', photosLine: (n, mb) => `Photos ${n} · ${mb} MB` });
+  Object.assign(C.vault, {
+    shipWaiting: n => `${n} shipping address${n === 1 ? '' : 'es'} waiting to move · Unlock to finish`,
+    actAnother: 'Add as another payee', actReplaceDefault: l => `Replace default (${l})`, importLabel: 'Imported',
+  });
+  Object.assign(C.msg, {
+    labelRequired: 'ใส่ Label', labelLong: n => `Label ยาวได้ไม่เกิน ${n} ตัวอักษร`, labelTaken: v => `KOL นี้มี "${v}" อยู่แล้ว`,
+    shipRecipient: 'ใส่ชื่อผู้รับ', shipAddress: 'ใส่ที่อยู่จัดส่ง', payeeImportLabel: 'payee_label ยาวเกิน 40 ตัวอักษร หรือดูเหมือนเลขบัญชี / เลขบัตร',
+  });
+  C.counts.shipping_addresses = 'Shipping addresses';
+  /* ===================== CR-17 — Operations mode (Simple / Full) · Campaign / Phase approval ===================== */
+  Object.assign(C.phaseStatus, { pending: 'Pending approval', rejected: 'Rejected' });
+  C.approval = {
+    waiting: 'Waiting for manager approval', waitingShort: 'Waiting', submit: 'Submit for approval', resubmit: 'Resubmit',
+    needsApproval: 'A manager needs to approve this before deals can be added', askHint: 'Budget, period, pillar target and phase changes wait for a manager’s approval — name, CTA, products and note change now',
+    sent: 'Sent for approval', changeSent: 'Change sent for approval', submittedBy: (n, d) => `Submitted by ${n} · ${d}`, rejectedBy: (n, d) => `Rejected by ${n} · ${d}`,
+    reason: r => `Reason: ${r}`, changeRejected: 'Change rejected', changeRejectedReason: r => `The last change asked for was rejected${r ? `: ${r}` : ''}`,
+    changePending: 'Change pending', changePendingTip: 'A change waits for a manager — the numbers on screen are today’s until it is approved',
+    changeTitle: 'Change pending', colWhat: 'What', colNow: 'Now', colAsked: 'Asked for', changeBy: (n, d) => `Asked by ${n} · ${d}`,
+    fStart: 'Start', fEnd: 'End', fDelete: 'Remove', removePhase: 'Remove this phase',
+    phasesN: 'Phases', impact: 'Budget of approved campaigns', impactLine: (a, b) => `${a} → ${b}`, newPhases: n => `New phase${n === 1 ? '' : 's'} (${n})`,
+    approve: 'Approve', reject: 'Reject', cancelRequest: 'Cancel request', del: 'Delete',
+    waitHint: 'Deals can be added once a manager approves it',
+    approved: n => `อนุมัติ ${n} แล้ว`, rejected: n => `ตีกลับ ${n} แล้ว`, resubmitted: n => `ส่ง ${n} ให้อนุมัติอีกครั้งแล้ว`, requestCancelled: 'ยกเลิกคำขอแก้แล้ว',
+    rejectTitle: n => `Reject ${n}`, rejectHint: 'The person who made it sees the reason and can change it, then resubmit', reasonL: 'Reason',
+    badge: n => `${n} waiting for approval`, approvals: 'Approvals',
+  };
+  Object.assign(C.msg, {
+    campaignNotApproved: n => `${n} ยังรอผู้จัดการอนุมัติ — ยังเพิ่ม Deal ไม่ได้`, rejectReason: 'ใส่เหตุผลที่ตีกลับ',
+  });
+  Object.assign(C.pay.tabs, { sent: 'Sent', paid: 'Paid' });
+  Object.assign(C.pay.tabTip, { sent: 'Sent to accounting, not paid yet', paid: 'Paid · WHT certificates' });
+  C.pay.sentRunLabel = d => `Sent ${d}`;
+  C.pay.simple = {
+    sumDue: 'Due now', sumSent: 'Sent, not yet paid', sumPaid: 'Paid this month',
+    cards: { due: 'Due', hold: 'On hold', upcoming: 'Upcoming 14 days', check: 'Needs check' },
+    filterStatus: { due: 'Due', hold: 'On hold', upcoming: 'Upcoming 14 days', check: 'Needs check' },
+    status: { due: 'Due', not_due: 'Not due', on_hold: 'On hold', in_run: 'In a run', sent: 'Sent', paid: 'Paid' },
+    markPaid: 'Mark paid', markUnpaid: 'Mark unpaid', confirm: 'Confirm', ref: 'Ref', optional: '(optional)', refPh: 'PR no. · transfer no. — no account numbers',
+    markPaidOne: (n, m) => `Mark paid · ${n} · ${m}`, markPaidN: n => `Mark ${n} payment${n === 1 ? '' : 's'} as paid`, sameForAll: 'The same date and ref for every row',
+    paidDone: n => `Marked ${n} payment${n === 1 ? '' : 's'} as paid`, undone: 'ย้อนกลับแล้ว', noneToPay: 'ไม่มีรายการที่คุณบันทึกว่าจ่ายแล้วได้',
+    onlyManagers: 'Mark unpaid: Admin, KOL Manager or Accounting', unpaidTitle: n => `Mark unpaid · ${n}`, unpaidDone: 'กลับไปที่ To pay แล้ว',
+    exportAcc: 'Export for accounting', exportAgain: 'Export again', noneToSend: 'ไม่มีรายการที่ส่งบัญชีได้',
+    missingTitle: n => `${n} line${n === 1 ? ' has' : 's have'} missing documents`, missingBody: 'เอกสารไม่ครบไม่ขวางการจ่าย — Export ต่อได้ (ตามไปเก็บเอกสารภายหลัง)', exportAnyway: 'Export anyway',
+    sentAsk: n => `Mark ${n} line${n === 1 ? '' : 's'} as sent to accounting?`, sentAskBody: 'They move to Sent and wait there until someone marks them paid.', sentYes: 'Yes, mark as sent', sentNo: 'No',
+    sentDone: (n, l) => `ส่งบัญชีแล้ว ${n} รายการ (${l})`, moveBack: 'Move back to To pay', movedBack: 'ย้ายกลับไป To pay แล้ว',
+    docsN: (a, b) => `Docs ${a}/${b}`, heldTip: 'On hold — release it first',
+    colSent: 'Sent', waitingDays: n => `${n} d`, sentHint: 'Sent to accounting and waiting to be paid — more than 7 days in yellow', noSent: 'Nothing waiting at accounting',
+    colPaidBy: 'Paid by', byAccounting: 'Accounting', markWht: 'Mark WHT cert sent', whtSentOn: d => `WHT certificate sent ${d}`, whtCleared: 'ล้างวันที่ส่งใบ 50 ทวิแล้ว', export: 'Export',
+    trackToPay: 'To pay', trackSent: 'Sent', trackPaid: 'Paid',
+  };
+  C.samples.quick = {
+    shipped: 'Shipped', delivered: 'Delivered', both: 'Shipped & delivered', markShipped: 'Mark shipped', markDelivered: 'Mark delivered',
+    shippedOne: n => `Shipped · ${n}`, shippedN: n => `Mark ${n} shipment${n === 1 ? '' : 's'} shipped`, bothOne: n => `Shipped & delivered · ${n}`, bothN: n => `Shipped & delivered · ${n}`,
+    deliveredOne: n => `Delivered · ${n}`, deliveredN: n => `Mark ${n} shipment${n === 1 ? '' : 's'} delivered`, confirm: 'Confirm', optional: '(optional)',
+    noAddressOk: 'Send it anyway — the address can be agreed on LINE', changeAddress: 'Change address', editTracking: 'Edit tracking', undoDelivered: 'Undo delivered',
+    done: (n, k) => `${k === 'delivered' ? 'Delivered' : k === 'both' ? 'Shipped & delivered' : 'Shipped'} · ${n}`, undone: 'กลับเป็น Shipped แล้ว',
+  };
+  C.settings.navOpsMode = 'Operations mode';
+  C.settings.ops = {
+    lead: 'How payments and shipments are recorded. Switching keeps every payment and shipment — the same data is shown another way.',
+    simple: 'Your team records when payments are made and samples are shipped', full: 'Payment runs and the Accounting tab handle payments; pick lists for shipping',
+    mode: { simple: 'Simple', full: 'Full' }, kind: { payments: 'Payments', shipments: 'Shipments' },
+    hint: { payments: { simple: 'To pay · Sent · Paid — Mark paid on the row', full: 'To pay · Payment runs · Accounting' }, shipments: { simple: 'Shipped / Delivered on the row · pick lists in ⋯', full: 'Dialogs and pick lists' } },
+    safe: 'Lines already sent show as a run With Accounting in Full mode · Paid stays Paid.', saved: (k, m) => `${k}: ${m} mode`,
+  };
+  Object.assign(C.overview, { paymentsToConfirm: 'Payments to confirm', approvals: 'Approvals' });
+  Object.assign(C.roles.perm, {
+    'campaign.draft': 'Create Campaign & Phase (waits for approval) · change name, CTA, products, note · ask for budget / period / pillar target / phase changes',
+    'settings.ops': 'Settings › Operations mode',
+  });
+  /* ===================== CR-17 v1.2 — the Approvals page (one card a request) · Status order · Note to approver ===================== */
+  Object.assign(C.approval, {
+    tabApprovals: 'Approvals', tabMine: 'My requests', fPending: 'Pending', fDecided: 'Decided', typeL: 'Type', typeAll: 'All types',
+    types: { new_campaign: 'New campaign', new_phase: 'New phase', change: 'Change', budget_increase: 'Budget increase', budget_decrease: 'Budget decrease', budget: 'Budget' },
+    submittedAgo: (n, d, ago) => `Submitted by ${n} · ${d} · ${ago}`, ago: n => (n <= 0 ? 'today' : `${n} day${n === 1 ? '' : 's'} ago`),
+    startsIn: n => `Starts in ${n} day${n === 1 ? '' : 's'}`, startsToday: 'Starts today', startedAgo: n => `Started ${n} day${n === 1 ? '' : 's'} ago`, startsOn: d => `Starts ${d}`,
+    days: n => `${n} day${n === 1 ? '' : 's'}`, kPeriod: 'Period', kBudget: 'Budget', kPhases: 'Phases', kPillar: 'Pillar target', kProducts: 'Products', kCta: 'CTA', kImpact: 'Impact', kCampaign: 'Campaign',
+    sameTime: (a, b) => `Budget of campaigns running at the same time ${a} → ${b}`, noPeriod: 'No dates yet',
+    overlaps: (n, a, b) => `Overlaps ${n} on ${a}–${b}`, phaseTotal: (a, b) => `Phase budgets ${a} of ${b} campaign budget`, phaseOver: x => `Over the campaign budget by ${x}`, noCampaignBudget: 'The campaign has no budget',
+    colField: 'Field', colCurrent: 'Current', colRequested: 'Requested', postsMove: (n, d) => `${n} post${n === 1 ? '' : 's'} of ${d} deal${d === 1 ? '' : 's'} will move phase`, noMove: 'No post moves phase',
+    approveSelected: n => `Approve selected (${n})`, selectCard: 'Select this request', openDetails: 'Open details',
+    approvedBy: (n, d) => `Approved by ${n} · ${d}`, rejectedColon: r => `Rejected: ${r}`, rejectedByLine: (n, d) => `Rejected by ${n} · ${d}`,
+    emptyPending: 'Nothing is waiting for approval', emptyMine: 'You have no requests waiting', emptyDecided: 'Nothing decided yet', emptyType: 'No request of this type',
+    approvedN: n => `อนุมัติ ${n} รายการแล้ว`, rejectedOne: n => `ตีกลับ ${n} แล้ว`, undone: 'ย้อนกลับแล้ว',
+    noteL: 'Note to approver', noteOptional: '(optional)', notePh: 'Anything the approver should know', noteFrom: n => `Note from ${n}`,
+    budgetLine: (a, b, d) => `Current ${a} → New ${b} (${d})`, usedLine: (a, b) => `Used ${a} → ${b}`, committedL: 'Committed', allocTitle: 'Allocations', reasonL2: 'Reason',
+    someone: 'Someone', waitingFor: 'Waiting for a manager',
+  });
+  C.budget = {
+    adjust: 'Adjust budget', title: n => `Adjust budget · ${n}`, secBudget: 'Budget',
+    current: 'Current', budgetL: 'Budget', committedL: 'Committed', usedL: p => `Used ${p}`, remainingL: 'Remaining',
+    pendingN: (n, x) => `${n} request pending ${x}`, type: 'Type', increase: 'Increase', decrease: 'Decrease', amount: 'Amount', newBudget: x => `New budget ${x}`,
+    allocateTo: 'Allocate to', colPhase: 'Phase', colNow: 'Current', colChangeInc: '+ ฿', colChangeDec: '− ฿', colNew: 'New', unallocated: 'Unallocated',
+    allIn: 'Put all in Unallocated', splitPct: 'Split by current %', reason: 'Reason', reasonPh: 'e.g. Sales are strong — a second round of KOLs', note: 'Note to approver',
+    submit: 'Submit for approval', apply: 'Apply', cancelRequest: 'Cancel request',
+    allocatedOf: (a, b) => `Allocated ${a} of ${b}`, belowCommitted: x => `Can't go below committed ${x}`, onlyUnallocated: x => `Only ${x} is unallocated`,
+    amountRequired: 'Enter an amount above ฿0', amountInvalid: 'Numbers only, ฿0 or more', reasonRequired: 'Add a reason', onePending: n => `${n} request pending`,
+    notApproved: 'The campaign is waiting for approval — change its budget in the Phase Planner', noCampaign: 'Campaign not found',
+    pendingTag: x => `${x} pending`, pendingTip: (n, d, r) => `Asked by ${n} · ${d}${r ? ` · ${r}` : ''}`,
+    history: 'Budget history', hDate: 'Date', hType: 'Type', hAmount: '฿', hAfter: 'Budget after', hPhases: 'Phases', hBy: 'Requested by', hDecided: 'Approved by', hStatus: 'Status', hReason: 'Reason',
+    types: { initial: 'Initial', increase: 'Increase', decrease: 'Decrease' }, statuses: { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' },
+    system: 'System', noHistory: 'No budget yet', readOnlyHint: 'The approved budget — change it with Adjust budget',
+    sent: 'ส่งคำขอปรับงบให้อนุมัติแล้ว', applied: n => `ปรับงบ ${n} แล้ว`, cancelled: 'ยกเลิกคำขอปรับงบแล้ว', noBudgetYet: 'No budget yet',
+  };
+  Object.assign(C.planner, {
+    colAmount: 'Amount (฿)', colBudgetPct: 'Budget %', addBudgetFirst: 'Add the campaign budget first', even: 'Even', fillRemaining: 'Fill remaining',
+    evenTip: 'The same amount for every phase — what is left over goes to the last one', fillTip: 'The row you are in (or the last one) gets what is not allocated yet',
+    barEven: (a, b) => `Allocated ${a} of ${b} (100%)`, barUnder: (u, t, b) => `Unallocated ${u} · phases total ${t} of ${b}`, barOver: x => `Over budget by ${x}`,
+    barNoBudget: "No campaign budget yet — percentages can't be calculated", mismatchTitle: "Phase budgets don't match the campaign budget",
+    mismatchBody: x => `Phase budgets don't match the campaign budget (${x}). Save anyway?`, keepEditing: 'Keep editing', unallocatedRow: 'Unallocated',
+    budgetReadOnly: 'Approved budget', launch: 'Launch-heavy',
+  });
+  C.msg.planPctNoBudget = "No campaign budget yet — percentages can't be calculated";
+  C.approval.askHint = 'Period, pillar target and phase changes wait for a manager’s approval (the budget: Adjust budget) — the rest changes now';
+  Object.assign(C.campaign, { adjustBudget: 'Adjust budget', rowMenu: n => `More for ${n}` });
+  Object.assign(C.overview, { unallocatedRow: 'Unallocated' });
+  Object.assign(C.roles.perm, {
+    'campaign.draft': 'Create Campaign & Phase (waits for approval) · change name, CTA, products, note · ask for period / pillar target / phase changes · Adjust budget (waits for approval)',
+    'campaign.edit': 'Approve / Reject Campaigns, Phases and budget changes · change period, pillar target and phases at once · Adjust budget at once · On hold / Cancelled',
+  });
+  /* ===================== CR-19 — Campaign timeline · Pillar Awareness & Consideration · no Pillar target · KOL budget needed ===================== */
+  C.pillarShort = { 'Awareness & Consideration': 'Aware + Consider' };
+  Object.assign(C.overview, {
+    timelineTitle: 'Campaign timeline', timelineSub: (n, d) => `${n} campaign${n === 1 ? '' : 's'} · Today ${d}`,
+    timelineTip: 'Each row is a campaign: its dates (the status colour), a thin line where a phase starts, and its posts by week (by day for 45 days or less) — the same scale on every row.',
+    outsidePeriod: n => `${n} post${n === 1 ? '' : 's'} outside the campaign period`, rowPosts: n => `${n} post${n === 1 ? '' : 's'}`,
+    colStart: 'Start', colEnd: 'End', colPostsPosted: 'Posts posted', colPostsPlanned: 'Posts planned', colSpendL: 'Spend', colFirstPost: 'First post', colLastPost: 'Last post',
+    colWeekMon: 'Week (Mon)', colDayL: 'Day', tlWeek: (a, b) => `${a}–${b}`, tlPhase: p => `Phase · ${p}`, tlPhaseStart: (p, d) => `${p} starts ${d}`,
+    tlSpan: { period: 'Period', status: 'Status', budget: 'Budget', committed: 'Committed', used: 'Used', posts: 'Posts' }, tlOutside: 'outside the campaign period',
+    showAll: 'Show all', allocTip: 'Committed money of this campaign (and each phase) by the pillar of the deal — what is, no target.',
+  });
+  Object.assign(C.overview.sheet, { timeline: 'Campaign timeline' });
+  Object.assign(C.overview.file, { timeline: 'Campaign_timeline' });
+  Object.assign(C.planner, { budgetRequired: 'Enter the KOL budget', budgetFirst: 'Enter the KOL budget to use Budget %' });
+  /* ===================== CR-20 — New deal (From KOL Master · New KOL) · Deal modal · Move stage by target · Package · Draft notes ===================== */
+  Object.assign(C.bulk, {
+    assignTo: 'Assign to', assignHint: 'Owner of the new deals', me: n => `Me (${n})`, kolOwner: 'KOL owner', kolOwnerTip: 'The PIC who looks after this KOL in KOL Master',
+    startAt: 'Start at', workedIn: 'Worked in', workedInAny: 'Any campaign', postedOnly: 'Posted only', colLastCampaign: 'Last campaign',
+    selectedH: n => `Selected (${n})`, colRate: 'Latest rate', rate: 'Rate (฿)', postDue: 'Post due', avg: x => `Avg ${x}`, toPhase: p => `→ ${p}`, term: 'Payment term', uses: 'Uses',
+    setPostDueAll: 'Set post due for all', useLatest: 'Use latest rates', clearRates: 'Clear rates', setDueTitle: 'Post due for every selected KOL', apply: 'Apply',
+    remainingLine: (a, b) => `Remaining ${a} → after adding ${b}`, noBudgetLine: 'This campaign has no KOL budget yet',
+    willAddSkip: (n, m) => `Will add ${n} · Skip ${m}${m ? ' (already in campaign / blacklisted)' : ''}`, withoutDue: n => `${n} without post due`,
+    rowsNeed: (n, what) => `${n} row${n === 1 ? ' needs' : 's need'} ${what}`, needRate: 'a rate', needTerm: 'a payment term', needPackage: 'a package',
+    addDeals: n => `Add ${n} deal${n === 1 ? '' : 's'}`, addOpenFirst: 'Add & open first', removeRow: n => `Remove ${n}`,
+    secKol: 'New KOL', secKolSub: 'Saved to KOL Master', secDealD: 'Deal', addAnotherAccount: '+ Add another account', removeAccount: 'Remove',
+    createKolDeal: 'Create KOL & deal', createNextKol: 'Create & next', kolDealCreated: (n, id) => `${n} added to KOL Master · ${id} created`,
+    alreadyIn: n => `Already in KOL Master: ${n}`, useThisKol: 'Use this KOL', tierAuto: 'Tier',
+  });
+  Object.assign(C.deal, {
+    prevDeal: 'Previous deal (←)', nextDeal: 'Next deal (→)', navOf: (i, n) => `${i} of ${n}`, backToKol: k => `‹ Back to ${k}`, dealModal: 'Deal',
+    pkgBadge: 'PKG', pkgTip: 'Paid through a package', scriptLink: 'Script link', openLink: 'Open link',
+  });
+  Object.assign(C.deal.f, { script_link: 'Script link', package_id: 'Package', package_units: 'Uses' });
+  C.move = {
+    title: (id, kol) => `Move stage · ${id} · ${kol}`, now: 'Now:', to: 'Move to', date: 'Date', postDate: 'Post date', note: 'Note', reason: 'Cancel reason', move: 'Move', cancel: 'Cancel',
+    secQt: 'Confirm QT details', secCosts: 'Costs', secSteps: 'Steps completed by this move', alsoContacted: 'Also mark Contacted', secNext: 'Next expected', secLinks: 'Links', secPost: 'Post',
+    stepsHint: 'Each step gets a date — in order, none in the future', drafts: 'Drafts in the plan',
+    rateCard: 'Rate card (฿)', gencodeCost: 'Gencode cost (฿)', gencodeDays: 'Gencode days', gencodeStart: 'Gencode start', assetFee: 'Asset fee (฿)', expeditingFee: 'Expediting fee (฿)', totalCost: 'Total cost',
+    includesBasket: x => `Includes basket fee ${x}`, latestAvg: (l, a) => `Latest ${l} · Avg ${a}`, zeroHint: '฿0 = no fee, product only', totalLine: x => `Total ${x}`,
+    budgetLine: (a, b) => `Campaign remaining ${a} → ${b} after this move`, toPhase: p => `→ ${p}`,
+    term: 'Payment term', chooseTerm: 'Choose a term', pillar: 'Pillar', choosePillar: 'Choose a pillar', postDue: 'Post due',
+    package: 'Package', choosePackage: 'Choose a package', uses: 'Uses', fromPackage: 'From package', willUse: (n, left) => `Will use ${n} · ${left} left`, newPackage: '+ New package',
+    pkgOption: (label, left) => `${label} — ${left} left`,
+    expDraft: k => `Expected Draft ${k} date`, expScript: 'Expected script date', expApprove: 'Expected approve date', plusDays: n => `+${n}d`,
+    addRound: k => `+ Add Draft ${k} round`, removeRound: 'Remove', addTargetRound: k => `Add Draft ${k} to the plan`,
+    notNeeded: 'Not needed', doneOn: 'Done on', approveDate: 'Approve date', postedLink: 'Posted link', addPostRow: '+ Add another post', removePostRow: 'Remove', markDelivered: 'Mark sample as delivered',
+    account: 'Account', chooseAccount: 'Choose an account', briefLink: 'Brief link', scriptLink: 'Script link', linkPh: 'https://',
+    checklist: { costs: 'Costs', approve: 'Approve date', link: 'Posted link', brief: 'Brief link', script: 'Script link' },
+    errBox: n => `${n} thing${n === 1 ? '' : 's'} to fix before moving`, done: (id, step) => `${id} → ${step}`, undone: 'Move undone',
+  };
+  Object.assign(C.msg, {
+    moveRateRequired: 'Enter the rate card to move to Confirm QT or later', moveGencodeDays: 'Enter how many days the Gencode runs',
+    movePostLink: 'Add the posted link to move to Post', moveExpectedDraft1: 'Enter the expected Draft 1 date',
+    moveExpectedBefore: "Expected date can't be before the move date", moveExpectedAfterDue: d => `After the post due (${d})`,
+    linkHttps: 'Use a link that starts with https://', moveMoney: label => `${label}: enter ฿0 or more`, moveDays: 'Gencode days: a whole number of 1 or more',
+    moveStepDate: s => `Enter the date of ${s}`, moveStepsOrder: (a, b) => `${b} can't be before ${a}`, moveStepFuture: s => `${s} can't be in the future`,
+    moveDateBeforeSteps: "The date can't be before the steps it completes", moveApproveDate: 'Enter the approve date',
+    moveApproveOrder: (n, d) => `The approve date can't be before Draft ${n} (${d})`, movePostBeforeApprove: "The post date can't be before the approve date",
+    movePostFuture: "The post date can't be in the future", moveDraftDone: k => `Draft ${k} is done — the drafts before it are done too`,
+    packageRequired: 'Choose a package', packageUnits: 'Uses: a whole number of 1 or more', packageInactive: 'This package can no longer be used',
+    packageNotEnough: n => `Not enough left in this package (${n} left) — choose another payment term or add a package`,
+    pkgName: 'Give the package a name', pkgUnits: 'Posts: a whole number of 1 or more', pkgPrice: 'Total price: enter an amount above ฿0',
+    pkgBelowUsed: n => `Posts can't be fewer than used (${n})`, pkgValid: "Valid until can't be before the start date", pkgStart: 'Start date: use dd/mm/yyyy', pkgPayee: 'This payee is not of this KOL',
+    noteImagesMax: n => `Up to ${n} images per draft`, noteNotImage: 'Only image files can be added', noteLinks: 'Links: one link that starts with https:// each',
+    rowsRate: n => `${n} row${n === 1 ? ' needs' : 's need'} a rate`,
+  });
+  C.pkg = {
+    sec: 'Packages', hint: 'Prepaid posts for this KOL — any campaign can use them', none: 'No packages yet', add: '+ Add package', edit: 'Edit', archive: 'Archive',
+    col: { name: 'Name', posts: 'Posts', price: 'Price', unit: 'Unit price', used: 'Used', remaining: 'Remaining', valid: 'Valid until', payment: 'Payment', status: 'Status', kol: 'KOL' },
+    status: { active: 'Active', used_up: 'Used up', expired: 'Expired', archived: 'Archived' }, unused: n => `${n} unused`,
+    pay: { to_pay: 'To pay', sent: 'Sent', paid: 'Paid' },
+    addTitle: k => `Add package · ${k}`, editTitle: n => `Edit ${n}`, fName: 'Name', fPosts: 'Posts', fPrice: 'Total price (฿)', fUnit: 'Unit price', fStart: 'Start date',
+    fValid: 'Valid until', fPayee: 'Payee', fNote: 'Note', payeeDefault: 'Default payee', defaultName: (n, p) => `${n} posts · ${p}`, save: 'Save', create: 'Add package',
+    created: n => `Package added: ${n}`, saved: n => `Package saved: ${n}`, archived: n => `Package archived: ${n}`,
+    archiveAsk: n => `Archive ${n}?`, archiveBody: 'It can no longer be picked for a deal. Deals that use it keep it.',
+    chip: n => `Package · ${n} left`, label: (n, p) => `${n} posts · ${p}`, payRow: (k, n) => `Package · ${k} · ${n} posts`,
+    paidVia: 'Paid via package', notPaid: 'Package not paid yet', cardLine: (label, used, left) => `Package · ${label} · Used ${used} · ${left} left`, plusExtras: (a, b) => `Package ${a} + extras ${b}`,
+    balance: 'Prepaid package balance', balanceTip: 'Paid packages × posts not used yet — not counted in any campaign',
+    hist: { package_created: 'Package added', package_updated: 'Package changed', package_archived: 'Package archived', package_paid: 'Package paid' },
+    sheet: 'Packages', exportCols: ['KOL', 'Name', 'Posts', 'Price', 'Unit price', 'Used', 'Remaining', 'Status', 'Payment'],
+  };
+  C.notes = {
+    title: n => `Draft ${n} notes`, note: 'Note', notePh: 'What the KOL sent · what to change', links: 'Links', addLink: '+ Add link', images: 'Images', addImages: 'Add images',
+    dropHint: 'Choose files, drop them here, or paste (Ctrl / ⌘ + V)', warn: 'Content screenshots only — no ID cards, bank details or personal documents',
+    counts: (l, i) => [l ? `📎 ${l}` : '', i ? `🖼 ${i}` : ''].filter(Boolean).join(' · '), panel: (n, d) => `Draft ${n}${d ? ` · ${d}` : ''}`,
+    edit: 'Edit', save: 'Save', cancel: 'Cancel', close: 'Close', none: 'No notes for this draft yet', saved: n => `Draft ${n} notes saved`,
+    delImage: 'Delete image', delAsk: 'Delete this image?', delBody: 'It is removed from this browser.', delOk: 'Delete', prev: 'Previous image', next: 'Next image',
+    imagesOff: "Images aren't available in this browser (IndexedDB is off)", removeLink: 'Remove link', imageN: (i, n) => `${i} / ${n}`, histNote: n => `Draft ${n} notes`,
+    sheet: 'Draft notes', exportCols: ['Deal', 'Draft', 'Links', 'Images', 'Updated'],
+  };
+  Object.assign(C.pay, { packageBalance: 'Prepaid package balance' });
   return C;
 })();

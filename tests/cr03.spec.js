@@ -44,7 +44,7 @@
     assert.equal(x.committed + x.shortlist, 1881579, 'the old Committed is now Committed + Shortlist');
     assert.equal(x.budget, 2748400);
     assert.equal(x.paid, 774579);
-    assert.equal(x.overdue, 11);
+    assert.equal(x.overdue, 5);   // CR-15: 11 before — the 6 deals at Brief wait on Script (no due date yet)
     assert.equal(x.unpaid, 130);
     const idx = R.phaseIndex(s);
     for (const [id, v] of Object.entries({ CH: 863700, KS: 340400, AC: 7800, PH: 571679 })) assert.equal(R.campaignSummary(s, id, idx).committed, v, 'committed ' + id);
@@ -246,7 +246,7 @@
       const s = fresh(), d = newDeal(s);
       const no = R.checkMove(s, d, 'Confirm QT', { date: TODAY });
       assert.ok(no.errs.some(e => e.code === 'pillar' && e.msg === C.msg.movePillarRequired));
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration' }).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration', rateCard: '3000' }).errs, []);   // CR-20 §4.7: the rate card too
       const r = R.applyMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration' }, { logId: 900, eventId: 3 });
       assert.equal(r.deal.pillar, 'Consideration');
       assert.deepEqual(r.events.map(e => [e.event_id, e.type, e.from, e.to]), [[3, 'pillar', null, 'Consideration']]);
@@ -258,13 +258,13 @@
       assert.deepEqual(R.checkNewDealPillar(s.lookups, { sub_status: 'Contacted', pillar: null }).errs, []);
       assert.deepEqual(R.checkNewDealPillar(s.lookups, { sub_status: 'Brief', pillar: 'Awareness' }).errs, []);
     });
-    test('TC-18: an imported deal without a pillar can move; only an info', () => {
+    test('TC-18 (superseded by CR-20 §4.7): an imported deal past Confirm QT without a pillar / term fills them to move forward · back needs only a note', () => {
       const s = fresh(), d = deal(s, 'D000302');
       assert.equal(d.is_legacy, true);
       assert.equal(d.pillar, null);
-      const r = R.checkMove(s, d, 'Approve Draft 1', { date: TODAY });
-      assert.deepEqual(r.errs, []);
-      assert.ok(r.infos.some(i => i.msg === C.msg.pillarNotSetInfo));
+      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY }).errs.map(e => e.field), ['pillar', 'payment_term']);
+      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY, pillar: 'Awareness', paymentTerm: 'postpaid' }).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, note: 'redo' }).errs, []);
     });
     test('TC-19: Set pillar on 5 deals → 5 changes, 5 events; Undo restores each one', () => {
       const s = fresh(), five = s.deals.filter(d => !d.pillar).slice(0, 5);
@@ -397,7 +397,7 @@
     });
     test('TC-28 / TC-30: Color by Pillar keeps "Not set" · posts are posted or planned', () => {
       const s = fresh(), sc = { campaignId: 'CH' }, [a, z] = R.activityRange(s, sc, TODAY);
-      assert.deepEqual(R.activitySeries(s, sc, 'pillar', TODAY).map(x => x.key), ['Awareness', 'Consideration', 'Conversion', R.NOT_SET]);
+      assert.deepEqual(R.activitySeries(s, sc, 'pillar', TODAY).map(x => x.key), ['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', R.NOT_SET]);   // CR-19 §4.6: 4 pillars
       const r = R.activityBins(s, sc, a, z, R.autoGran(a, z), 'posts', 'pillar', TODAY);
       assert.equal(sumBins(r, 'posted') + sumBins(r, 'planned') + r.undated.count + r.outside, 103, 'every post of CH is on the chart or counted apart');
       assert.ok(sumBins(r, 'planned') > 0, 'planned posts are shown');
@@ -410,28 +410,24 @@
       assert.ok(r.bins.some(b => b.key === '2026-08-10' && b.total > 0));
       assert.equal(r.outside, 0);
     });
-    test('TC-31: Allocation of KS — target 10/20/70 · actual over committed incl. Not set', () => {
+    test('TC-31: Allocation of KS — actual over committed incl. Not set (CR-19 §4.7: Pillar allocation, no target)', () => {
       const x = R.pillarAllocation(fresh(), 'KS');
-      assert.deepEqual(x.target.pct, { Awareness: 10, Consideration: 20, Conversion: 70 });
-      assert.deepEqual(['Awareness', 'Consideration', 'Conversion', R.NOT_SET].map(k => x.actual.pct[k].toFixed(1)), ['16.3', '26.3', '21.5', '35.9']);
+      assert.equal(x.target, undefined);
+      assert.deepEqual(['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', R.NOT_SET].map(k => x.actual.pct[k].toFixed(1)), ['16.3', '0.0', '26.3', '21.5', '35.9']);
       assert.equal(Math.round(x.actual.total), 340400);
       assert.deepEqual(x.phases.map(p => p.phase.phase_id), ['KS-P1', 'KS-P2']);
-      assert.ok(Math.abs(x.actual.gap.Conversion - (x.actual.money.Conversion / (x.actual.total - x.actual.money[R.NOT_SET]) * 100 - 70)) < 1e-9, 'gap leaves Not set out');
     });
     test('TC-32: targets must be whole numbers that add up to 100', () => {
       assert.deepEqual(R.validatePillarTarget({ awareness: 10, consideration: 20, conversion: 60 }).errs.map(e => e.msg), [C.msg.pillarTargetSum(90)]);
       assert.deepEqual(R.validatePillarTarget({ awareness: '10', consideration: '20', conversion: '70' }).errs, []);
       ['', -5, 101, 10.5, 'x'].forEach(v => assert.deepEqual(R.validatePillarTarget({ awareness: v, consideration: 20, conversion: 70 }).errs.map(e => e.msg), [C.msg.pillarTargetNumber], String(v)));
     });
-    test('TC-33: CH has its own target 20/30/50 · others keep the default · the default can change', () => {
+    test('TC-33: the old targets stay in the data (CR-19 §4.7: not used any more) · a Campaign\'s own one is still read for old files', () => {
       const s = fresh();
       assert.deepEqual(s.lookups.pillar_target_default, { awareness: 10, consideration: 20, conversion: 70 });
       s.campaigns.find(c => c.campaign_id === 'CH').pillar_target = { awareness: 20, consideration: 30, conversion: 50 };
-      assert.deepEqual(R.pillarAllocation(s, 'CH').target.pct, { Awareness: 20, Consideration: 30, Conversion: 50 });
-      assert.deepEqual(R.pillarAllocation(s, 'KS').target.pct, { Awareness: 10, Consideration: 20, Conversion: 70 });
-      s.lookups.pillar_target_default = { awareness: 30, consideration: 30, conversion: 40 };
-      assert.deepEqual(R.pillarAllocation(s, 'PH').target.pct, { Awareness: 30, Consideration: 30, Conversion: 40 });
-      assert.deepEqual(R.pillarAllocation(s, 'CH').target.pct, { Awareness: 20, Consideration: 30, Conversion: 50 });
+      assert.deepEqual(R.pillarTargetOf(s, 'CH'), { awareness: 20, consideration: 30, conversion: 50 });
+      assert.deepEqual(R.pillarTargetOf(s, 'KS'), { awareness: 10, consideration: 20, conversion: 70 });
     });
     test('TC-34: All campaigns — Color by Campaign · posted in the default range = 168', () => {
       const s = fresh(), sc = { campaignId: null, phaseIds: null }, [a, z] = R.overviewWindow(s, sc, TODAY);

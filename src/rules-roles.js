@@ -16,9 +16,12 @@ Object.assign(KT.rules, (function (R, C) {
     { key: 'kol.merge', actions: ['kol.merge'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },          // Merge KOL · delete deal / KOL
     /* CR-09 §4.7 — the products of a Campaign (+ New product into the catalog) · Staff too */
     { key: 'campaign.products', actions: ['campaign.products'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
-    { key: 'campaign.edit', actions: ['campaign.edit'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },  // Campaign & Phase · Phase Planner · budgets · % Phase · CTA · pillar target
+    /* CR-17 §4.5 — Staff make Campaigns / Phases too (they wait for approval) · name · CTA · products · note change at once · Budget · Period · Pillar target · Phases are asked for */
+    { key: 'campaign.draft', actions: ['campaign.draft'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: false },
+    { key: 'campaign.edit', actions: ['campaign.edit', 'campaign.approve'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },  // changes at once · Approve / Reject · On hold / Cancelled
     { key: 'settings.lists', actions: ['settings.lists', 'products.edit'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },// Settings › Lists (Journey steps, Pillar, CTA, Platform) · Pillar targets · Products (CR-06)
     { key: 'settings.tiers', actions: ['settings.tiers'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },// Settings › Tier rules
+    { key: 'settings.ops', actions: ['settings.ops'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },   // CR-17 §4.1 — Settings › Operations mode
     { key: 'data.restore', actions: ['data.restore'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },   // Restore · Reset to seed
     { key: 'roles', actions: ['roles'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },                 // Role Management
     /* CR-08 §4.9 + CR-09 §4.16 — Payments (seeing them is the 'view' row) · Staff edit payees of their own KOLs / payees they created (rules-pay.js canEditPayee) ·
@@ -44,11 +47,11 @@ Object.assign(KT.rules, (function (R, C) {
   const ROW_OF = new Map(PERMISSIONS.flatMap(p => p.actions.map(a => [a, p])));
   /* CR-11 §4.13 #8 — the Role Management matrix in groups, one a part of the app (the order of the side menu) */
   const PERM_MODULES = ['dashboard', 'deals', 'shipments', 'payments', 'kol', 'settings'];
-  const PERM_MODULE = { view: 'dashboard', 'deal.edit': 'deals', 'deal.money': 'deals', 'campaign.products': 'deals', 'campaign.edit': 'deals',
+  const PERM_MODULE = { view: 'dashboard', 'deal.edit': 'deals', 'deal.money': 'deals', 'campaign.products': 'deals', 'campaign.draft': 'deals', 'campaign.edit': 'deals',
     'shipment.edit': 'shipments', 'shipment.ship': 'shipments', 'shipment.settings': 'shipments',
     'payee.edit': 'payments', 'payment.request': 'payments', 'payee.unlock': 'payments', 'payee.verify': 'payments', 'vault.admin': 'payments', 'payee.import': 'payments',
     'payment.run': 'payments', 'payment.paid': 'payments', 'payment.reopen': 'payments', 'settings.payments': 'payments',
-    'kol.edit': 'kol', 'kol.merge': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
+    'kol.edit': 'kol', 'kol.merge': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'settings.ops': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
   const permGroups = () => PERM_MODULES.map(m => ({ module: m, rows: PERMISSIONS.filter(p => (PERM_MODULE[p.key] || 'settings') === m) })).filter(g => g.rows.length);
   /* can(user, action) — asked when a control is drawn and again right before anything is written ·
      user = the person as they act now (actingAs: an admin viewing as another role) */

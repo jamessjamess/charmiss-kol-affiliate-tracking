@@ -21,9 +21,9 @@ Object.assign(KT.rules, (function (R, C) {
   const campaignItem = (state, c, today) => { const [from, to] = R.scopeRange(state, { campaignId: c.campaign_id }); return { status: R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today), from, to }; };
 
   /* ===================== All campaigns — the 5 KPI cards (§4.1) ===================== */
-  /* the Campaigns whose dates touch [from, to] (Cancelled only when asked) — the same rows as the Campaign portfolio */
-  function portfolioKpis(state, from, to, today, includeCancelled) {
-    const p = R.portfolio(state, from, to, today, includeCancelled), rows = p.rows.filter(r => includeCancelled || r.status !== 'cancelled');
+  /* the Campaigns whose dates touch [from, to] and whose status is picked (CR-14 §4.1) — the same rows as the Campaign portfolio */
+  function portfolioKpis(state, from, to, today, statuses) {
+    const p = R.portfolio(state, from, to, today, statuses), rows = p.rows;
     const ids = new Set(rows.map(r => r.campaign.campaign_id)), by = {};
     rows.forEach(r => { by[r.status] = (by[r.status] || 0) + 1; });
     /* Next to end: the On going Campaign whose last day comes first */
@@ -42,9 +42,9 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== KOL tier mix (§4.1) ===================== */
   /* committed deals (Confirm QT on, not cancelled) of the Campaigns in range by the deal's tier (CR-04 §4.2) — Mega → … → Nano → Unknown,
      each with its followers range, spend, deals and their shares */
-  function tierMix(state, from, to, today, includeCancelled, ctxIn) {
+  function tierMix(state, from, to, today, statuses, ctxIn) {
     const ctx = ctxIn || R.dealContext(state), rules = state.lookups.tier_rules || [];
-    const ids = new Set(R.campaignsInRange(state, from, to, today, includeCancelled).map(c => c.campaign_id));
+    const ids = new Set(R.campaignsInRange(state, from, to, today, statuses).map(c => c.campaign_id));
     const by = new Map(R.tierOrder(rules).map(t => [t, { tier: t, range: t === R.UNKNOWN_TIER ? null : R.tierRange(rules, t), deals: 0, spend: 0 }]));
     state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(state.lookups, d)).forEach(d => {
       const t = (ctx.tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER, x = by.get(t) || by.get(R.UNKNOWN_TIER);
@@ -67,9 +67,9 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* the same scope as the KPI cards and the KOL tier mix: committed deals (Confirm QT on, not cancelled) of the Campaigns whose dates touch the range ·
      rows Awareness → Consideration → Conversion → Not set (always last) · % of total · % of the money that has a pillar and its gap to the target
-     (R.pillarShares — the same as Allocation vs target) · Not set has no target · mostNoPillar: the Campaign with the most spend without a pillar */
-  function pillarMix(state, from, to, today, includeCancelled) {
-    const camps = R.campaignsInRange(state, from, to, today, includeCancelled), ids = new Set(camps.map(c => c.campaign_id));
+     (R.pillarShares — the same as Pillar allocation) · CR-19: no target · mostNoPillar: the Campaign with the most spend without a pillar */
+  function pillarMix(state, from, to, today, statuses) {
+    const camps = R.campaignsInRange(state, from, to, today, statuses), ids = new Set(camps.map(c => c.campaign_id));
     const keys = R.PILLARS.concat([R.NOT_SET]), by = new Map(keys.map(k => [k, { pillar: k, deals: 0, spend: 0 }])), noneBy = new Map();
     state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(state.lookups, d)).forEach(d => {
       const k = R.PILLARS.includes(d.pillar) ? d.pillar : R.NOT_SET, x = by.get(k);
@@ -77,18 +77,52 @@ Object.assign(KT.rules, (function (R, C) {
       if (k === R.NOT_SET) noneBy.set(d.campaign_id, (noneBy.get(d.campaign_id) || 0) + totalCost(d));
     });
     const rows = [...by.values()], total = { deals: rows.reduce((a, x) => a + x.deals, 0), spend: round2(rows.reduce((a, x) => a + x.spend, 0)) };
-    const target = portfolioPillarTarget(state, camps), money = k => Object.fromEntries(rows.map(x => [x.pillar, x[k]]));
-    const sh = { spend: R.pillarShares(money('spend'), target), deals: R.pillarShares(money('deals'), target) };
+    /* CR-19 §4.7 — what is, no target: % of total (and of the money that has a pillar) */
+    const money = k => Object.fromEntries(rows.map(x => [x.pillar, x[k]]));
+    const sh = { spend: R.pillarShares(money('spend')), deals: R.pillarShares(money('deals')) };
     rows.forEach(x => {
       x.spendPct = total.spend ? x.spend / total.spend * 100 : 0; x.dealsPct = total.deals ? x.deals / total.deals * 100 : 0;
       const set = x.pillar !== R.NOT_SET;
-      x.target = set ? Number(target[R.PILLAR_KEY[x.pillar]]) : null;
       x.ofSet = { spend: set ? sh.spend.pct[x.pillar] : null, deals: set ? sh.deals.pct[x.pillar] : null };
-      x.gap = { spend: set ? sh.spend.gap[x.pillar] : null, deals: set ? sh.deals.gap[x.pillar] : null };
     });
     const none = by.get(R.NOT_SET), worst = [...noneBy.entries()].sort((a, b) => b[1] - a[1])[0];
-    return { rows, total, target, set: { spend: round2(sh.spend.set), deals: sh.deals.set }, notSetPct: total.spend ? none.spend / total.spend * 100 : 0,
+    return { rows, total, set: { spend: round2(sh.spend.set), deals: sh.deals.set }, notSetPct: total.spend ? none.spend / total.spend * 100 : 0,
       mostNoPillar: worst ? worst[0] : null };
+  }
+
+  /* ===================== CR-19 §4.2–4.3 — Campaign timeline (All campaigns, Row 3) ===================== */
+  /* one Campaign in the range: its bars (R.activityBins — the same numbers as before) with what falls outside its own dates kept apart */
+  function campaignActivityBuckets(state, c, from, to, gran, measure, today) {
+    const [start, end] = R.campaignDates(state, c);
+    const r = R.activityBins(state, { campaignId: c.campaign_id }, from, to, gran, measure, 'campaign', today, start ? [start, end] : null);
+    const bins = r.bins.map(b => ({ key: b.key, posted: b.posted, planned: b.planned, total: b.total, outPosted: b.outPosted, outPlanned: b.outPlanned }));
+    return { start, end, gran, bins, posted: bins.reduce((a, b) => a + b.posted, 0), planned: bins.reduce((a, b) => a + b.planned, 0),
+      undated: r.undated, outside: r.outside, outsidePeriod: r.outsidePeriod, first: r.first, last: r.last };
+  }
+  /* the order of the rows (§4.3): On going (ends soonest, then starts first) → Pending approval → Not started (starts soonest) → On hold →
+     Complete (ended last first) → Rejected → Cancelled */
+  const TL_RANK = { ongoing: 0, pending: 1, not_started: 2, on_hold: 3, complete: 4, rejected: 5, cancelled: 6 };
+  function timelineOrder(rows) {
+    const k = (a, b) => String(a || '9999').localeCompare(String(b || '9999'));
+    return rows.slice().sort((a, b) => (TL_RANK[a.status] - TL_RANK[b.status])
+      || (a.status === 'ongoing' ? k(a.end, b.end) || k(a.start, b.start) : a.status === 'complete' || a.status === 'cancelled' || a.status === 'rejected' ? k(b.end, a.end) : k(a.start, b.start))
+      || String(a.campaign.campaign_name).localeCompare(String(b.campaign.campaign_name)));
+  }
+  /* the card: a row a Campaign (status · dates · Phase starts · bars · money for the tooltip) · bars by week when the range is longer than 45 days,
+     else by day · one scale for every row (max) · the footer numbers */
+  function campaignTimeline(state, from, to, measure, today, statuses) {
+    const gran = R.autoGran(from, to), idx = R.phaseIndex(state);
+    const rows = timelineOrder(R.campaignsInRange(state, from, to, today, statuses).map(c => {
+      const status = R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today), b = campaignActivityBuckets(state, c, from, to, gran, measure, today);
+      const own = R.sortPhases(state.phases.filter(p => p.campaign_id === c.campaign_id && (R.isApproved(c) ? R.isApproved(p) : true) && R.isISODate(p.start_date)));
+      return Object.assign({ campaign: c, status, phases: own.map(p => ({ phase_id: p.phase_id, start: p.start_date, end: p.end_date })),
+        money: R.campaignMoney(state, c.campaign_id, idx), days: daysLeft({ status, from: b.start, to: b.end }, today) }, b);
+    }));
+    let keys = rows.length ? rows[0].bins.map(b => b.key) : [];
+    if (!keys.length) { let cur = gran === 'week' ? R.weekStart(from) : from; while (cur <= to && keys.length <= 800) { keys.push(cur); cur = addDays(cur, gran === 'week' ? 7 : 1); } }
+    const sum = f => rows.reduce((a, r) => a + f(r), 0);
+    return { from, to, gran, measure, keys, rows, max: Math.max(0, ...rows.flatMap(r => r.bins.map(b => b.total))),
+      undated: { count: sum(r => r.undated.count), amount: sum(r => r.undated.amount) }, outside: sum(r => r.outside), outsidePeriod: sum(r => r.outsidePeriod) };
   }
 
   /* ===================== Time axis (§4.2) — one row, one format for the range shown ===================== */
@@ -139,5 +173,5 @@ Object.assign(KT.rules, (function (R, C) {
     return from && to ? { from: addDays(from, -7), to: addDays(to, 7) } : null;
   }
 
-  return { portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
+  return { campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

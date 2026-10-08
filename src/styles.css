@@ -7,11 +7,12 @@
   --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f2f4f7; --surface-3:#e9ecf1; --border:#e4e7ec; --border-strong:#d0d5dd; --grid:#eaecf0;
   --text:#101828; --text-2:#344054; --muted:#667085;
   --accent:#c2185b; --accent-hover:#a3144c; --accent-soft:#fdeef4; --accent-text:#ffffff;
+  --mark:#fde68a;   /* CR-14 §4.3: the search found in a name */
   --ok:#067647; --ok-soft:#ecfdf3; --warn:#b54708; --warn-soft:#fffaeb; --err:#b42318; --err-soft:#fef3f2; --info:#175cd3; --info-soft:#eff8ff;
   --st-list-bg:#f2f4f7; --st-list:#344054; --st-prog-bg:#eff8ff; --st-prog:#175cd3; --st-done-bg:#ecfdf3; --st-done:#067647; --st-cancel-bg:#fef3f2; --st-cancel:#b42318;
   /* --ph1…8 = the categorical order for Campaigns (CR-13: Phases use --phs1…6) */
   --ph1:#2a78d6; --ph2:#eb6834; --ph3:#1baf7a; --ph4:#eda100; --ph5:#e87ba4; --ph6:#008300; --ph7:#4a3aa7; --ph8:#e34948;
-  --pl-aw:#2a78d6; --pl-co:#e87ba4; --pl-cv:#eda100; --series-grey:#B4B2A9;
+  --pl-aw:#2a78d6; --pl-ac:#008300; --pl-co:#e87ba4; --pl-cv:#eda100; --series-grey:#B4B2A9;
   --band:#8d95a3; --g-list:#5F5E5A; --g-list-bg:#F1EFE8; --g-prog:#2a78d6; --g-prog-bg:#E6F0FB; --g-done:#0f7a52; --g-done-bg:#E3F5EC; --g-cancel:#c23b3a; --g-cancel-bg:#FCE9E9;
   --tier-mega:#4a3aa7;  --tier-macro:#2a78d6; --tier-mid:#1baf7a; --tier-micro:#eb6834; --tier-nano:#eda100;
   --series-kol:#2a78d6; --overlay:rgba(16,24,40,.32); --shadow-lg:0 12px 32px rgba(16,24,40,.16); --row-hover:#f9fafb; --row-sel:#fdf2f6;
@@ -22,10 +23,11 @@
   --bg:#0f1217; --surface:#171b22; --surface-2:#1f242d; --surface-3:#2a303b; --border:#2c333f; --border-strong:#3b4452; --grid:#262c36;
   --text:#eef0f3; --text-2:#c9ced6; --muted:#98a2b3;
   --accent:#f06292; --accent-hover:#f48fb1; --accent-soft:#3a1f2b; --accent-text:#171b22;
+  --mark:#6b5310;
   --ok:#47cd89; --ok-soft:#0d2b1d; --warn:#fdb022; --warn-soft:#33240c; --err:#f97066; --err-soft:#3b1714; --info:#84caff; --info-soft:#122a45;
   --st-list-bg:#2a303b; --st-list:#d0d5dd; --st-prog-bg:#122a45; --st-prog:#84caff; --st-done-bg:#0d2b1d; --st-done:#75e0a7; --st-cancel-bg:#3b1714; --st-cancel:#fda29b;
   --ph1:#3987e5; --ph2:#d95926; --ph3:#199e70; --ph4:#c98500; --ph5:#d55181; --ph6:#008300; --ph7:#9085e9; --ph8:#e66767;
-  --pl-aw:#3987e5; --pl-co:#d55181; --pl-cv:#c98500; --series-grey:#5F5E5A;
+  --pl-aw:#3987e5; --pl-ac:#008300; --pl-co:#d55181; --pl-cv:#c98500; --series-grey:#5F5E5A;
   --band:#6b7383; --g-list:#B4B2A9; --g-list-bg:#2C2C2A; --g-prog:#3987e5; --g-prog-bg:#14263D; --g-done:#199e70; --g-done-bg:#12291F; --g-cancel:#e66767; --g-cancel-bg:#3A1A1A;
   --tier-mega:#9085e9;  --tier-macro:#3987e5; --tier-mid:#199e70; --tier-micro:#d95926; --tier-nano:#c98500;
   --series-kol:#3987e5; --overlay:rgba(0,0,0,.55); --shadow-lg:0 12px 32px rgba(0,0,0,.5); --row-hover:#1c2129; --row-sel:#2b1d25;
@@ -130,8 +132,8 @@ details.menu > summary::-webkit-details-marker{display:none}
 .pagehead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .toolbar input[type=search],.toolbar select{width:auto;max-width:100%}
-.toolbar .search{flex:1 1 240px;max-width:360px}
-@media (max-width:760px){.toolbar .search{max-width:none;flex-basis:100%}}
+.toolbar > .search{flex:1 1 240px;max-width:360px}   /* CR-14 §4.2: the toolbar's own box only (a box inside a popover of the toolbar took flex 240px as its height) */
+@media (max-width:760px){.toolbar > .search{max-width:none;flex-basis:100%}}
 .fchips{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}
 .fchip{display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:2px 4px 2px 10px;font-size:12px;color:var(--text-2)}
 .fchip button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 4px}
@@ -817,7 +819,6 @@ tr:hover .picbtn::after,.picbtn:focus-visible::after{opacity:1}
 .dl-sum b{color:var(--text);font-variant-numeric:tabular-nums} .dl-sum b.over{color:var(--err)}
 .dl-sum .sep{margin:0 4px}
 #dl_reasons{margin:-2px 0 10px}
-#dl_fpop .ticks{display:flex;flex-wrap:wrap;gap:4px 12px}
 .menu-list .mi-seg{padding:4px 10px 8px}
 @media (max-width:767px){.dl-camp{width:100%}.dl-camp .combo{flex:1}#dl_camp + .combo,#dl_phase + .combo{width:100%!important}.dl-sum{margin-left:0;white-space:normal}.dl-row3 .stabs{flex-basis:100%}}
 /* CR-06 §4.7: Pipeline drag & drop — a column that takes the card (dashed accent) · one that cannot (faded, no-entry cursor; Post in red) */
@@ -856,11 +857,11 @@ html.drawer-full-wide .drawer.wide{width:var(--content-w)}
 .pf-n{display:none;font-size:11px;font-weight:600;color:var(--muted);margin-left:2px}
 main[data-cw="l"] .tbl.dl .pf-rest{display:none}
 main[data-cw="l"] .tbl.dl .pf-n{display:inline}
-main[data-cw="l"] .toolbar .search{min-width:220px}
+main[data-cw="l"] .toolbar > .search{min-width:220px}
 main[data-cw="m"] .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 main[data-cw="s"] .kpis{grid-template-columns:minmax(0,1fr)}
 main[data-cw="m"] .ov-row,main[data-cw="s"] .ov-row,main[data-cw="m"] .ov-half,main[data-cw="s"] .ov-half,main[data-cw="m"] .ov-row.r12,main[data-cw="s"] .ov-row.r12{grid-template-columns:minmax(0,1fr)}
-main[data-cw="m"] .toolbar .search,main[data-cw="s"] .toolbar .search{flex:1 1 100%;max-width:none;order:-1}
+main[data-cw="m"] .toolbar > .search,main[data-cw="s"] .toolbar > .search{flex:1 1 100%;max-width:none;order:-1}
 main[data-cw="m"] #km_body .kcol,main[data-cw="s"] #km_body .kcol{position:sticky;left:44px;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--border)}
 main[data-cw="m"] .cp-table td.nm,main[data-cw="m"] .cp-table th.nmh{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--border)}
 main[data-cw="m"] .cp-table th.nmh{z-index:3;background:var(--surface-2)}
@@ -944,8 +945,6 @@ main[data-cw="m"] .tbl.pbudget th.pname,main[data-cw="s"] .tbl.pbudget th.pname{
 .icon-btn.sm{width:24px;height:24px;font-size:12px}
 .kt-add input{min-width:0;flex:1}
 .km-tbl td.kcat .cell2 .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ticks.typeticks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px}
-.ticks.typeticks .tick{white-space:nowrap}
 
 /* CR-07 §4.9 — Journey timeline: green = passed · orange ring = waiting · red = late / overdue / cancelled · grey = upcoming; 4px square lines */
 .jt-sum{font-size:12px;color:var(--muted);font-weight:600}
@@ -956,7 +955,8 @@ main[data-cw="m"] .tbl.pbudget th.pname,main[data-cw="s"] .tbl.pbudget th.pname{
 .jt-s.seg-cancel::after{background:var(--err)}
 .jt-c.info{width:24px;height:24px;border-radius:50%;border:2px solid var(--border);background:var(--surface);color:var(--muted);display:grid;place-items:center;font-size:12px;font-weight:700;line-height:1;padding:0;cursor:pointer;position:relative;z-index:1;flex:none}
 .jt-s.done .jt-c,.jt-s.late .jt-c{background:var(--ok);border-color:var(--ok);color:#fff}
-.jt-s.nodate .jt-c{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.jt-s.nodate .jt-c{background:var(--surface-2);border-color:var(--border-strong);color:var(--muted)}   /* CR-15: passed, no date on record (grey, not a warning) */
+.jt-t .jt-nr{color:var(--muted)}
 .jt-s.current .jt-c{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
 .jt-s.current.od .jt-c{border-color:var(--err);box-shadow:0 0 0 3px var(--err-soft)}
 .jt-s.overdue .jt-c{border-color:var(--err);color:var(--err)}
@@ -1141,11 +1141,12 @@ button.nopchip:hover{text-decoration:underline}
 .drawer.wide .dr-resize:hover,.drawer.wide .dr-resize.on{background:var(--accent);opacity:.35}
 .drawer.wide .dr-head{position:sticky;top:0;z-index:3}
 .drawer.wide .dr-title h2{white-space:normal;overflow:visible;overflow-wrap:anywhere;line-height:1.3}
-.drawer.dealw .dgrid>div{display:flex;flex-direction:column;gap:12px;min-width:0}
-.drawer.dealw .dgrid{display:flex;flex-direction:column;gap:12px}
-.drawer.dealw.two .dgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:12px 16px}
-.drawer.dealw .dr-sub .stage,.drawer.dealw .dr-sub .st{vertical-align:middle}
-.drawer.dealw .backstage{display:inline-block;margin:2px 0 4px;font-size:13px}
+/* CR-20 §4.6 — the Deal modal (the drawer host as a centred modal: L · ~1120px · 90vh · the page faded behind · full screen below 768px) */
+.drawer.dm .dgrid>div{display:flex;flex-direction:column;gap:12px;min-width:0}
+.drawer.dm .dgrid{display:flex;flex-direction:column;gap:12px}
+.drawer.dm.two .dgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:12px 16px}
+.drawer.dm .dr-sub .stage,.drawer.dm .dr-sub .st{vertical-align:middle}
+.drawer.dm .backstage{display:inline-block;margin:2px 0 4px;font-size:13px}
 /* §4.13 — the Stage popup: 90vw (≤ 1400px) × 85vh · full screen on a phone */
 dialog.xl{width:min(90vw,1400px);height:85vh;max-height:85vh}
 dialog.xl[open]{display:flex;flex-direction:column}
@@ -1228,8 +1229,6 @@ dialog.xl .pop-wrap{flex:1;min-height:0;overflow:auto}
 @media (max-width:1279px){.pf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:600px){.pf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pf-tools{margin-bottom:8px;flex-wrap:wrap;gap:8px}
-.pf-cols{max-height:60vh;overflow:auto;min-width:200px;padding:6px 0}
-.pf-cols .tick{display:flex;gap:8px;align-items:center;padding:4px 12px;font-size:13px;white-space:nowrap}
 .pf-wrap{max-height:calc(100vh - 300px)}
 .pf-tbl th,.pf-tbl td{padding:0 6px;height:44px}
 .pf-tbl th{height:40px}
@@ -1323,12 +1322,9 @@ dialog.drp.sheet .drp-ms.vert{grid-template-columns:1fr;gap:12px}
 .pl-tbl td.pl-per .drange-t{width:100%}
 .pl-period .drange-t{min-width:280px}
 /* CR-10 §4.9 — Campaign & Phase: the Campaign filter */
-.cp-cmenu>summary{max-width:260px;overflow:hidden;white-space:nowrap}
-.cp-cpop{min-width:280px;max-width:min(380px,calc(100vw - 32px));padding:10px}
-.cp-cpop .search{width:100%;margin-bottom:6px}
-.cp-copts{max-height:50vh;overflow:auto;display:flex;flex-direction:column}
-.cp-copts .tick{display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:13px}
-.cp-copts .cp-cname{flex:1;min-width:0;overflow-wrap:anywhere}
+/* CR-14 §4.2 — the Campaign filter is a ui.multiSelect (#cp_cms) · §4.3 the search found in a name */
+#cp_cms .ms-trigger{max-width:280px}
+.cp-table mark,.gantt mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 #cp_chips{margin-bottom:8px}
 .pl-period .drange.dfield{width:auto;flex:none}
 @media (max-width:767px){.pl-period .drange.dfield{flex:1;min-width:0}.pl-period .drange-t{min-width:0;width:100%}}
@@ -1634,3 +1630,417 @@ dialog.cmodal.cm-l .cm-root{height:100%}
 .pmix .tm-leg{max-width:420px}
 /* CR-13 §4.3 — a Phase dot before its name */
 .pn .dotc,.pl-seq .dotc,.arow2 .al .dotc{width:8px;height:8px;margin-right:6px;flex:none}
+
+/* ---------- CR-14 §4.2 — ui.multiSelect (its own classes · nothing from .toolbar / .search reaches inside) ---------- */
+.ms{position:relative;display:inline-flex;vertical-align:middle;max-width:100%;min-width:0}
+.ms-trigger{display:inline-flex;align-items:center;gap:8px;height:36px;max-width:100%;padding:0 10px 0 12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:14px;cursor:pointer;text-align:left}
+.ms-trigger:hover{background:var(--surface-2)}
+.ms-trigger .ms-l{min-width:0;overflow-wrap:anywhere;line-height:18px}
+.ms-trigger .ms-caret{color:var(--muted);font-size:11px;flex:0 0 auto}
+.ms-pop{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:40;width:max-content;min-width:max(280px,100%);max-width:min(380px,calc(100vw - 32px));max-height:400px;flex-direction:column;gap:6px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg)}
+.ms-pop.open{display:flex}
+.ms-pop.right{left:auto;right:0}
+.ms-qw{position:relative;flex:0 0 auto;display:flex;align-items:center}
+.ms-qw svg{position:absolute;left:9px;width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;pointer-events:none}
+.ms-qw .ms-q{flex:0 0 auto;width:100%;height:32px;min-height:0;max-height:32px;padding:4px 8px 4px 28px;font-size:13px}
+.ms-list{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.ms-opt{display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:6px;font-size:13px;cursor:pointer}
+.ms-opt:hover{background:var(--surface-2)}
+.ms-opt:has(input:focus-visible){box-shadow:0 0 0 2px var(--accent-soft)}
+.ms-opt[title] input{opacity:.6}
+.ms-name{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.ms-sub{color:var(--muted);font-variant-numeric:tabular-nums}
+.ms-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.ms-opt .st{flex:0 0 auto;max-width:none}   /* a status chip keeps its whole word; the name wraps */
+.ms-dot.outline{box-shadow:inset 0 0 0 1.5px var(--muted)}
+.ms-none{padding:8px 6px;color:var(--muted);font-size:13px}
+.ms-foot{flex:0 0 auto;display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--border);padding-top:6px}
+.ms.inline{display:block}
+.ms.inline .ms-pop{display:flex;position:static;width:auto;min-width:0;max-width:none;max-height:260px;padding:0;border:0;box-shadow:none;background:none}
+@media (max-width:760px){.ms:not(.inline){display:inline-block}.ms:not(.inline) .ms-pop{position:fixed;left:16px;right:16px;top:auto;width:auto;min-width:0;max-width:none;max-height:70vh}}
+/* CR-14 §4.5 — the KOL drawer's Contact line (the ID can be copied) */
+.kv.kcontact b{display:inline-flex;align-items:center;gap:4px;min-width:0}
+.kv.kcontact .kct{overflow-wrap:anywhere}
+.kv.kcontact .copybtn{opacity:1}
+.pf-tools .ms-trigger{height:30px;font-size:13px;font-weight:600;color:var(--text-2)}   /* CR-14: Columns as tall as the small buttons next to it */
+
+/* ---------- CR-16 §4.1 — the KOL profile: a large modal (L) with tabs · under the Deal drawer (40), over the page (the dialogs are in the top layer) ---------- */
+body.kpm-open{overflow:hidden}
+.kpm-wrap{position:fixed;inset:0;z-index:35;display:flex;align-items:center;justify-content:center;padding:24px}
+.kpm-wrap.hidden{display:none}
+.kpm-overlay{position:absolute;inset:0;background:var(--overlay)}
+.kpm{position:relative;width:min(1200px,94vw);height:min(90vh,1000px);background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden;outline:none}
+.kpm.drop{box-shadow:0 0 0 3px var(--accent),var(--shadow-lg)}
+.kpm-h{flex:none;background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px 0;display:flex;flex-direction:column;gap:8px}
+.kpm-back{align-self:flex-start}
+.kpm-top{display:flex;align-items:flex-start;gap:14px}
+.kpm-top .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.kpm-top h2{margin:0;font-size:20px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
+.kpm-top h2 .copybtn{opacity:1;vertical-align:middle;margin-left:4px}
+.kpm-top .dr-sub .chip{font-size:11px}
+.kpm-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.kpm-nav{display:inline-flex;gap:2px}
+.kpm-nav .icon-btn{font-size:20px;line-height:1}
+.kpm-sum{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;padding:2px 0}
+.kpm-sum .ks{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.kpm-sum .ks .l{color:var(--muted);font-size:12px}
+.kpm-sum .ks b{font-weight:600;overflow-wrap:anywhere}
+.kpm-tabs{margin:0;border-bottom:0}
+.kpm-b{flex:1;min-height:0;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px;outline:none}
+.kpm-f{flex:none;background:var(--surface);border-top:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px}
+.kpm-f .checks{flex:1;min-width:0;margin:0;max-height:96px;overflow:auto}
+.kpm-f .btns{flex:none;display:flex;gap:8px}
+.kpm-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px 16px;align-items:start}
+.kpm-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.kpm-col:empty{display:none}
+.kpm-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.kpm-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}
+.kpm-htbl tr.grp td{background:var(--surface-2);font-size:13px}
+.kpm-b .post.click{cursor:pointer}
+.kpm-b .post.click:hover,.kpm-b .post.click:focus-visible{background:var(--row-hover)}
+.kpm-ref{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.kpm-refc{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);min-width:0}
+.kpm-refc .l{color:var(--muted);font-size:12px}
+.kpm-refc b{font-size:18px}
+.kpm-rtbl .qsrc span,.kpm-rtbl .qsrc .sub{display:block}
+.kpm-edit{display:flex;flex-direction:column;gap:12px}
+@media (max-width:1023px){.kpm-2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:767px){
+  .kpm-wrap{padding:0}
+  .kpm{width:100vw;max-width:100vw;height:100dvh;border-radius:0;border:0}
+  .kpm-h{padding:10px 12px 0}
+  .kpm-b{padding:12px}
+  .kpm-f{padding:10px 12px;flex-wrap:wrap}
+  .kpm-f .checks{flex-basis:100%}
+  .kpm-f .btns{width:100%}.kpm-f .btns .btn{flex:1}
+  .kpm-top{flex-wrap:wrap;gap:10px}
+  .kpm-acts{flex-basis:100%}
+  .kpm-tabs{overflow-x:auto}
+  .kpm-ref{grid-template-columns:minmax(0,1fr)}
+}
+/* §4.4 — profile photos: KOL Master 32px · the profile 64px · Deal drawer / New deal 36px · no photo = the letter circle */
+.av.ph{background:none;overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.km-tbl .kolcell .av{width:32px;height:32px}
+.av.md{width:36px;height:36px;font-size:14px}
+.av.lg{width:64px;height:64px;font-size:26px}
+@media (max-width:767px){.av.lg{width:52px;height:52px;font-size:22px}}
+.kpm-av{display:block;position:relative;flex:none;border-radius:50%}
+.kpm-photo{position:relative;flex:none}
+.kpm-photo>summary{list-style:none;cursor:pointer}
+.kpm-photo>summary::-webkit-details-marker{display:none}
+.kpm-photo>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kpm-cam{position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:var(--surface);color:var(--text-2);border:1px solid var(--border-strong);display:grid;place-items:center}
+.kpm-cam svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4}
+.kpm-photo .menu-list{min-width:250px;max-width:min(320px,calc(100vw - 32px))}
+.kpm-phint{white-space:normal;font-weight:400}
+.mi-wrap{display:block}
+.mi-wrap>.mi{width:100%}
+.menu-list .mi:disabled{opacity:.5;cursor:not-allowed}
+.dr-title>.av{margin-top:2px}
+.nd-kh{display:flex;align-items:center;gap:8px}
+.crop{display:flex;flex-direction:column;align-items:center;gap:12px}
+.crop-box{position:relative;overflow:hidden;border-radius:12px;background:var(--surface-3);cursor:grab;touch-action:none;outline-offset:3px}
+.crop-box:active{cursor:grabbing}
+.crop-box img{position:absolute;left:0;top:0;max-width:none;user-select:none;pointer-events:none;transform-origin:0 0}
+.crop-ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.85);pointer-events:none}
+.crop-zoom{display:flex;align-items:center;gap:8px;width:240px;max-width:100%}
+.crop-zoom input{flex:1}
+/* §4.2 · §4.3 — payee and address cards */
+.pcards{display:flex;flex-direction:column;gap:10px}
+.pcard{border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--surface);min-width:0}
+.pcard.arch{opacity:.75;border-style:dashed}
+.pc-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pc-l{overflow-wrap:anywhere}
+.pc-m{font-size:13px;color:var(--text-2)}
+.chip.def-chip{background:var(--accent-soft);border-color:transparent;color:var(--text);font-weight:600}
+.py-unlock{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;padding:8px 12px;border:1px dashed var(--border-strong);border-radius:10px}
+.cp-list{display:flex;flex-direction:column}
+.cp-opt{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)}
+.cp-opt>span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pm-ptag{font-size:11px}
+.sh-al{font-weight:600}
+.kv.payto select{max-width:100%}
+/* CR-16 — with the 32px photo the KOL column is tighter: the name wraps (at _ . - or a space), never "…" (CR-11 §4.13 #4) */
+.tbl.km-tbl td.kcol .kname b{white-space:normal;overflow:visible;text-overflow:clip}
+.tbl.km-tbl td.kcol .kname{flex-wrap:wrap}
+
+/* ---------- CR-17 — Simple mode (row buttons · a small form beside them) · Campaign approval ---------- */
+.st.apending{background:var(--warn-soft);color:var(--warn);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 35%,transparent)}
+.st.ap-chg{font-size:11px;vertical-align:middle}
+.combo-o.off{opacity:.55;cursor:not-allowed}
+.combo-o.off .combo-l{text-decoration:none}
+.menu-list.popform{width:min(300px,calc(100vw - 16px));padding:10px 12px;gap:8px;z-index:46}
+.popform .pf-h{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.popform .pf-b{display:flex;flex-direction:column;gap:8px}
+.popform .pf-b .field{margin:0}
+.popform .pf-chk{margin:0}
+.popform .pf-chk:empty{display:none}
+.popform .pf-f{display:flex;justify-content:flex-end;gap:6px}
+.pm-act,.sh-act,.sm-act{white-space:nowrap}
+.pm-act .btn,.sh-act .btn,.sm-act .btn{vertical-align:middle;margin-right:4px}
+.pm-docs-n{display:inline-block;margin-left:6px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:0 8px;line-height:18px;font:inherit;font-size:12px;cursor:pointer}
+span.pm-docs-n{cursor:default}
+.pm-docs-n.ok{color:var(--ok)}
+.pm-late{color:var(--warn);font-weight:600}
+.pm-whtt{display:inline-flex;align-items:center;gap:4px}
+.dpl-a .btn{margin-left:auto}
+.ops-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--border)}
+.ops-k{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ops-def{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 8px;font-size:13px}
+.ops-def dt{font-weight:600}.ops-def dd{margin:0;color:var(--text-2)}
+.sec.appr{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));background:color-mix(in srgb,var(--warn-soft) 55%,var(--surface))}
+.sec.appr.rej{border-color:color-mix(in srgb,var(--err) 35%,var(--border));background:color-mix(in srgb,var(--err-soft) 45%,var(--surface))}
+.sec.appr .ap-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;margin-bottom:8px}
+.sec.appr .ap-h{font-weight:600;font-size:13px;margin:10px 0 4px}
+.sec.appr .check{margin:0 0 8px}
+.ap-btns{justify-content:flex-end;margin-top:10px;flex-wrap:wrap}
+.pl-aphint{margin:0 0 4px}
+/* on the corner of the icon (open or folded menu) — the label keeps its full width, never cut */
+.nbadge{position:absolute;top:2px;left:24px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:var(--surface);font-size:10px;font-weight:700;line-height:16px;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.sn-item{position:relative}
+
+/* ---------- CR-17 v1.2 — the Approvals page (one card a request) · how soon a waiting one starts ---------- */
+.sttime{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap}
+.ap-tools{flex-wrap:wrap;gap:8px}
+.ap-tools .seg .n{margin-left:4px;color:var(--muted);font-weight:600}
+.apc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.card.apc{padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card.apc.done{opacity:.92}
+.apc-h{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.apc-cb{padding-top:2px}
+.apc-t{min-width:0;flex:1}
+.apc-t b{overflow-wrap:anywhere}
+.apt{display:inline-block;font-size:11px;font-weight:600;padding:0 8px;line-height:18px;border-radius:999px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);vertical-align:middle;white-space:nowrap}
+.apt.new_campaign{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 35%,transparent)}
+.apt.new_phase{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.apt.change{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.apt.budget_increase,.apt.budget_decrease{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+.apc-b{display:flex;flex-direction:column;min-width:0}
+.apc-b .tablewrap{margin:4px 0}
+.apc-imp{font-size:12px;color:var(--text-2);padding:6px 0 0}
+.apc-imp.late{color:var(--err);font-weight:600}
+.apc-big{font-weight:600;font-variant-numeric:tabular-nums;padding:2px 0 4px;overflow-wrap:anywhere}
+.apc-sub{font-size:12px;color:var(--muted);margin-top:6px}
+.apc-note{margin-top:6px;padding:6px 8px;border-left:3px solid var(--border-strong,var(--border));background:var(--surface-2);font-size:13px;overflow-wrap:anywhere}
+.apc-f{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:8px}
+.apc-f .spacer{flex:1}
+.apc-why{flex-basis:100%;margin:4px 0 0}
+.apc-tl{position:relative;height:8px;background:var(--surface-3);margin:2px 0 6px;overflow:hidden}
+.apc-tl span{position:absolute;top:0;bottom:0;border-right:2px solid var(--surface)}
+.ap-tbl td,.ap-tbl th{white-space:normal;overflow-wrap:anywhere}
+
+/* ---------- CR-18 — Budget % / Amount · Adjust budget · Budget history · "+฿x pending" ---------- */
+input.numin{text-align:right;font-variant-numeric:tabular-nums}
+.bpend{display:inline-block;font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-soft);border-radius:999px;padding:0 6px;line-height:18px;white-space:nowrap;margin-left:4px;cursor:help}
+td.num .bpend{margin:2px 0 0}
+td.act,th.act{width:36px;padding-left:2px;padding-right:2px;text-align:center}
+.rowmenu summary{width:28px;height:28px}
+.ro-budget{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
+.ro-budget b{font-variant-numeric:tabular-nums;font-size:15px}
+.pl-tbl input.numin{width:110px}
+.pl-tbl input.pl-pct{width:84px}
+.pl-tbl input.numin:disabled{background:var(--surface-2);cursor:not-allowed}
+.pl-tbl tfoot .pl-unal td{color:var(--muted);font-style:italic;border-top:1px dashed var(--border)}
+.pl-msg{font-weight:600}
+.pl-msg.ok{color:var(--ok)} .pl-msg.err{color:var(--err)} .pl-msg.warn{color:var(--warn)}
+.pbudget tr.unal td{color:var(--muted)}
+.ab-cur{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ab-cur > div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ab-cur span{font-size:12px;color:var(--muted)}
+.ab-cur b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.ab-f{grid-template-columns:auto minmax(0,1fr)}
+.ab-f input.numin{max-width:220px}
+.ab-alloc{margin-top:10px}
+.ab-ah{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.ab-ah label{margin:0}
+.ab-tbl input.numin{width:120px}
+.ab-sum{font-size:13px;margin-top:6px;font-variant-numeric:tabular-nums}
+.ab-sum .ok{color:var(--ok)}
+.ab-wait{margin-top:10px;flex-wrap:wrap}
+.bh-head{display:flex;justify-content:flex-end}
+.bh-head:empty{display:none}
+.bh-l{font-size:12px;color:var(--muted);margin:6px 0 4px}
+.bh-tbl td{vertical-align:top}
+.bh-tbl tr.muted td{color:var(--muted)}
+.bh-ph,.bh-why{min-width:140px;overflow-wrap:anywhere}
+.bh-t{font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);white-space:nowrap}
+.bh-t.increase{color:var(--ok)} .bh-t.decrease{color:var(--err)}
+@media (max-width:560px){ .ab-cur{grid-template-columns:1fr 1fr} .ab-f{grid-template-columns:1fr} }
+/* the Phases side got two money columns (Budget % · Amount): a little more room for it, and narrower boxes */
+.pl-grid{grid-template-columns:minmax(0,5fr) minmax(0,12fr)}
+.pl-tbl input.numin{width:100px}
+.pl-tbl input.pl-pct{width:72px}
+.pl-tbl select{max-width:132px}
+.pl-tbl input[data-k="label"]{min-width:110px}
+.ab-tbl .dotc{width:8px;height:8px;margin-right:6px}
+.bh-tbl td{height:auto;padding-top:6px;padding-bottom:6px}
+.bh-tbl td.bh-ph,.bh-tbl td.bh-why{white-space:normal;overflow:visible;text-overflow:clip;max-width:260px}
+.ap-tbl td,.ap-tbl th{height:auto;padding-top:5px;padding-bottom:5px;overflow:visible;text-overflow:clip}
+.ab-tbl td:first-child{white-space:normal;overflow:visible;text-overflow:clip;height:auto;padding-top:6px;padding-bottom:6px}
+@media (max-width:560px){ .ab-tbl input.numin{width:84px} .ab-tbl th,.ab-tbl td{padding-left:6px;padding-right:6px} .ab-tbl td:first-child{min-width:96px} }
+.bh-tbl tr:has(+ tr.bh-r) td{border-bottom:0}
+.bh-tbl tr.bh-r td{padding-top:0;font-size:12px;max-width:none}
+.bh-tbl td.bh-ph{max-width:200px;min-width:120px}
+
+/* ---------- CR-19 — Campaign timeline (Dashboard › All campaigns) · the Gantt of Campaign & Phase, extended ---------- */
+/* the dates of a Campaign: a light bar in the colour of its status (the same set as Campaign & Phase › Timeline) */
+.gbar.span{top:10px;height:20px;cursor:default;z-index:1;opacity:1}
+.gbar.span.ongoing{background:color-mix(in srgb,var(--st-prog) 26%,var(--surface))}
+.gbar.span.not_started{background:color-mix(in srgb,var(--muted) 22%,var(--surface))}
+.gbar.span.complete{background:color-mix(in srgb,var(--st-done) 24%,var(--surface))}
+.gbar.pending,.gbar.span.pending{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--warn) 30%,var(--surface)) 0 4px,var(--warn-soft) 4px 8px)}
+.gbar.span.on_hold{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--warn) 55%,var(--surface)) 0 4px,var(--warn-soft) 4px 8px)}
+.gbar.rejected,.gbar.span.rejected{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--err) 28%,var(--surface)) 0 4px,var(--err-soft) 4px 8px)}
+.gbar.span.cancelled{background:color-mix(in srgb,var(--series-grey) 45%,var(--surface))}
+.gbar.span.cancelled::after{content:"";position:absolute;left:0;right:0;top:50%;border-top:2px solid var(--text-2)}
+/* the posts: one ink for every row · Planned faded with an edge · outside the Campaign's dates at half · 2px between bars */
+.ctl-b{position:absolute;display:block;background:var(--text-2);z-index:3;pointer-events:none}
+.ctl-b.pl{background:color-mix(in srgb,var(--text-2) 30%,transparent);box-shadow:inset 0 0 0 1px var(--text-2)}
+.ctl-b.out{opacity:.5}
+.ctl-ph{position:absolute;top:8px;height:24px;width:7px;margin-left:-3px;background:linear-gradient(var(--text-2),var(--text-2)) center/1px 100% no-repeat;opacity:.55;z-index:6}
+.ctl-hit{position:absolute;top:0;bottom:0;z-index:5;cursor:pointer}
+.ctl-card .ctl-sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:12px;color:var(--text-2);margin:-4px 0 8px}
+.ctl-sub .ctl-n{font-weight:600}
+.ctl-sub .legend{margin:0}
+.legend .lg .gbar.span,.legend .lg .ctl-b{position:static;display:inline-block;width:18px;height:10px;border-radius:2px;flex:none}
+.legend .lg .ctl-b{width:8px;height:12px}
+.ctl-box{position:relative}
+.ctl-scroll{max-height:calc(37px + 10 * 41px);overflow:auto;border:1px solid var(--border);border-radius:10px}
+.ctl-scroll.all{max-height:none}
+.ctl{min-width:100%}
+.ctl thead th{position:sticky;top:0;z-index:7;background:var(--surface-2)}
+.ctl thead th.gn{z-index:8}
+.ctl td.gn,.ctl th.gn{width:240px;min-width:240px;max-width:240px;padding:3px 10px}
+.ctl td.gn b{display:block;font-size:13px;line-height:17px}
+.ctl .ctl-meta{display:flex;align-items:center;gap:6px;font-size:11px;line-height:16px;white-space:nowrap}
+.ctl .ctl-meta .st{font-size:10px;padding:0 6px;line-height:15px}
+.ctl th.gtl{min-width:560px}
+.ctl tr.ctl-r td{height:40px}
+.ctl tr.ctl-r:focus-visible td{outline:2px solid var(--accent);outline-offset:-2px}
+.ctl .gd{width:132px;min-width:132px;white-space:nowrap}
+.ctl-shade{position:absolute;left:1px;right:1px;bottom:1px;height:20px;pointer-events:none;border-radius:0 0 10px 10px;background:linear-gradient(transparent,color-mix(in srgb,var(--text) 14%,transparent));opacity:0;transition:opacity .15s}
+.ctl-box.more .ctl-shade{opacity:1}
+.ctl-box .tip{z-index:9;max-width:260px}
+@media (max-width:1439px){ .ctl .gd{display:none} }
+@media (max-width:767px){ .ctl td.gn,.ctl th.gn{width:140px;min-width:140px;max-width:140px} }
+/* a pillar with its colour (deals · Performance) */
+.plc{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;max-width:100%}
+.plc i{width:8px;height:8px;border-radius:2px;flex:none}
+.ctl .ctl-meta{flex-wrap:wrap;row-gap:2px}
+.ctl .ctl-meta .st{max-width:none;overflow:visible;text-overflow:clip}
+
+/* ===================== CR-20 — Deal modal · Move stage by target · Package · Draft notes · New deal (From KOL Master · New KOL) ===================== */
+.drawer-wrap.dmodal{display:flex;align-items:center;justify-content:center;padding:24px}
+.drawer-wrap.dmodal .drawer.dm{position:relative;top:auto;right:auto;bottom:auto;width:min(1120px,94vw);max-width:94vw;height:auto;max-height:90vh;border:1px solid var(--border);border-radius:14px;overflow:hidden;outline:none}
+.drawer.dm .dr-head{position:sticky;top:0;z-index:3}
+.drawer.dm .dr-title{display:flex;align-items:flex-start;gap:12px}
+.drawer.dm .dr-title .t{flex:1;min-width:0}
+.drawer.dm .dr-title h2{white-space:normal;overflow:visible;overflow-wrap:anywhere;line-height:1.3}
+.dm-acts{display:flex;align-items:center;gap:8px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.dm-nav{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.backkol{font-size:13px;align-self:flex-start}
+@media (max-width:767px){
+  .drawer-wrap.dmodal{padding:0}
+  .drawer-wrap.dmodal .drawer.dm{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:0}
+  .drawer.dm .dr-title{flex-wrap:wrap}
+  .dm-acts{width:100%;justify-content:flex-start}
+}
+.pkgb{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:0 5px;border-radius:4px;background:var(--info-soft);color:var(--info);line-height:16px;vertical-align:middle}
+.pkg-chip{background:var(--info-soft);color:var(--info)}
+.pk-tbl .sub{display:block}
+.pk-tbl td{vertical-align:top}
+.pm-pkgbal{white-space:nowrap}
+/* the Journey: 🔗 Brief / Script · 📎 n · 🖼 n under a Draft · a Draft step opens its notes */
+.jt-c.jt-note{width:24px;height:24px;border-radius:50%;border:2px solid var(--border);background:var(--surface);color:var(--muted);display:grid;place-items:center;font-size:12px;font-weight:700;line-height:1;padding:0;cursor:pointer;position:relative;z-index:1;flex:none}
+.jt-c.jt-note:hover,.jt-c.jt-note:focus-visible{box-shadow:0 0 0 3px var(--info-soft)}
+.jt-link{text-decoration:none}
+.jt-nc{color:var(--text-2);white-space:nowrap}
+/* Move stage */
+.mv{display:flex;flex-direction:column;gap:14px}
+.mv-now{margin:0}
+.mv-sec{border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.mv-sh{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mv-sh2{margin:0}
+.mv-steps{display:flex;flex-direction:column;gap:6px}
+.mv-step{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mv-step .mv-sn{min-width:96px;font-weight:600}
+.mv-step .mv-err{flex-basis:100%}
+.mv-err{font-size:12px;line-height:1.35}
+.mv-err:empty{display:none}
+.mv-err .err{color:var(--err)}
+.mv-err .warn{color:var(--warn)}
+.dfield.invalid{outline:1px solid var(--err);border-radius:8px;background:var(--err-soft)}
+.mv-money{text-align:right}
+.mv-total .kv{margin:0}
+.mv-budget .over,.bk-budget .over{color:var(--err);font-weight:600}
+.mv-exp{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mv-plus{display:inline-flex;gap:4px}
+.mv-posts{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.mv-post{display:grid;grid-template-columns:minmax(120px,180px) minmax(0,1fr) auto;gap:8px;align-items:center}
+.mv-post .mv-err{grid-column:1/-1}
+.mv-pacc{display:flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
+.mv-pacc select{width:100%}
+.mv-foot{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.mv-list{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px}
+.mv-list:empty{display:none}
+.mv-ck{color:var(--muted)}
+.mv-ck.ok{color:var(--ok);font-weight:600}
+.mv-ck.opt{color:var(--muted)}
+.mv-errbox{border:1px solid var(--err);background:var(--err-soft);color:var(--err);border-radius:8px;padding:8px 12px;font-size:13px}
+.mv-errbox ul{margin:4px 0 0;padding-left:18px}
+.mv-ratetotal{color:var(--text-2)}
+@media (max-width:600px){.mv-post{grid-template-columns:1fr auto}.mv-post .mv-pacc{grid-column:1/-1}}
+/* Draft notes */
+.nt-ed{display:flex;flex-direction:column;gap:10px}
+.nt-ed textarea{min-height:72px}
+.nt-link{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;margin-bottom:4px}
+.nt-link .mv-err{grid-column:1/-1}
+.nt-drop{border:1px dashed var(--border-strong);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.nt-drop.on{border-color:var(--accent);background:var(--info-soft)}
+.nt-thumbs{display:flex;flex-wrap:wrap;gap:8px}
+.nt-thumb{position:relative;width:84px;height:84px;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2)}
+.nt-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.nt-open{all:unset;cursor:zoom-in;display:block;width:100%;height:100%}
+.nt-x{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:22px;padding:0;cursor:pointer}
+.nt-view{display:flex;flex-direction:column;gap:10px}
+.nt-note{white-space:pre-wrap;margin:0}
+.nt-links{display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.nt-big{display:flex;flex-direction:column;gap:8px}
+.nt-big img{max-width:100%;max-height:60vh;object-fit:contain;align-self:center;border-radius:8px;background:var(--surface-2)}
+.nt-bigbar{display:flex;align-items:center;gap:8px}
+/* New deal: the header of both tabs · From KOL Master (table + Selected) · New KOL */
+.cm-b.nd-body{display:flex;flex-direction:column}
+.cm-b.flush.nd-body{overflow:hidden}
+.nd-head{padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.cm-b:not(.flush) .nd-head{margin:-24px -24px 16px;padding:12px 24px}
+.nd-hf{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(4,minmax(0,1fr)) minmax(0,1.3fr);gap:10px 14px;align-items:start}
+.nd-hf .field{margin:0;min-width:0}
+.nd-hf select{width:100%}
+.nd-cw{display:flex;flex-direction:column;gap:4px}
+.nd-cinfo{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.nd-pl{display:flex;flex-wrap:wrap;gap:4px 10px}
+#nd_hchecks:empty{display:none}
+.bk-main{grid-template-columns:minmax(0,1fr) minmax(320px,400px)}
+.bk-kn{display:inline-flex;align-items:center;gap:6px}
+.bk-worked{display:inline-flex;align-items:center;gap:6px}
+.bk-ptools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.bk-srow{border:1px solid var(--border);border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:6px;background:var(--surface)}
+.bk-srow.bad{border-color:var(--err)}
+.bk-srow.skipped{opacity:.6}
+.bk-sk{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bk-sk b{overflow-wrap:anywhere}
+.bk-sk .x{margin-left:auto;border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer}
+.bk-sf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px}
+.bk-sf .bk-f{display:flex;flex-direction:column;align-items:stretch;gap:2px;font-size:12px;min-width:0}
+.bk-sf .bk-f>span:first-child{color:var(--text-2)}
+.bk-sf input,.bk-sf select{width:100%;min-width:0}
+.bk-serr{display:flex;flex-direction:column;gap:2px;color:var(--err);font-size:12px}
+.bk-sel{gap:6px}
+.bk-sum{font-weight:400;display:flex;flex-direction:column;gap:4px}
+.nk-acc .top{display:flex;justify-content:space-between;align-items:center}
+@media (max-width:1200px){.nd-hf{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:900px){.bk-main{grid-template-columns:1fr;overflow:auto}.bk-right{max-height:none}.cm-b.flush.nd-body{overflow:auto}.bk-left{min-height:auto}}
+@media (max-width:600px){.nd-hf{grid-template-columns:1fr 1fr}.nd-hf .nd-camp,.nd-hf .nd-prods{grid-column:1/-1}.bk-sf{grid-template-columns:1fr}}
+.mv-step select{width:auto;min-width:140px}
+.mv-step .dfield{width:auto;min-width:170px}

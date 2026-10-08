@@ -29,7 +29,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* the Create KOL form from what was typed: the name and handle without the @ in front · TikTok · PIC = you */
   const createKolDraft = (text, user) => { const t = trim(text).replace(/^@+/, ''); return { display_name: t, platform: 'TikTok', handle: t.replace(/\s+/g, ''), followers: '', profile_link: '',
-    kol_type: '', kol_category: '', gender: '', contact_channel: '', pic: R.picName(user) || '', default_payment_term: '' }; };
+    kol_type: '', kol_category: '', gender: '', contact_channel: '', contact_id: '', pic: R.picName(user) || '', default_payment_term: '' }; };
 
   /* §4.10 — Create KOL from New deal: Name and PIC are needed · a handle without spaces or @ · followers ≥ 0 · a link that is a link */
   function validateCreateKol(state, x) {
@@ -41,13 +41,15 @@ Object.assign(KT.rules, (function (R, C) {
     if (!isBlank(x.followers) && (isNaN(x.followers) || Number(x.followers) < 0)) errs.push({ field: 'ck_followers', msg: M.accFollowersFormat(1) });
     if (!isBlank(x.profile_link) && !R.isHttpLink(x.profile_link)) errs.push({ field: 'ck_profile_link', msg: M.accLinkFormat(1) });
     if (!isBlank(x.default_payment_term) && !isTerm(x.default_payment_term)) errs.push({ field: 'ck_default_payment_term', msg: M.termInvalid });
+    const cp = R.contactIdProblem(x.contact_id);   // CR-14 §4.5
+    if (cp) errs.push({ field: 'ck_contact_id', msg: cp === 'phone' ? M.contactPhone : M.contactLong(R.CONTACT_ID_MAX) });
     return { errs, warns: [], infos: [] };
   }
   /* the KOL Master rows it makes (sources ['manual']) · an account only when a handle was given */
   function createKolRecords(x, ids) {
     const v = t => trim(t) || null;
     const kol = { kol_id: ids.kolId, display_name: trim(x.display_name), kol_category: v(x.kol_category), kol_type: v(x.kol_type), gender: x.gender || null, pic: v(x.pic),
-      kol_status: 'Active', status_reason: null, contact_channel: x.contact_channel || null, note: null, sources: ['manual'],
+      kol_status: 'Active', status_reason: null, contact_channel: x.contact_channel || null, contact_id: v(x.contact_id), note: null, sources: ['manual'],
       default_payment_term: isTerm(x.default_payment_term) ? x.default_payment_term : null, kol_type_legacy: null };
     const account = trim(x.handle) ? { account_id: ids.accountId, kol_id: ids.kolId, platform: x.platform, handle: trim(x.handle), profile_link: v(x.profile_link),
       followers: isBlank(x.followers) ? null : Number(x.followers), is_legacy: false } : null;
@@ -76,20 +78,41 @@ Object.assign(KT.rules, (function (R, C) {
   function bulkShortlistDeals(state, plan, campaignId, ctx) {
     return plan.create.map((x, i) => {
       const r = R.shortlistDeal(state, x.kol.kol_id, { dealId: ctx.dealIds[i], logId: ctx.logIds[i], campaignId, pic: x.pic, paymentTerm: x.term, date: ctx.date, now: ctx.now, user: ctx.user, note: C.bulk.logNote });
-      Object.assign(r.deal, { created_batch_id: ctx.batchId, pillar: ctx.pillar || null, draft_rounds: 1, script_required: false, payment_term: x.term });
+      Object.assign(r.deal, { created_batch_id: ctx.batchId, pillar: ctx.pillar || null, draft_rounds: 1, payment_term: x.term });
       return r;
     });
   }
   /* Undo of a batch: the deals of the batch nobody has changed since (same as created) */
   const batchUntouched = (state, batchId, made) => state.deals.filter(d => d.created_batch_id === batchId && made.has(d.deal_id) && JSON.stringify(d) === made.get(d.deal_id));
 
-  /* §4.12 — may a deal go to this stage now? Confirm QT and on: a payment term (error) · a total of ฿0 that is not Free (warning, CR-07) */
+  /* §4.12 — may a deal go to this stage now? (CR-20: what the stage needs comes from R.stageRequirements, through R.checkMove) · a total of ฿0 that is not Free (warning, CR-07) */
   function canMoveToStage(state, deal, toSub) {
-    const errs = [], warns = [];
-    if (R.pillarStepReached(state.lookups, toSub) && !R.pillarStepReached(state.lookups, deal.sub_status) && !isTerm(R.termOf(deal))) errs.push({ field: 'payment_term', kind: 'term', msg: M.moveTermRequired });
+    const r = R.checkMove(state, deal, toSub, { date: R.todayISO() }), warns = [];
+    const errs = r.errs.filter(e => ['payment_term', 'pillar', 'rate_card', 'package_id'].includes(e.field)).map(e => Object.assign({ kind: e.field === 'payment_term' ? 'term' : e.field }, e));
     if (R.zeroCostMove(state, deal, toSub)) warns.push({ field: 'total', kind: 'zero', msg: C.priceRef.zeroTitle });
     return { errs, warns };
   }
+  /* CR-20 §4.2–4.3 — New deal › From KOL Master: the KOLs that match every filter (AND) · Worked in = a deal (not cancelled) in at least one of those
+     Campaigns · Posted only = one that reached Post there · Not in this campaign yet · f = { q, platform, tier, type, category, owner (KOL owner), status,
+     lastWorked, perf, workedIn [campaign_id], postedOnly, notIn } → [{ k, accs, mf, tier, pf, inCamp }] by name */
+  function kolPickerFilter(state, f, campaignId, today, perfIn) {
+    const rules = state.lookups.tier_rules || [], q = normKey(f.q), perf = perfIn || R.kolPerfAll(state, today);
+    const accBy = new Map(); state.kol_accounts.forEach(a => { if (!accBy.has(a.kol_id)) accBy.set(a.kol_id, []); accBy.get(a.kol_id).push(a); });
+    const inCamp = new Set(state.deals.filter(d => d.campaign_id === campaignId && !R.isCancelled(d)).map(d => d.kol_id));
+    const wi = (f.workedIn || []).filter(Boolean);
+    const worked = wi.length ? new Set(state.deals.filter(d => wi.includes(d.campaign_id) && !R.isCancelled(d) && (!f.postedOnly || d.status === 'Complete')).map(d => d.kol_id)) : null;
+    return state.kol_master.map(k => {
+      const accs = accBy.get(k.kol_id) || [], mf = R.maxFollowers(accs), tier = R.tierOf(mf, rules) || R.UNKNOWN_TIER, pf = perf.get(k.kol_id) || {};
+      if (q && ![k.display_name].concat(accs.map(a => a.handle)).some(v => normKey(v).includes(q))) return null;
+      if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.tier && tier !== f.tier) || (f.type && (k.kol_type || '') !== f.type) || (f.category && k.kol_category !== f.category) ||
+        (f.owner && (k.pic || '') !== (f.owner === '__none' ? '' : f.owner)) || (f.status && (k.kol_status || 'Active') !== f.status) || (f.lastWorked && pf.bucket !== f.lastWorked) ||
+        (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id)) || (worked && !worked.has(k.kol_id))) return null;
+      return { k, accs, mf, tier, pf, inCamp: inCamp.has(k.kol_id) };
+    }).filter(Boolean).sort((a, b) => a.k.display_name.localeCompare(b.k.display_name, 'th'));
+  }
+  /* the filters that count for Clear all filters (Not in this campaign yet is one too) */
+  const PICKER_KEYS = ['q', 'platform', 'tier', 'type', 'category', 'owner', 'status', 'lastWorked', 'perf', 'workedIn', 'postedOnly', 'notIn'];
+  const pickerActive = f => PICKER_KEYS.filter(k => (Array.isArray(f[k]) ? f[k].length > 0 : k === 'q' ? !!trim(f.q) : !!f[k]));
   /* §4.12 — Set details: only the fields ticked (PIC · Pillar · Payment term · Phase · CTA) · one event a deal for what really changed
      fields = {pic?, pillar?, payment_term?, cta?} (Phase is set on the deal's posts by the caller) → [{deal (new), changes [{field, from, to}]}] */
   const DETAIL_FIELDS = ['pic', 'pillar', 'payment_term', 'cta'];
@@ -113,6 +136,6 @@ Object.assign(KT.rules, (function (R, C) {
   const newAccountRecord = (kolId, a, id) => ({ account_id: id, kol_id: kolId, platform: a.platform, handle: trim(a.handle), profile_link: trim(a.profile_link) || null,
     followers: isBlank(a.followers) ? null : Number(a.followers), is_legacy: false });
 
-  return { MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan,
+  return { kolPickerFilter, PICKER_KEYS, pickerActive, MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan,
     validateAddAccount, newAccountRecord };
 })(KT.rules, KT.content));

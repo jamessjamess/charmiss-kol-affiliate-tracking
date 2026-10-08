@@ -11,23 +11,22 @@
   describe('CR-13 R1 · Pillar mix · All campaigns order · Phase greys', () => {
     test('TC-02 / TC-05: Pillar mix — Spend ฿1,783,579 (Awareness 55,500 · Consideration 89,600 · Conversion 73,200 · Not set 1,565,279 = 87.8%) · Deals 263 (11 · 22 · 14 · 216) · Not set last', () => {
       const s = fresh(), [f, to] = year(), m = R.pillarMix(s, f, to, TD, false);
-      assert.deepEqual(m.rows.map(x => x.pillar), ['Awareness', 'Consideration', 'Conversion', R.NOT_SET]);
-      assert.deepEqual(m.rows.map(x => x.spend), [55500, 89600, 73200, 1565279]);
-      assert.deepEqual(m.rows.map(x => x.deals), [11, 22, 14, 216]);
+      assert.deepEqual(m.rows.map(x => x.pillar), ['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', R.NOT_SET]);   // CR-19 §4.6
+      assert.deepEqual(m.rows.map(x => x.spend), [55500, 0, 89600, 73200, 1565279]);
+      assert.deepEqual(m.rows.map(x => x.deals), [11, 0, 22, 14, 216]);
       assert.deepEqual([m.total.spend, m.total.deals], [1783579, 263]);
-      assert.deepEqual(m.rows.map(x => x.spendPct.toFixed(1)), ['3.1', '5.0', '4.1', '87.8']);
+      assert.deepEqual(m.rows.map(x => x.spendPct.toFixed(1)), ['3.1', '0.0', '5.0', '4.1', '87.8']);
       const tm = R.tierMix(s, f, to, TD, false);
       assert.deepEqual([tm.total.spend, tm.total.deals], [m.total.spend, m.total.deals], 'the same scope as the KOL tier mix');
     });
-    test('TC-03: against the target 10 / 20 / 70 — of the ฿218,300 with a pillar 25.4% · 41.0% · 33.5% → +15.4pp · +21.0pp · −36.5pp · Not set has no target', () => {
+    test('TC-03: of the ฿218,300 with a pillar 25.4% · 0% · 41.0% · 33.5% (CR-19 §4.7: no target, no gap)', () => {
       const s = fresh(), [f, to] = year(), m = R.pillarMix(s, f, to, TD, false);
       assert.equal(m.set.spend, 218300);
-      assert.deepEqual(m.rows.map(x => x.target), [10, 20, 70, null]);
-      assert.deepEqual(m.rows.slice(0, 3).map(x => x.ofSet.spend.toFixed(1)), ['25.4', '41.0', '33.5']);
-      assert.deepEqual(m.rows.map(x => x.gap.spend == null ? '—' : (x.gap.spend > 0 ? '+' : x.gap.spend < 0 ? '−' : '±') + Math.abs(x.gap.spend).toFixed(1) + 'pp'), ['+15.4pp', '+21.0pp', '−36.5pp', '—']);
-      /* the same function as Allocation vs target */
-      const sh = R.pillarShares({ Awareness: 55500, Consideration: 89600, Conversion: 73200 }, R.pillarTargetOf(s, null));
-      assert.deepEqual(m.rows.slice(0, 3).map(x => x.gap.spend), R.PILLARS.map(p => sh.gap[p]));
+      assert.deepEqual(m.rows.map(x => [x.target, x.gap]), [[undefined, undefined], [undefined, undefined], [undefined, undefined], [undefined, undefined], [undefined, undefined]]);
+      assert.deepEqual(m.rows.slice(0, 4).map(x => x.ofSet.spend.toFixed(1)), ['25.4', '0.0', '41.0', '33.5']);
+      /* the same function as Pillar allocation */
+      const sh = R.pillarShares({ Awareness: 55500, Consideration: 89600, Conversion: 73200 });
+      assert.deepEqual(m.rows.slice(0, 4).map(x => x.ofSet.spend), R.PILLARS.map(p => sh.pct[p]));
     });
     test('TC-04: more than half of the spend with no pillar → the line, pointing at the Campaign with the most of it', () => {
       const s = fresh(), [f, to] = year(), m = R.pillarMix(s, f, to, TD, false);
@@ -45,13 +44,13 @@
       const avg = R.portfolioPillarTarget(s, [a, b]);
       assert.deepEqual([avg.awareness, avg.consideration, avg.conversion], [25, 25, 50]);
     });
-    test('TC-06: Export of All campaigns — Summary · Campaign portfolio · Activity · Pillar mix · KOL tier mix · Pillar mix = the card', () => {
+    test('TC-06: Export of All campaigns — Summary · Campaign portfolio · Campaign timeline · Pillar mix · KOL tier mix · Pillar mix = the card (CR-19)', () => {
       const s = fresh(), [f, to] = year(), x = { state: s, from: f, to, today: TD, inclCancel: false, measure: 'posts', sort: null };
       const tables = E.tabTables('all', x);
-      assert.deepEqual(tables.map(tb => tb.name), ['Summary', 'Campaign portfolio', 'Activity', 'Pillar mix', 'KOL tier mix']);
+      assert.deepEqual(tables.map(tb => tb.name), ['Summary', 'Campaign portfolio', 'Campaign timeline', 'Pillar mix', 'KOL tier mix', 'Packages', 'Draft notes']);   // CR-20: + Packages · Draft notes
       const pm = tables[3];
-      assert.deepEqual(pm.rows.map(r => [r[0], r[1], r[3]]), [['Awareness', 55500, 11], ['Consideration', 89600, 22], ['Conversion', 73200, 14], ['Not set', 1565279, 216]]);
-      assert.deepEqual(pm.rows.map(r => r[6]), [15.4, 21, -36.5, '']);
+      assert.deepEqual(pm.rows.map(r => [r[0], r[1], r[3]]), [['Awareness', 55500, 11], ['Awareness & Consideration', 0, 0], ['Consideration', 89600, 22], ['Conversion', 73200, 14], ['Not set', 1565279, 216]]);
+      assert.deepEqual(pm.header.length, 5, 'no Target / Δ');
       assert.deepEqual([pm.total[1], pm.total[3]], [1783579, 263]);
     });
     test('TC-08 / TC-09: Phase steps — round(linspace(1, 6, n)) · 1 → [4] · 7 → 1–6 then 6 · Kiss Signal 1 · 6 · Perfect Heart 1 · 3 · 4 · 6', () => {
@@ -100,18 +99,20 @@
     test('TC-15: chips in All — Overdue 3 (pangxnstory · sanggannualpong · tuckpx) · no Unpaid after posting · the chip filters · Clear all takes it off', () => {
       const s = fresh(), rows = scoped(s, 'Charming'), t = R.dealTabs(s, rows, TD, null, { tab: 'all' });
       assert.deepEqual(R.ATTENTION, ['overdue', 'needsPhase', 'shipOverdue', 'metricsDue', 'docs']);
-      assert.equal(t.chips.overdue, 3);
+      /* CR-15: pangxnstory (Brief) waits on Script, which has no due date yet → Overdue 2 */
+      assert.equal(t.chips.overdue, 2);
       assert.ok(!('unpaid' in t.chips) && !('payOverdue' in t.chips));
-      assert.deepEqual(rows.filter(d => R.hasReason(d, 'overdue', t.why)).map(d => nameOf(s, d)).sort(), ['pangxnstory', 'sanggannualpong', 'tuckpx']);
+      assert.deepEqual(rows.filter(d => R.hasReason(d, 'overdue', t.why)).map(d => nameOf(s, d)).sort(), ['sanggannualpong', 'tuckpx']);
       /* the chip is a filter: the tabs count with it */
       const on = R.dealTabs(s, rows, TD, null, { tab: 'all', reason: 'overdue' });
-      assert.deepEqual(R.DEAL_TABS.map(k => on.counts[k]), [3, 0, 3, 0, 0]);
+      assert.deepEqual(R.DEAL_TABS.map(k => on.counts[k]), [2, 0, 2, 0, 0]);
       assert.ok(R.activeFilters({ reason: 'overdue' }).includes('reason'));
       assert.equal(R.clearFilters({ campaign: 'CH', reason: 'overdue' }).reason, '');
       assert.ok(!Object.values(C.deal.attn).includes('Unpaid after posting') && !Object.values(C.deal.tabs).includes('Needs action') && !Object.values(C.deal.tabs).includes('Open'));
     });
     test('TC-16: Complete — Docs to collect / Metrics due, no Overdue · ⚠ = the reasons of the chips only · hover "Metrics due · 1 post"', () => {
-      const s = fresh(), rows = scoped(s, 'Charming'), t = R.dealTabs(s, rows, TD, null, { tab: 'complete' });
+      const s = fresh(); R.setOpsMode(s, 'payments', 'full');   // CR-17: Docs to collect is a Full-mode chip (Simple: documents never block)
+      const rows = scoped(s, 'Charming'), t = R.dealTabs(s, rows, TD, null, { tab: 'complete' });
       assert.equal(t.chips.overdue, 0);
       assert.ok(t.chips.docs > 0 && t.chips.metricsDue > 0);
       const done = rows.filter(d => d.status === 'Complete' && t.why.has(d.deal_id));
@@ -127,7 +128,8 @@
       assert.deepEqual(R.attentionReasons(s, d, TD, R.dealContext(s)), []);
     });
     test('Docs to collect = deals with an instalment at Missing docs (Payments › To pay) · Shipment overdue = a shipment past its Ship by', () => {
-      const s = fresh(), rows = scoped(s, 'Charming'), docs = R.docsByDeal(s, TD);
+      const s = fresh(); R.setOpsMode(s, 'payments', 'full');   // CR-17: Full mode
+      const rows = scoped(s, 'Charming'), docs = R.docsByDeal(s, TD);
       const missing = new Set(R.payQueue(s, TD).items.filter(x => x.status === 'missing_docs').map(x => x.deal_id));
       assert.deepEqual([...docs.keys()].sort(), [...missing].sort());
       const t = R.dealTabs(s, rows, TD, null, { tab: 'all' });

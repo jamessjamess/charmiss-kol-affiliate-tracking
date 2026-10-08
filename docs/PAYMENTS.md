@@ -153,3 +153,19 @@ So Dashboard Paid (est.), Unpaid and every money figure keep their meaning. Comm
 - The Payments CSV and the WHT summary have no personal data. Only the PR export and the shipping list (both unlocked) have it — the Dashboard, Deals, Performance and Stage popup exports never do.
 - Do not open `Data/PR 09_10_26.xlsx` to copy data. Tests use made-up values only.
 - Roles are a UI guide (CR-04), not a security control. What protects the personal data is the vault passphrase.
+
+## 7. Simple mode (CR-17 · default)
+
+Settings › Operations mode › Payments **Simple** — the KOL team records the payment; no run is needed. The data is the same as Full mode (payment_lines / payment_runs).
+
+| Tab | Rows | On the row | Bulk |
+|---|---|---|---|
+| To pay | owed (Due · On hold · In a run of Full mode) — not Sent | **Mark paid** · ⋯ Hold · Change payee · Open deal · Docs n/m (information) | Export for accounting · Mark paid |
+| Sent | lines With Accounting (`status submitted`) · Sent dd/mm · days waiting (> 7 yellow) | **Mark paid** · ⋯ Move back to To pay | Mark paid · Export again |
+| Paid | paid lines · Paid by · Ref · WHT cert ☐ | ⋯ Mark unpaid (Admin · KOL Manager · Accounting, a reason) | Mark WHT cert sent · Export |
+
+- Mark paid (`rules.markItemsPaid`): a worked-out instalment gets its line (the CR-08 snapshot) then Paid · `paid_by` · `paid_ref` · the run is Paid once all its lines are · `syncDealPayment` · Undo 10 s (`undoMarkPaid` puts lines, runs and the deals' flags back)
+- Export for accounting (`sendToAccounting`): the PR file as before (bank details only when unlocked) → "Mark n lines as sent to accounting?" (Yes default) → a run `Sent dd/mm` With Accounting · No → `undoSend` (nothing changed)
+- Who: Mark paid · Export · Hold = Admin · KOL Manager · Accounting · Staff on the deals they are PIC of (`canPaySimple`) · Mark unpaid = Admin · KOL Manager · Accounting (`canUnpay`)
+- Documents never block in Simple mode (Deals' Docs to collect chip is off) · Operations › **Payments to confirm** = Sent more than 7 days, not paid
+- Full mode: the same lines — a Sent line is in a run With Accounting · Paid stays Paid

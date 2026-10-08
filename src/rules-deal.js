@@ -9,7 +9,8 @@ Object.assign(KT.rules, (function (R, C) {
   const MONEY_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee'];
   const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares'];
   const DATE_KEYS = ['docs_done_date', 'paid_50_date', 'paid_full_date', 'gencode_start_date', 'delivery_date', 'brief_date',
-    'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_post_date'];
+    'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date',
+    'expected_approve_date', 'approved_date', 'expected_post_date'];
   const POST_DATE_KEYS = ['expected_post_date', 'post_date', 'metrics_updated_at'];
 
   /* ===================== Lists (lookups) ===================== */
@@ -36,7 +37,7 @@ Object.assign(KT.rules, (function (R, C) {
   const stepLocked = step => step.status === 'Complete' || step.status === 'Cancel';
   /* CR-11 §4.13 #6 — the steps the stage rules name (Confirm QT: pillar / term / shipment · Brief · Draft 1 · Post: posts · Cancel): 🔒 in Settings ·
      the label can change, they cannot be deleted or turned off */
-  const CORE_STEPS = ['Contacted', 'Confirm QT', 'Brief', 'Approve Draft 1', 'Post', 'Cancel'];
+  const CORE_STEPS = ['Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Approve', 'Post', 'Cancel'];   // CR-15 §4.5: + Script · Approve
   const isCoreStep = step => !!step && CORE_STEPS.includes(step.sub_status);
   function validateTiers(tiers) {
     const errs = [];
@@ -105,10 +106,11 @@ Object.assign(KT.rules, (function (R, C) {
   /* the drawer's sections and their fields (Posts: every post's own fields) */
   const DEAL_SECTIONS = {
     header: ['campaign_id'],
-    info: ['pic', 'pillar', 'cta', 'products', 'delivered', 'delivery_date', 'link_brief', 'remark', 'cancel_reason'],
-    payment: ['payment_term', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date'],
+    info: ['pic', 'pillar', 'cta', 'products', 'delivered', 'delivery_date', 'link_brief', 'script_link', 'remark', 'cancel_reason'],   // CR-20 §4.12: + Script link
+    payment: ['payment_term', 'package_id', 'package_units', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date'],   // CR-20 §4.8: + the package
     costs: ['rate_card', 'gencode_expense', 'gencode_period', 'gencode_start_date', 'basket_fee', 'asset_fee', 'expediting_fee'],
-    timeline: ['brief_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_post_date'],
+    timeline: ['brief_date', 'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date',
+      'expected_approve_date', 'approved_date', 'expected_post_date'],
   };
   const POST_EDIT_FIELDS = ['account_id', 'expected_post_date', 'post_date', 'phase_override', 'post_link', 'gencode_code', 'views', 'likes', 'comments', 'saves', 'shares', 'metrics_updated_at'];
   const AUTO_FIELDS = ['total_cost', 'gencode_end_date', 'tier'];
@@ -134,13 +136,15 @@ Object.assign(KT.rules, (function (R, C) {
       return { editable: true, reason: null };
     }
     if (field === 'payment_term' && deal.paid_full) return lock(LK.fullyPaid);
+    /* CR-20 §4.8 — a Package deal's Rate card is the package's unit price × uses (choose another term for another price) */
+    if (field === 'rate_card' && R.termOf(deal) === 'package') return { editable: false, auto: true, reason: C.move.fromPackage };
     if (DEAL_SECTIONS.costs.includes(field) && paymentRecorded(deal)) {
       if (!R.can(user, 'cost.override')) return lock(LK.paymentRecorded);
       return { editable: true, needsReason: true, reason: LK.paymentRecordedAdmin };
     }
-    const m = /^approved_draft(\d)_date$/.exec(field);
-    if (m) {
-      const st = R.stepsOf(L).find(x => R.draftNo(x) === Number(m[1])), cur = R.stepOf(L, deal.sub_status);
+    /* the date a step was done (Script · Draft n · Approve) is set by Move stage and can be corrected once the deal has reached it */
+    if (/^(approved_draft\d_date|script_date|approved_date)$/.test(field)) {
+      const st = R.stepsOf(L).find(x => x.date_field === field), cur = R.stepOf(L, deal.sub_status);
       if (!st || !cur || cur.sort_order < st.sort_order) return lock(LK.setByMove);
     }
     if (post && (field === 'account_id' || field === 'platform') && !isBlank(post.post_link)) return lock(LK.postHasLink);
@@ -185,12 +189,12 @@ Object.assign(KT.rules, (function (R, C) {
     if (!def) return 'none';
     return term === def ? 'kol' : 'changed';
   }
-  const termDiffers = (deal, kol) => { const def = kol && R.isTerm(kol.default_payment_term) ? kol.default_payment_term : null; return !!def && R.termOf(deal) !== def; };
+  const termDiffers = (deal, kol) => { const def = kol && R.isTerm(kol.default_payment_term) ? kol.default_payment_term : null; return !!def && R.termOf(deal) !== def && R.termOf(deal) !== 'package'; };   // CR-20: a Package is never a KOL default
 
   /* ===================== CR-04 §4.3 — Group by ===================== */
   /* CR-09 §4.9 — one set of stage names, the journey steps of the Pipeline (lookups.journey_steps), the same in the Table groups, the Stage cell,
-     the Pipeline columns, Move stage, the Stage popup, Filters and exports: Shortlist · Contacted · Confirm QT · Brief · Approve Script ·
-     Approve Draft 1–3 · Post · Cancelled. stageOf = the step the deal is at (its last step passed) */
+     the Pipeline columns, Move stage, the Stage popup, Filters and exports: Shortlist · Contacted · Confirm QT · Brief · Script ·
+     Draft 1–3 · Approve · Post · Cancelled (CR-15). stageOf = the step the deal is at (its last step passed) */
   const stageOf = (lookups, d) => (d.status === 'Cancel' ? R.stepsOf(lookups).find(R.isCancelStep) : R.stepOf(lookups, d.sub_status)) || null;
   const stageName = st => (!st ? '' : R.isCancelStep(st) ? C.stage.cancelled : st.sub_status);
   function stageKey(lookups, d) { const st = stageOf(lookups, d); return st ? stageName(st) : d.status === 'Cancel' ? C.stage.cancelled : d.sub_status || ''; }
@@ -238,7 +242,7 @@ Object.assign(KT.rules, (function (R, C) {
     return d;
   }
   /* CR-02 §4.3: Free deals are never unpaid */
-  const isUnpaid = d => d.status === 'Complete' && !d.paid_full && R.termOf(d) !== 'free';
+  const isUnpaid = d => d.status === 'Complete' && !R.paidUp(d) && R.termOf(d) !== 'free';   // CR-20: a package deal is paid with its package
 
   /* ===================== deal + post validation (§8) ===================== */
   const postLabel = (ctx, p, i) => { const a = ctx.accounts.get(p.account_id); return M.postN(i + 1, a ? `${a.platform} @${a.handle}` : ''); };
@@ -458,30 +462,10 @@ Object.assign(KT.rules, (function (R, C) {
   /* the ticks a term has in the Payments view: Docs · Deposit (50/50 only) · Paid — Free has none */
   const payFlags = term => (term === 'free' ? [] : term === 'split_50' ? ['docs_done', 'paid_50', 'paid_full'] : ['docs_done', 'paid_full']);
 
-  /* ===================== CR-06 §4.7 — Pipeline: a card dropped on a stage column ===================== */
-  /* → {kind: 'same' | 'instant' | 'dialog' | 'blocked', msg}: instant = the next step of the plan with nothing to fill in (date = today) ·
-     dialog = Move stage opens on that step (back → note · Cancel → reason · skipping steps · no pillar · a Draft round more) ·
-     blocked = Post while posts miss a link or date · a step the plan cannot reach · a cancelled Campaign · Cancel → only its step before */
-  function dropPlan(state, deal, toSub, today) {
-    const L = state.lookups, to = R.stepOf(L, toSub), from = R.stepOf(L, deal.sub_status), plan = R.planOf(deal);
-    const blocked = msg => ({ kind: 'blocked', msg });
-    if (!to || deal.sub_status === toSub) return { kind: 'same' };
-    if (R.campaignCancelled(state, deal.campaign_id)) return blocked(M.campaignCancelledEdit);
-    if (to.active === false) return blocked(M.moveStepInactive);
-    if (from && R.isCancelStep(from)) { const prev = R.stepBeforeCancel(state, deal); return prev && toSub !== prev ? blocked(M.moveLeaveCancelOnly(prev)) : { kind: 'dialog' }; }
-    if (R.isPostStep(to) && !deal.is_legacy) {
-      const posts = R.postsOf(state, deal.deal_id), bad = posts.filter(p => !R.postDone(p)).length;
-      if (!posts.length) return blocked(M.moveNoPosts);
-      if (bad) return blocked(M.dropPostsMissing(bad));
-    }
-    if (!R.isCancelStep(to) && R.isScriptStep(to) && !plan.script) return blocked(M.moveScriptNotInPlan);
-    const nx = R.nextStep(L, deal).step;
-    if (nx && nx.sub_status === toSub) { const r = R.checkMove(state, deal, toSub, { date: today }); if (!r.errs.length && !r.warns.length) return { kind: 'instant' }; }
-    return { kind: 'dialog' };
-  }
+  /* CR-06 §4.7 dropPlan (a card dropped on a stage column): rules-move.js (CR-20 §4.9) */
 
   /* ===================== CR-13 §4.4 — Deals: state tabs = the groups of the Pipeline (CR-09 §4.10) · §4.5 attention chips ===================== */
-  /* All (default) · List (Shortlist · Contacted · Confirm QT) · In process (Brief … Approve Draft 3) · Complete (Post) · Cancelled */
+  /* All (default) · List (Shortlist · Contacted · Confirm QT) · In process (Brief · Script · Draft 1–3 · Approve) · Complete (Post) · Cancelled */
   const DEAL_TABS = ['all', 'list', 'inprocess', 'complete', 'cancelled'];
   const TAB_OF_STATUS = { List: 'list', Inprocess: 'inprocess', Complete: 'complete', Cancel: 'cancelled' };
   const dealTabOf = d => TAB_OF_STATUS[d.status] || 'list';
@@ -499,14 +483,14 @@ Object.assign(KT.rules, (function (R, C) {
     const metrics = new Map(), ship = new Map();
     R.metricsDue(state, {}, today).forEach(x => metrics.set(x.deal.deal_id, (metrics.get(x.deal.deal_id) || 0) + 1));
     (state.sample_shipments || []).forEach(sh => { if (sh.deal_id && R.sampleStatus(sh, today) === 'overdue') ship.set(sh.deal_id, (ship.get(sh.deal_id) || 0) + 1); });
-    return { metrics, ship, docs: docsByDeal(state, today) };
+    return { metrics, ship, docs: R.isSimple && R.isSimple(state, 'payments') ? new Map() : docsByDeal(state, today) };   // CR-17 §4.4: documents do not block in Simple mode
   }
   /* → [{key, n, …}] in chip order · Overdue: the next step is late (CR-02 · List / In process) {step, due} · Needs phase: posts whose Phase the date
      cannot decide (CR-03) · Shipment overdue: shipments · Metrics due: posts · Docs to collect: instalments · a cancelled deal has none */
   function attentionReasons(state, d, today, ctx, actx) {
     if (d.status === 'Cancel') return [];
     const out = [], a = actx || attentionContext(state, today);
-    if (R.isOverdue(state, d, today)) { const st = R.nextStep(state.lookups, d).step; out.push({ key: 'overdue', n: 1, step: st ? R.stageName(st) : '', due: R.dueDate(state, d) }); }
+    if (R.isOverdue(state, d, today)) { const st = R.dueStep(state, d); out.push({ key: 'overdue', n: 1, step: st ? R.stageName(st) : '', due: R.dueDate(state, d) }); }
     const np = ((ctx || dealContext(state)).phaseIdx.deal.get(d.deal_id) || {}).needsPosts || 0;
     if (np > 0) out.push({ key: 'needsPhase', n: np });
     [['shipOverdue', a.ship], ['metricsDue', a.metrics], ['docs', a.docs]].forEach(([k, m]) => { const n = m.get(d.deal_id) || 0; if (n) out.push({ key: k, n }); });
@@ -572,8 +556,8 @@ Object.assign(KT.rules, (function (R, C) {
   function pipeline(state, dealsOrPhase) {
     const deals = Array.isArray(dealsOrPhase) ? dealsOrPhase : R.scopeDeals(state, { phaseIds: [dealsOrPhase] }, R.phaseIndex(state));
     const used = new Set(deals.map(d => d.sub_status));
-    /* CR-02 §4.2: Script and Draft 2–3 get a column only when a deal in the Phase plans them (or sits there) */
-    const planned = s => !(R.isScriptStep(s) || R.draftNo(s) > 1) || deals.some(d => R.inPlan(s, R.planOf(d)));
+    /* CR-02 §4.2: Draft 2–3 get a column only when a deal in the Phase plans them (or sits there) · Script and Approve always (CR-15) */
+    const planned = s => !(R.draftNo(s) > 1) || deals.some(d => R.inPlan(s, R.planOf(d)));
     return R.stepsOf(state.lookups).filter(s => used.has(s.sub_status) || (s.active !== false && planned(s))).map(s => {
       const ds = deals.filter(d => d.sub_status === s.sub_status);
       return { step: s, deals: ds, count: ds.length, total: ds.reduce((x, d) => x + totalCost(d), 0) };
@@ -583,7 +567,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== Overview (§9.6) ===================== */
   /* default window: first Phase start → min(last Phase end, max(today, last post)) */
   /* scope: {campaignId, phaseIds} or an array of phase_ids (CR-03) */
-  const scopePhases = (state, sc) => state.phases.filter(p => (sc.phaseIds ? sc.phaseIds.includes(p.phase_id) : !sc.campaignId || p.campaign_id === sc.campaignId));
+  const scopePhases = (state, sc) => state.phases.filter(p => R.isApproved(p) && (sc.phaseIds ? sc.phaseIds.includes(p.phase_id) : !sc.campaignId || p.campaign_id === sc.campaignId));
   function overviewWindow(state, scope, today) {
     const sc = R.toScope(scope), ps = scopePhases(state, sc);
     if (!ps.length) return [today, today];
@@ -743,7 +727,7 @@ Object.assign(KT.rules, (function (R, C) {
     MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, CORE_STEPS, isCoreStep, validateTiers,
     dealContext, postsOfCtx, postPlatform, PAY_FLAGS, togglePayment, isUnpaid, validateDeal, rowWarnings,
     PAY_TABS, PAY_GROUPS, payTabOf, outstandingOf, paymentsView, payGroupOf, payGroupTotals, payFlags,
-    dropPlan, DEAL_TABS, dealTabOf, inDealTab, ATTENTION, docsByDeal, attentionContext, attentionReasons, dealTabs, hasReason, DEAL_TAB_KEY, dealTabPref, setDealTabPref, dealTabFromLink, defaultDealsCampaign,
+    DEAL_TABS, dealTabOf, inDealTab, ATTENTION, docsByDeal, attentionContext, attentionReasons, dealTabs, hasReason, DEAL_TAB_KEY, dealTabPref, setDealTabPref, dealTabFromLink, defaultDealsCampaign,
     TEMPLATE_HEADERS, TEMPLATE_PLATFORMS, platformMark, dealPostSummary, templateRow, filterDeals, dealTiles,
     pipeline, overviewWindow, postBins, overviewTiles, paymentAttention, phaseAttention, funnel, niceStep, dataIssues, newDeal, blankPost,
     blankDealFilter, activeFilters, clearFilters, KOL_FILTER_KEYS, activeKolFilters, kolDrawerWidth, dealDrawerWidth, wideDrawerWidth, drawerWidth, stageSince,

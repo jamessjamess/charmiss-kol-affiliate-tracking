@@ -2,8 +2,8 @@
    (Me by default for a PIC) → search → Filters (Tier, Pillar, CTA, Payment term, Sub-status) → ⋯ (Export · Compact | Template) or the
    bulk bar · state tabs (CR-13: All · List · In process · Complete · Cancelled = the Pipeline groups) · Group by → summary → attention chips ·
    Table or Pipeline,
-   and the Deal drawer: every section reads, ✎ opens one section as a form with its locks (CR-04 §4.5) · New deal · Move stage.
-   → KT.screens.deals */
+   and the Deal modal (CR-20 §4.6 — it took the place of the side drawer): every section reads, ✎ opens one section as a form with its locks (CR-04 §4.5) ·
+   ‹ › walk the deals of the view · New deal (screen-newdeal.js) · Move stage (screen-move.js). → KT.screens.deals */
 KT.screens.deals = (function () {
   'use strict';
   const U = KT.ui;
@@ -27,7 +27,7 @@ KT.screens.deals = (function () {
     /* CR-04 §4.5: the one section open for editing in the drawer (header · info · payment · costs · timeline · posts) */
     sec: null, costReason: '', picSource: null, ctaFromCampaign: false, saveTerm: false, updateKolTerm: false,
   };
-  const editing = () => dl.mode === 'new' || !!dl.sec;
+  const editing = () => !!dl.sec;   // CR-20: a new deal is made in the New deal modal (screen-newdeal.js), never here
   const dealById = id => state().deals.find(d => d.deal_id === id);
   const phaseById = id => state().phases.find(p => p.phase_id === id);
   const kolName = id => (R.kolById(state(), id) || {}).display_name || '';
@@ -110,13 +110,12 @@ KT.screens.deals = (function () {
       if (p.samples) { go('shipments', { tab: 'to-ship', campaign: p.samples.campaign || '', pic: p.samples.pic || 'all' }); return; }   // CR-11 §4.10
       /* CR-11 §4.12: Operations › Metrics due → Performance of that Campaign / PIC, status Due */
       if (p.perf) { dl.view = 'performance'; pref.set('dealview', 'performance'); if (p.perf.campaign) { dl.f.campaign = p.perf.campaign; dl.f.phaseSel = 'all'; } if (p.perf.pic !== undefined) choosePic(p.perf.pic || 'all'); dl.pf = Object.assign(R.blankPerfFilter(), { mstatus: p.perf.status || '' }); }
-      if (p.deal === '__new__') { if (dl.mode === 'new' && p.kol && R.kolById(state(), p.kol) && !dl.draft.kol_id) { dl.draft.kol_id = ''; setDraftKol(p.kol); } }
-      else if (p.deal) { id = p.deal; const d0 = dealById(id); if (d0 && d0.campaign_id !== dl.f.campaign) { dl.f.campaign = d0.campaign_id; dl.f.phaseSel = 'all'; } }
+      if (p.deal && p.deal !== '__new__') { id = p.deal; const d0 = dealById(id); if (d0 && d0.campaign_id !== dl.f.campaign) { dl.f.campaign = d0.campaign_id; dl.f.phaseSel = 'all'; } }
     }
     renderLeft();
     if (id && dealById(id) && !(dl.id === id && editing())) {
       if (editing() && dl.id !== id) toast(C.common.blockWhileEditing);
-      else { Object.assign(dl, { mode: 'view', id }); renderPanel();
+      else { Object.assign(dl, { mode: 'view', id, nav: navList(id) }); renderPanel();
         /* CR-11 §4.10 — from Shipments: the drawer opens at its Shipments section */
         if (p && p.section === 'shipments') { const el = $('drawer_content').querySelector('.smsec'); if (el) { el.scrollIntoView({ block: 'start' }); el.classList.add('pf-hit'); setTimeout(() => el.classList.remove('pf-hit'), 2400); } } }
     } else if (editing()) renderPanel();
@@ -166,13 +165,6 @@ KT.screens.deals = (function () {
       const pk = e.target.dataset.pf; if (pk) { dl.pf[pk] = e.target.value; renderLeft(); return; }   // CR-10 Performance filters
       if (e.target.matches('[data-pfimp]')) { dl.pf.noImported = e.target.checked ? '' : '1'; renderLeft(); return; }   // CR-11 §4.6 Include imported
       if (e.target.matches('[data-ffimp]')) { dl.f.noImported = e.target.checked ? '' : '1'; dl.limit = PAGE; renderLeft(); return; }
-      const cb = e.target.closest('input[data-tierv]');
-      if (cb) {
-        const all = [...$('dl_fpop').querySelectorAll('input[data-tierv]:not([data-tierv=""])')];
-        if (cb.dataset.tierv === '') dl.f.tiers = null;
-        else { const on = all.filter(x => x.checked).map(x => x.dataset.tierv); dl.f.tiers = on.length && on.length < all.length ? on : null; }
-        dl.limit = PAGE; renderLeft(); return;
-      }
       const k = e.target.dataset.ff; if (k) { dl.f[k] = e.target.value; dl.limit = PAGE; renderLeft(); }
     });
     $('dl_fpop').addEventListener('click', e => { if (e.target.closest('[data-clearall]')) { dl.f.tiers = null; POP_KEYS.forEach(k => { dl.f[k] = ''; }); dl.pf = R.blankPerfFilter(); dl.limit = PAGE; renderLeft(); } });
@@ -244,8 +236,24 @@ KT.screens.deals = (function () {
   function setAllGroups(collapse) { dl.groupKeys.forEach(gk => setCollapsed(gk, collapse)); saveGroups(); renderLeft(); }
   function select(id) {
     if (editing()) { if (id !== dl.id) toast(C.common.blockWhileEditing); return; }
-    Object.assign(dl, { mode: 'view', id, draft: null, posts: null });
+    Object.assign(dl, { mode: 'view', id, draft: null, posts: null, nav: navList(id), backKol: null });
     markSelected(); renderPanel();
+  }
+  /* CR-20 §4.6 — ‹ › of the Deal modal walk the deals as the page shows them: the same lane of the Pipeline · the rows of the Table (after the filters) */
+  function navList(id) {
+    const card = document.querySelector(`#dl_body .dcard[data-id="${CSS.escape(id)}"]`);
+    if (card) { const lane = card.closest('.bcol, .clane'); return lane ? [...lane.querySelectorAll('.dcard[data-id]')].map(x => x.dataset.id) : null; }
+    const rows = [...document.querySelectorAll('#dl_body tr[data-id]')].map(x => x.dataset.id);
+    return rows.includes(id) ? rows : null;
+  }
+  async function navStep(dir) {
+    if (!dl.nav || dl.mode !== 'view') return;
+    const i = dl.nav.indexOf(dl.id), next = dl.nav[i + dir]; if (i < 0 || !next || !dealById(next)) return;
+    if (dl.sec && dl.dirty && !(await U.confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true))) return;
+    Object.assign(dl, { id: next, sec: null, draft: null, posts: null }); dl.touched.clear();
+    markSelected(); renderPanel();
+    const el = document.querySelector(`#dl_body [data-id="${CSS.escape(next)}"]`); if (el) el.scrollIntoView({ block: 'nearest' });
+    const b = $('drawer_content').querySelector(`[data-dmnav="${dir}"]`); if (b && !b.disabled) b.focus(); else $('drawer_content').focus();
   }
   function markSelected() {
     const open = dl.mode !== 'none' ? dl.id : null;
@@ -284,7 +292,7 @@ KT.screens.deals = (function () {
     $('dl_campSt').innerHTML = c ? phaseChip(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td)) : '';
     /* the Phases of this Campaign only — posts that need a Phase are under the Needs phase chip (CR-13 §4.5) */
     const top = [['all', D.allPhases], ['ongoing', D.ongoingPhases]].map(([v, l]) => `<option value="${v}" data-special${f.phaseSel === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
-    const own = R.sortPhases(s.phases.filter(p => p.campaign_id === f.campaign)).map(p => U.phaseOptionHTML(p, f.phaseSel)).join('');
+    const own = R.sortPhases(R.phasesOfCampaign(s, f.campaign)).map(p => U.phaseOptionHTML(p, f.phaseSel)).join('');   // CR-17: approved Phases only
     const link = special(f.phaseSel) ? `<option value="${f.phaseSel}" data-special selected>${esc(f.phaseSel === R.NEEDS ? D.needsPhase : D.unscheduled)}</option>` : '';
     if (!special(f.phaseSel) && !['all', 'ongoing'].includes(f.phaseSel) && !(phaseById(f.phaseSel) && phaseById(f.phaseSel).campaign_id === f.campaign)) f.phaseSel = 'all';
     $('dl_phase').innerHTML = top + own + link;
@@ -328,10 +336,13 @@ KT.screens.deals = (function () {
   }
   function renderFilterPop(s) {
     if (dl.view === 'performance') { perfFilterPop(s); return; }
-    const f = dl.f, L = s.lookups, order = R.tierOrder(L.tier_rules), on = t => !f.tiers || f.tiers.includes(t);
+    const f = dl.f, L = s.lookups, order = R.tierOrder(L.tier_rules);
     const sel = (k, label, items) => `<div class="field"><label>${esc(label)}</label><select data-ff="${k}">${optionsHTML(items, f[k], D.any)}</select></div>`;
-    $('dl_fpop').innerHTML = `<div class="field"><label>${esc(D.tier)}</label><div class="ticks"><label class="tick"><input type="checkbox" data-tierv=""${f.tiers ? '' : ' checked'}> ${esc(D.allTiers)}</label>` +
-        order.map(t => `<label class="tick"><input type="checkbox" data-tierv="${esc(t)}"${on(t) ? ' checked' : ''}> ${esc(t)}</label>`).join('') + `</div></div>` +
+    /* CR-14 §4.2 — Tier: the one multi-select (in the panel) · nothing ticked = All tiers */
+    const tierOpts = order.map(t => ({ value: t, label: t }));
+    $('dl_fpop').innerHTML = `<div class="field"><label>${esc(D.tier)}${f.tiers ? '' : ` <span class="muted">· ${esc(D.allTiers)}</span>`}</label>` +
+        U.multiSelect({ id: 'dl_tiers', inline: true, options: tierOpts, value: (f.tiers || []).filter(t => order.includes(t)), aria: D.tier, searchable: false,
+          onChange: v => { dl.f.tiers = v.length && v.length < order.length ? v : null; dl.limit = PAGE; renderLeft(); } }) + `</div>` +
       sel('pillar', D.pillar, (L.pillar_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.pillarNotSet }])) +
       sel('cta', F.cta, (L.cta_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.ctaNotSet }])) +
       sel('term', D.term, R.PAYMENT_TERMS.concat(['none']).map(v => ({ value: v, label: C.term[v] }))) +
@@ -407,10 +418,12 @@ KT.screens.deals = (function () {
   /* CR-07 §4.5: no cost typed in yet (and not a Free job) → "Cost not set" (it counts ฿0) */
   const totalHTML = d => (R.costNotSet(d) ? `<span class="muted small">${esc(C.priceRef.costNotSet)}</span>` : R.baht(R.totalCost(d)));
   const dmShort = (iso, td) => (iso && iso.slice(0, 4) !== td.slice(0, 4) ? R.dmy(iso) : dm(iso));
+  /* Next due (CR-15 §4.3): the step it belongs to · its date, or how late — "Script · 1d late" */
   function dueHTML(s, d, td, short) {
-    const due = R.dueDate(s, d); if (!due) return '';
-    if (!R.isOverdue(s, d, td)) return esc(short ? dmShort(due, td) : R.dmy(due));
-    return `<span class="late" title="${esc(R.dmy(due))}">${esc(dmShort(due, td))} · ${esc(D.late(R.dayDiff(td, due)))}</span>`;
+    const info = R.dueInfo(s, d), due = info.date; if (!due) return '';
+    const st = info.step ? R.stepShort(info.step.sub_status) : '';
+    if (!R.isOverdue(s, d, td)) return `<span title="${esc(D.dueOf(st, R.dmy(due)))}"><span class="muted">${esc(st)}</span> · ${esc(short ? dmShort(due, td) : R.dmy(due))}</span>`;
+    return `<span class="late" title="${esc(D.dueOf(st, R.dmy(due)))}">${esc(st)} · ${esc(D.late(R.dayDiff(td, due)))}</span>`;
   }
   /* KOL name only (deal ID stays searchable and shows in the drawer) · imported = small grey dot */
   const keyLabel = k => R.phaseLabel(state(), k, true);
@@ -502,7 +515,7 @@ KT.screens.deals = (function () {
         const mark = pl => { const list = sum.posts.filter(p => platKey(ctx, p) === pl); return list.length ? platIcon(pl, list) : ''; };
         /* CR-11 §4.6: a closed deal from the old files with no pillar shows a grey "—" (no Set pillar) */
         const pillarCell = !d.pillar && R.isImportedClosed(d) ? `<span class="muted" title="${esc(C.golive.imported)}">${esc(C.common.none)}</span>`
-          : !can('deal.edit') ? esc(d.pillar || '') : d.pillar ? `<button type="button" class="picbtn" data-pillar="${esc(d.deal_id)}" title="${esc(D.changePillar)}"><span class="nm">${esc(d.pillar)}</span></button>`
+          : !can('deal.edit') ? U.pillarChipHTML(d.pillar, true) : d.pillar ? `<button type="button" class="picbtn" data-pillar="${esc(d.deal_id)}" title="${esc(D.changePillar)}">${U.pillarChipHTML(d.pillar, true)}</button>`   // CR-19: the pillar's colour
           : `<button type="button" class="btn ghost small picbtn" data-pillar="${esc(d.deal_id)}">${esc(D.setPillarBtn)}</button>`;
         const cells = [pillarCell, esc(C.status[d.status] || d.status), `<span title="${esc(stepTitle(d.sub_status))}">${esc(d.sub_status)}</span>`, slash(d.docs_done), slash(d.paid_50), slash(d.paid_full),
           esc(k.display_name || ''), mark('TikTok'), mark('Instagram'), mark('Facebook'), mark('X'), mark('Lemon8'), esc(d.pic || ''),
@@ -623,13 +636,13 @@ KT.screens.deals = (function () {
   }
 
   /* ---------- pipeline ---------- */
-  /* CR-09 §4.10–4.11 — Row 1: the stages in their status groups (List · In process · Complete), every stage always (an optional one that is
-     empty folds to 40px) · Row 2: the Cancelled lane across the board · compact cards (52px) */
+  /* CR-09 §4.10–4.11 — Row 1: the stages in their status groups (List · In process · Complete), every stage always (CR-15 §4.4: any empty
+     column folds to a 40px strip — name + 0 — required or not, so the board needs no sideways scroll) · Row 2: the Cancelled lane · compact cards (52px) */
   const stagePopBtn = key => `<button type="button" class="icon-btn gpop" data-stagepop="${esc(key)}" title="${esc(D.openStage(key))}" aria-label="${esc(D.openStage(key))}">⤢</button>`;
   function renderPipeline(s, ctx, rows, td) {
     const L = s.lookups, steps = R.stepsOf(L).filter(st => st.active !== false || rows.some(d => d.sub_status === st.sub_status));
-    const listFirst = steps.find(st => st.status === 'List'), cancelStep = R.stepsOf(L).find(R.isCancelStep), postStep = R.stepsOf(L).find(R.isPostStep);
-    const optional = st => R.isScriptStep(st) || R.draftNo(st) > 1 || (st === listFirst && st.is_optional);
+    const cancelStep = R.stepsOf(L).find(R.isCancelStep), postStep = R.stepsOf(L).find(R.isPostStep);
+    const optional = () => true;   // CR-15 §4.4: every column folds while it is empty
     const dealsOf = st => rows.filter(d => R.stageKey(L, d) === R.stageName(st));
     const movable = d => can('deal.edit') && !R.campaignCancelled(s, d.campaign_id);
     const card = d => {
@@ -637,7 +650,7 @@ KT.screens.deals = (function () {
       const notSet = R.costNotSet(d), total = R.totalCost(d);
       return `<div class="dcard${mv ? ' drag' : ''}" role="button" tabindex="0" data-id="${esc(d.deal_id)}" title="${esc(name)}"${mv ? ' draggable="true"' : ''}>
         <div class="r1"><b class="nm">${U.nameHTML(name)}</b><span class="amt${notSet ? ' muted' : ''}"${notSet ? ` title="${esc(C.priceRef.costNotSet)}"` : ''}>${notSet ? '฿—' : esc(R.baht(total))}</span>${mv ? `<button type="button" class="icon-btn cmenu" data-cardmenu="${esc(d.deal_id)}" aria-label="${esc(D.cardMenu)}" title="${esc(D.moveToMenu)}">⋯</button>` : ''}</div>
-        <div class="r2"><span class="l">${platformsHTML(ctx, d)}${d.pic ? `<span class="av sm" title="${esc(d.pic)}">${esc(initials(d.pic))}</span>` : ''}${tier ? `<span class="tier">${esc(tier)}</span>` : ''}${KT.samples.iconHTML(d)}</span>
+        <div class="r2"><span class="l">${platformsHTML(ctx, d)}${d.pic ? `<span class="av sm" title="${esc(d.pic)}">${esc(initials(d.pic))}</span>` : ''}${tier ? `<span class="tier">${esc(tier)}</span>` : ''}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${KT.samples.iconHTML(d)}</span>
           <span class="${late ? 'late' : 'muted'}">${due ? esc(dmShort(due, td)) : ''}</span></div></div>`;
     };
     const head = (st, list) => { const m = R.stageMoney(s, list), k = R.stageName(st);
@@ -757,7 +770,7 @@ KT.screens.deals = (function () {
       const res = R.checkMove(s, d, to, { date: td, note: '' });
       if (res.errs.length) { const t = res.errs.find(e => e.field === 'payment_term'); out.blocked.push({ id, kind: t ? 'term' : 'other', msg: (t || res.errs[0]).msg }); return; }
       const r = R.applyMove(s, d, to, { date: td, note: '' }, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId() });
-      s.deals[s.deals.indexOf(d)] = r.deal; s.deal_status_log.push(r.log); if (r.quote) s.kol_rate_quotes.push(r.quote); r.events.forEach(ev => s.deal_events.push(ev)); out.moved++;
+      s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); if (r.quote) s.kol_rate_quotes.push(r.quote); r.events.forEach(ev => s.deal_events.push(ev)); out.moved++;
     });
     if (out.moved) commit();
     return out;
@@ -791,7 +804,7 @@ KT.screens.deals = (function () {
   function openSetDetails(idsIn, o = {}) {
     if (!guard('deal.edit')) return;
     const s = state(), ids = idsIn.filter(id => { const d = dealById(id); return d && popCan(s, d); }); if (!ids.length) return;
-    const camps = new Set(ids.map(id => dealById(id).campaign_id)), phases = camps.size === 1 ? R.sortPhases(s.phases.filter(p => camps.has(p.campaign_id))) : [];
+    const camps = new Set(ids.map(id => dealById(id).campaign_id)), phases = camps.size === 1 ? R.sortPhases(R.phasesOfCampaign(s, [...camps][0])) : [];
     const SD = C.bulk.sd, row = (k, label, input, on) => `<div class="sd-row"><label class="tick"><input type="checkbox" data-sdon="${k}"${on ? ' checked' : ''}> ${esc(label)}</label>${input}</div>`;
     openDialog(`<div class="dlg-h">${esc(SD.title(ids.length))}</div><div class="dlg-b"><p class="hint" style="margin-top:0">${esc(SD.hint)}</p><div class="sd">` +
       row('pic', D.pic, `<select data-sd="pic">${optionsHTML(picList(), '', D.choosePic)}</select>`) +
@@ -880,26 +893,15 @@ KT.screens.deals = (function () {
     const p = R.dropPlan(s, d, toSub, today());
     if (p.kind === 'same') return;
     if (p.kind === 'blocked') { toast(p.msg); renderLeft(); return; }
-    if (p.kind === 'dialog') { openMove(id, toSub); return; }
+    if (p.kind === 'dialog') { openMove(id, toSub, true); return; }
     if (R.zeroCostMove(s, d, toSub)) { zeroCostAsk().then(ok => { if (ok) applyInstant(id, toSub); else renderLeft(); }); return; }
     applyInstant(id, toSub);
   }
   /* CR-07 §4.5 — Total is ฿0 at Confirm QT: Continue / Cancel (a warning, not a block) */
   const zeroCostAsk = () => U.confirmDialog(C.priceRef.zeroTitle, C.priceRef.zeroBody, C.priceRef.zeroContinue);
+  /* the move at once (date today) — KT.move.apply: one Undo puts the deal, its logs, rate, posts and shipments back */
   function applyInstant(id, toSub) {
-    const s = state(), d = dealById(id); if (!d) return;
-    const r = R.applyMove(s, d, toSub, { date: today(), note: '' }, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId() });
-    s.deals[s.deals.indexOf(d)] = r.deal; s.deal_status_log.push(r.log); if (r.quote) s.kol_rate_quotes.push(r.quote); r.events.forEach(ev => s.deal_events.push(ev));
-    commit(); renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel();
-    /* Undo puts the deal back as it was and takes the log (and the rate / plan rows of that move) out again */
-    toastAction(D.movedTo(toSub), D.undo, () => {
-      const s2 = state(), i = s2.deals.findIndex(x => x.deal_id === id); if (i < 0) return;
-      s2.deals[i] = d;
-      s2.deal_status_log = s2.deal_status_log.filter(l => l !== r.log);
-      if (r.quote) s2.kol_rate_quotes = s2.kol_rate_quotes.filter(q => q !== r.quote);
-      if (r.events.length) s2.deal_events = s2.deal_events.filter(ev => !r.events.includes(ev));
-      commit(D.moveUndone); renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel();
-    });
+    KT.move.apply(id, toSub, { date: today(), note: '' }, { onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); } });
   }
   /* ⋯ › Move to… on a card (keyboard / phone): the plan's steps + Cancel */
   function openCardMenu(btn) {
@@ -910,13 +912,20 @@ KT.screens.deals = (function () {
     const steps = R.stepsOf(s.lookups).filter(st => st.active !== false && st.sub_status !== d.sub_status && (R.isCancelStep(st) || R.inPlan(st, plan) || R.draftNo(st)));
     const m = document.createElement('div');
     m.className = 'menu-list floating'; m.id = 'dl_picmenu'; m.dataset.for = 'move' + id; m.setAttribute('role', 'menu');
-    m.innerHTML = `<div class="mh">${esc(D.moveToMenu)}</div>` + steps.map(st => { const p = R.dropPlan(s, d, st.sub_status, td);
+    /* CR-17 §4.3 — Simple: the deal's shipment can be marked shipped / delivered from the card */
+    const shs = KT.samples.isSimple() && R.canShipWork(U.actor()) ? R.shipmentsOf(s, id).filter(x => !R.isLegacyDelivered(x)) : [];
+    const toShip = shs.find(x => ['to_ship', 'problem'].includes(x.status)), inTransit = shs.find(x => x.status === 'shipped');
+    const shipItems = (toShip ? `<button type="button" class="mi" data-cmship="shipped" data-sm="${esc(toShip.shipment_id)}" role="menuitem">📦 ${esc(C.samples.quick.markShipped)}</button>` : '') +
+      (inTransit ? `<button type="button" class="mi" data-cmship="delivered" data-sm="${esc(inTransit.shipment_id)}" role="menuitem">📦 ${esc(C.samples.quick.markDelivered)}</button>` : '');
+    m.innerHTML = (shipItems ? `<div class="mh">${esc(C.samples.sec)}</div>${shipItems}` : '') + `<div class="mh">${esc(D.moveToMenu)}</div>` + steps.map(st => { const p = R.dropPlan(s, d, st.sub_status, td);
       return `<button type="button" class="mi" data-moveto="${esc(st.sub_status)}" role="menuitem"${p.kind === 'blocked' ? ` disabled title="${esc(p.msg)}"` : ''}>${esc(st.sub_status)}${p.kind === 'blocked' ? ` <span class="muted small">· ${esc(p.msg)}</span>` : ''}</button>`; }).join('');
     document.body.appendChild(m);
     const r = btn.getBoundingClientRect(), h = m.offsetHeight, w = m.offsetWidth;
     m.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
     m.style.top = (r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
-    m.addEventListener('click', e => { const b = e.target.closest('[data-moveto]'); if (b && !b.disabled) { closePicMenu(); moveTo(id, b.dataset.moveto); } });
+    m.addEventListener('click', e => {
+      const q = e.target.closest('[data-cmship]'); if (q) { closePicMenu(); KT.samples.quick(q.dataset.cmship, [q.dataset.sm], btn, () => { renderLeft(); if (U.drawerOwner() === owner) renderPanel(); }); return; }
+      const b = e.target.closest('[data-moveto]'); if (b && !b.disabled) { closePicMenu(); moveTo(id, b.dataset.moveto); } });
     const first = m.querySelector('.mi:not([disabled])'); if (first) first.focus();
   }
   function exportFiltered(kind) {
@@ -930,20 +939,41 @@ KT.screens.deals = (function () {
 
   /* ===================== drawer ===================== */
   const owner = {
-    kind: 'deal',   // CR-10 §4.13: 60% wide (was 50%, CR-09 §4.12), resizable, the page beside it stays usable
+    kind: 'deal',   // CR-20 §4.6: a modal (L · ~1120px · 90vh · ui.sizeDrawer) — no side drawer of its own any more
     isDirty: () => editing() && dl.dirty,
-    onClose: () => { Object.assign(dl, { mode: 'none', id: null, sec: null, draft: null, posts: null, ticks: null, backTo: null }); dl.touched.clear(); if (U.currentTab() === 'deals') setHash('deals'); markSelected(); },
+    onClose: () => { const over = dl.over, id = dl.id; dl.over = null; Object.assign(dl, { mode: 'none', id: null, sec: null, draft: null, posts: null, ticks: null, backTo: null, backKol: null, nav: null }); dl.touched.clear();
+      if (U.currentTab() === 'deals' && !over) setHash('deals'); markSelected(); if (over) over();
+      /* focus goes back to the card / row it came from (the Pipeline keeps its scroll) */
+      const el = id && document.querySelector(`#dl_body [data-id="${CSS.escape(id)}"]`); if (el) el.focus({ preventScroll: true }); },
     /* leaving the tab: keep unsaved edits so the drawer can come back; a plain view just closes */
-    onSuspend: () => { if (!editing()) Object.assign(dl, { mode: 'none', id: null }); },
+    onSuspend: () => { dl.over = null; if (!editing()) Object.assign(dl, { mode: 'none', id: null }); },
   };
+  /* a deal opened from elsewhere (Payments · Shipments · Dashboard · the KOL modal): the Deal modal over that page (the page and the address stay) ·
+     o = after() | { after (on close), backKol {kolId, tab, name} (CR-20 §4.6: it took the KOL modal's place — "‹ Back to <KOL>") } */
+  function openOver(id, o) {
+    if (!dealById(id)) return;
+    if (editing() && dl.id !== id) { toast(C.common.blockWhileEditing); return; }
+    if (U.drawerOwner() && U.drawerOwner() !== owner) U.suspendDrawer();
+    const x = typeof o === 'function' ? { after: o } : o || {};
+    dl.over = x.after || (() => {});
+    dl.backKol = x.backKol || null; dl.nav = null;
+    if (!(dl.id === id && editing())) Object.assign(dl, { mode: 'view', id, sec: null });
+    renderPanel();
+  }
   function renderPanel() {
-    if (dl.mode === 'new') { drawNew(); return; }   // CR-11 §4.4: a new deal lives in the create modal
     let html;
-    if (dl.mode === 'view') { const d = dealById(dl.id); if (!d) { U.closeDrawer(); return; } html = viewHTML(d); setHash('deals/' + d.deal_id); }
+    if (dl.mode === 'view') { const d = dealById(dl.id); if (!d) { U.closeDrawer(); return; } html = viewHTML(d); if (!dl.over) setHash('deals/' + d.deal_id); }
     else return;
     const keep = dl.sec && $('drawer_content').querySelector('.dr-body') ? $('drawer_content').querySelector('.dr-body').scrollTop : null;
-    if (U.drawerOwner() === owner) fillDrawer(html); else openDrawer(owner, html);
-    $('drawer_content').onclick = panelClick;
+    const first = U.drawerOwner() !== owner;
+    if (!first) fillDrawer(html); else openDrawer(owner, html);
+    const box = $('drawer_content');
+    box.onclick = panelClick;
+    /* ← → : the deal before / after (not while typing) · the box takes the focus so the keys work at once */
+    box.setAttribute('tabindex', '-1');
+    box.onkeydown = e => { if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.ctrlKey && !e.metaKey && !(e.target.closest && e.target.closest('input,textarea,select,[contenteditable],.jt'))) { e.preventDefault(); navStep(e.key === 'ArrowRight' ? 1 : -1); } };
+    if (first || !box.contains(document.activeElement)) box.focus({ preventScroll: true });
+    $('drawer_content').onchange = e => { const pt = e.target.closest('[data-payto]'); if (pt) setPayTo(pt.dataset.payto, pt.value); };   // CR-16 §4.2
     U.fitJourney($('drawer_content'));
     if (dl.mode === 'view') KT.samples.fillSecure($('drawer_content'));
     if (editing()) { wireForm(); check(); }
@@ -954,29 +984,29 @@ KT.screens.deals = (function () {
   /* ---------- shared pieces ---------- */
   /* CR-07 §4.9 — Journey: the timeline (+ "Brief → Post: n d" / "In progress n d since Brief"), the payment track, then the content plan */
   function journeySecHTML(s, d, posts) {
-    const j = U.journeyHTML(d, R.logsOf(s, d.deal_id), posts);
+    const j = U.journeyHTML(d, R.logsOf(s, d.deal_id), posts, { notes: true });   // CR-20 §4.13: a Draft step opens its notes
     return `<section class="sec jsec"><div class="sec-h"><span>${esc(D.secJourney)}</span>${j.summary ? `<span class="jt-sum">${esc(j.summary)}</span>` : ''}</div>${j.html}${U.payTrackHTML(d)}${KT.samples.trackHTML(d)}${planLineHTML(s, d)}</section>`;
   }
-  /* CR-02 §4.2 — Content plan: changed right here (an action like Move stage, no Edit needed) */
+  /* CR-02 §4.2 — Content plan: changed right here (an action like Move stage, no Edit needed) · CR-15: Drafts only — Script and Approve are in every plan */
   function planLineHTML(s, d) {
     const plan = R.planOf(d), lim = R.planLimits(s, d);
-    if (!can('deal.edit')) return `<div class="cplan"><span class="muted">${esc(D.contentPlan)}</span><span class="cp-item">${esc(D.planText(plan.drafts, plan.script))}</span></div>`;
-    const minus = plan.drafts <= lim.minDrafts, plus = plan.drafts >= lim.maxDrafts, lockScript = plan.script && lim.scriptLocked;
+    if (!can('deal.edit')) return `<div class="cplan"><span class="muted">${esc(D.contentPlan)}</span><span class="cp-item">${esc(D.planText(plan.drafts))}</span></div>`;
+    const minus = plan.drafts <= lim.minDrafts, plus = plan.drafts >= lim.maxDrafts;
     return `<div class="cplan"><span class="muted">${esc(D.contentPlan)}</span>
       <span class="cp-item">${esc(D.drafts)} <span class="stepper-n"><button type="button" class="icon-btn" data-plan="minus"${minus ? ' disabled' : ''} aria-label="${esc(D.fewerDrafts)}" title="${esc(minus ? D.cannotFewer(lim.minDrafts) : D.fewerDrafts)}">−</button>` +
       `<b>${plan.drafts}</b><button type="button" class="icon-btn" data-plan="plus"${plus ? ' disabled' : ''} aria-label="${esc(D.moreDrafts)}" title="${esc(plus ? D.maxDrafts(lim.maxDrafts) : D.moreDrafts)}">+</button></span></span>
-      <label class="cp-item tick"${lockScript ? ` title="${esc(C.msg.planScriptPassed)}"` : ''}><input type="checkbox" data-plan="script"${plan.script ? ' checked' : ''}${lockScript ? ' disabled' : ''}> ${esc(D.script)}</label></div>`;
+      <span class="cp-item muted small">${esc(D.planAlways)}</span></div>`;
   }
-  function changePlan(kind, on) {
+  function changePlan(kind) {
     const s = state(), d = dealById(dl.id); if (!d || !guard('deal.edit')) { renderPanel(); return; }
     if (dl.sec) { toast(C.common.blockWhileEditing); renderPanel(); return; }
-    const plan = R.planOf(d), next = { drafts: plan.drafts + (kind === 'plus' ? 1 : kind === 'minus' ? -1 : 0), script: kind === 'script' ? !!on : plan.script };
+    const plan = R.planOf(d), next = { drafts: plan.drafts + (kind === 'plus' ? 1 : kind === 'minus' ? -1 : 0) };
     const chk = R.checkPlan(s, d, next);
     if (chk.errs.length) { toast(chk.errs[0].msg); renderPanel(); return; }
     const r = R.applyPlan(d, next, { eventId: store.newEventId(), now: new Date(), user: userId() });
     if (!r.event) return;
     s.deals[s.deals.indexOf(d)] = r.deal; s.deal_events.push(r.event);
-    commit(D.planSaved(D.planText(next.drafts, next.script)));
+    commit(D.planSaved(D.planText(next.drafts)));
     renderLeft(); renderPanel();
   }
   /* Payment (CR-08 §4.5): the term and its state, then the deal's instalments from Payments (CR-11 §4.9: no Request step — Ready when the documents are in) ·
@@ -984,16 +1014,49 @@ KT.screens.deals = (function () {
      Milestone + status · Gross · Net · run / paid date · the reason when On hold */
   function payViewHTML(d) {
     const s = state(), term = R.termOf(d), st = R.paymentState(d, today()), PM = C.pay, P2 = KT.screens.payments, items = d.deal_id ? R.dealPayItems(s, d, today()) : [];
-    const rows = items.map(x => { const meta = [x.run_id ? `<span>${esc(PM.run)} <button type="button" class="link" data-payrun="${esc(x.run_id)}">${esc(x.run_id)}</button></span>` : '',
+    const simp = R.isSimple(s, 'payments'), actor = U.actor();   // CR-17 §4.2: the instalments are paid right here
+    const btns = x => (!simp ? '' : x.status === 'paid' ? (x.line && R.canUnpay(actor) ? `<button type="button" class="btn small" data-dunpaid="${esc(x.line.line_id)}">${esc(PM.simple.markUnpaid)}</button>` : '')
+      : x.status !== 'on_hold' && x.status !== 'cancelled' && R.canPaySimple(s, actor, x) ? `<button type="button" class="btn small primary" data-dpaid="${esc(x.key)}">${esc(PM.simple.markPaid)}</button>` : '');
+    const rows = items.map(x => { const meta = [x.run_id ? `<span>${esc(PM.run)} <button type="button" class="link" data-payrun="${esc(x.run_id)}">${esc(simp ? ((s.payment_runs.find(r => r.run_id === x.run_id) || {}).label || x.run_id) : x.run_id)}</button></span>` : '',
         x.paid_date ? `<span>${esc(PM.paidOn)} ${esc(R.dmy(x.paid_date))}</span>` : '', x.status === 'on_hold' && x.line && x.line.hold_reason ? `<span class="muted">${esc(x.line.hold_reason)}</span>` : ''].filter(Boolean).join('');
-      return `<div class="dpl-r"><div class="dpl-a"><b>${esc(PM.milestone[x.milestone] || x.milestone)}</b>${P2.statusChip(x.status)}</div>` +
+      return `<div class="dpl-r"><div class="dpl-a"><b>${esc(PM.milestone[x.milestone] || x.milestone)}</b>${simp ? P2.simpleChip(x.status) : P2.statusChip(x.status)}${btns(x)}</div>` +
         `<div class="dpl-m"><span>${esc(PM.col.gross)} <b>${P2.money(x.tax.gross)}</b></span><span>${esc(PM.col.net)} <b>${P2.money(x.tax.net)}</b></span></div>` +
         (meta ? `<div class="dpl-b">${meta}</div>` : '') + `</div>`; }).join('');
     /* CR-11 §4.6: no term on a closed deal from the old files = "—" (it works out as Full at Complete, CR-08) */
     const termText = !term && R.isImportedClosed(d) ? `<span class="muted" title="${esc(C.golive.imported)}">${esc(C.common.none)}</span>` : esc(C.term[term || 'none']);
-    return `<div class="kv"><span>${esc(D.term)}</span><b>${termText}${st === 'free' ? '' : ` · <span class="pay"><b class="${U.PAY_CLS[st]}">${esc(C.payState[st])}</b></span>`}</b></div>` +
-      (term === 'free' ? `<div class="hint">${esc(D.freeNoPay)}</div>` : !items.length ? `<div class="hint">${esc(PM.dealPayNone)}</div>`
+    /* CR-20 §4.8 — "Package · 10 posts ฿30,000 · Used 4 · 6 left" · Paid via package / Package not paid yet · "Package ฿2,000 + extras ฿500" */
+    let pkg = '';
+    if (term === 'package') {
+      const pk = R.packageById(s, d.package_id), extras = R.extrasOf(d);
+      pkg = pk ? `<div class="kv"><span>${esc(C.move.package)}</span><b>${esc(C.pkg.cardLine(R.packageLabel(pk), R.fmtNum(R.packageUsed(s, pk.package_id)), R.fmtNum(Math.max(0, R.packageRemaining(s, pk)))))}</b></div>` +
+        `<div class="kv"><span></span><b class="${d.package_paid ? 'ok' : 'warn'}">${esc(d.package_paid ? C.pkg.paidVia : C.pkg.notPaid)}</b></div>` +
+        (extras > 0 ? `<div class="hint">${esc(C.pkg.plusExtras(R.baht(R.num(d.rate_card)), R.baht(extras)))}</div>` : '') : `<div class="hint">${esc(C.msg.packageRequired)}</div>`;
+    }
+    return `<div class="kv"><span>${esc(D.term)}</span><b>${termText}${st === 'free' ? '' : ` · <span class="pay"><b class="${U.PAY_CLS[st]}">${esc(C.payState[st])}</b></span>`}</b></div>` + pkg + payToHTML(d) +
+      (term === 'free' ? `<div class="hint">${esc(D.freeNoPay)}</div>` : !items.length ? (term === 'package' ? '' : `<div class="hint">${esc(PM.dealPayNone)}</div>`)
         : `<div class="dpl">${rows}</div>`);
+  }
+  /* CR-16 §4.2 — Pay to ▾: one of the KOL's payees (the default when none is picked) · lines already in a run keep theirs */
+  function payToHTML(d) {
+    if (!d.deal_id || !d.kol_id || R.termOf(d) === 'free') return '';
+    const s = state(), opts = R.payToOptions(s, d.kol_id), cur = R.payeeOfDeal(s, d);
+    if (!opts.length) return `<div class="kv"><span>${esc(D.payTo)}</span><b><span class="muted">${esc(C.payee.none)}</span></b></div>`;
+    const locked = (s.payment_lines || []).filter(l => l.deal_id === d.deal_id && R.linePayeeLocked(l)).length;
+    const may = can('deal.edit') && R.canRequest(s, U.actor(), d) && opts.length > 1;
+    const val = d.payee_id && opts.some(o => o.value === d.payee_id) ? d.payee_id : '';
+    const def = opts.find(o => o.payee.is_default) || opts[0];
+    const control = may ? `<select data-payto="${esc(d.deal_id)}" aria-label="${esc(D.payTo)}"><option value="">${esc(def.label)}</option>` +
+      opts.filter(o => o.value !== def.value).map(o => `<option value="${esc(o.value)}"${o.value === val ? ' selected' : ''}>${esc(o.label)}</option>`).join('') + `</select>`
+      : `<span>${esc(cur ? (cur.is_default ? C.payee.defaultOpt(cur.label || C.payee.primary) : cur.label) : C.common.none)}</span>`;
+    return `<div class="kv payto"><span>${esc(D.payTo)}</span><b>${control}</b></div>` + (locked ? `<div class="hint">${esc(D.payToLocked(locked))}</div>` : '');
+  }
+  function setPayTo(dealId, to) {
+    const s = state(), d = dealById(dealId); if (!d || !guard('deal.edit')) { renderPanel(); return; }
+    const r = R.setDealPayee(s, d, to || null, { eventId: store.newEventId(), now: new Date(), user: userId() });
+    if (!r) { renderPanel(); return; }
+    s.deal_events.push(r.event);
+    const p = R.payeeOfDeal(s, d);
+    commit(D.payToSaved(p ? p.label || C.payee.primary : C.common.none)); renderPanel();
   }
   /* CR-03: the deal's money counts against its Campaign budget (Phase budgets follow the posts) */
   function budgetHTML(s, d, ctx) {
@@ -1017,7 +1080,8 @@ KT.screens.deals = (function () {
     if (e.type === 'pillar') return D.histPillar(e.from, e.to);
     if (e.type === 'cta') return D.histCta(e.from, e.to);
     if (e.type === 'payment_term') return D.histTerm(C.term[e.from || 'none'], C.term[e.to || 'none']);
-    if (e.type === 'plan') { const t = v => D.planText((v || {}).draft_rounds || 1, !!(v || {}).script_required); return D.histPlan(t(e.from), t(e.to)); }
+    if (e.type === 'payee') { const lb = id => { const p = id ? R.payeeById(state(), id) : null; return p ? p.label || C.payee.primary : D.payToDefault; }; return D.histPayee(lb(e.from), lb(e.to)); }   // CR-16 §4.2
+    if (e.type === 'plan') { const t = v => D.planText((v || {}).draft_rounds || 1); return D.histPlan(t(e.from), t(e.to)); }
     if (e.type === 'metrics') { const v = x => (x == null ? '—' : R.fmtNum(x)); return D.histMetrics(e.post_id || '') + ' · ' + R.METRICS.filter(k => (e.from || {})[k] !== (e.to || {})[k]).map(k => `${F[k]} ${v((e.from || {})[k])} → ${v((e.to || {})[k])}`).join(' · ') + (e.note === 'undo' ? ` (${D.undo})` : ''); }
     if (e.type === 'edit' || e.type === 'cost') return (e.type === 'cost' ? D.histCost : D.histEdit) + ' · ' + Object.keys(e.to || {}).map(k => `${fieldLabel(k)}: ${valText(k, (e.from || {})[k])} → ${valText(k, e.to[k])}`).join(' · ');
     return e.type;
@@ -1082,8 +1146,9 @@ KT.screens.deals = (function () {
   }
   const secCard = (d, key, title, body, extra) => `<section class="sec${dl.sec === key ? ' editing' : ''}" data-secbox="${key}"><div class="sec-h"><span>${esc(title)}</span>${dl.sec === key ? '' : extra || ''}${penBtn(d, key, title)}</div>${dl.sec === key ? sectionFormHTML(key) + secFoot() : body}</section>`;
   const showD23 = (d, n) => n <= R.planOf(d).drafts || !R.isBlank(d[`expected_draft${n}_date`]) || !R.isBlank(d[`approved_draft${n}_date`]);
-  const timelineFields = d => ['brief_date', 'expected_draft1_date', 'approved_draft1_date'].concat(showD23(d, 2) ? ['expected_draft2_date', 'approved_draft2_date'] : [])
-    .concat(showD23(d, 3) ? ['expected_draft3_date', 'approved_draft3_date'] : []).concat(['expected_post_date']);
+  /* CR-15 §4.4 — Brief · Script due / date · Draft 1 (2 · 3 when planned) · Approve due / date · Post due */
+  const timelineFields = d => ['brief_date', 'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date'].concat(showD23(d, 2) ? ['expected_draft2_date', 'approved_draft2_date'] : [])
+    .concat(showD23(d, 3) ? ['expected_draft3_date', 'approved_draft3_date'] : []).concat(['expected_approve_date', 'approved_date', 'expected_post_date']);
   const ctaChip = d => (R.ctaDiffers(state(), d) ? ` <span class="chip-diff" title="${esc(D.ctaCampaign(R.campaignCta(state(), d.campaign_id)))}">${esc(D.ctaDiffers)}</span>` : '');
   const termChip = d => (R.termDiffers(d, R.kolById(state(), d.kol_id)) ? ` <span class="chip-diff" title="${esc(D.kolTerm(C.term[R.kolById(state(), d.kol_id).default_payment_term]))}">${esc(D.termDiffers)}</span>` : '');
   function viewHTML(d) {
@@ -1097,10 +1162,12 @@ KT.screens.deals = (function () {
       kvF(d, 'gencode_start_date', R.dmy(d.gencode_start_date)) + kvAuto(F.gencode_end_date, esc(R.dmy(R.gencodeEndDate(d)) || C.common.none)) +
       ['basket_fee', 'asset_fee', 'expediting_fee'].map(f => kvF(d, f, money(d[f]))).join('') +
       kvAuto(D.tier, esc(tier.tier || R.UNKNOWN_TIER)) + kvAuto(F.total_cost, R.baht(R.totalCost(d)), 'total') + (d.kol_id ? `<div class="hint" style="margin-top:6px">${esc(U.priceRefSummary(d.kol_id, d.deal_id))}</div>` : '') + budgetHTML(s, d, ctx);
-    const info2 = kvF(d, 'pillar', d.pillar) + kvF(d, 'pic', d.pic) + `<div class="kv"><span>${esc(F.cta)}</span><b>${d.cta ? esc(d.cta) : `<span class="muted">${C.common.none}</span>`}${ctaChip(d)}${lockMark(lockOf(d, 'cta'))}</b></div>` +
+    /* CR-19 §4.6 — the pillar with its colour */
+    const info2 = `<div class="kv"><span>${esc(F.pillar)}</span><b>${R.isBlank(d.pillar) ? `<span class="muted">${C.common.none}</span>` : U.pillarChipHTML(d.pillar)}${lockMark(lockOf(d, 'pillar'))}</b></div>` + kvF(d, 'pic', d.pic) + `<div class="kv"><span>${esc(F.cta)}</span><b>${d.cta ? esc(d.cta) : `<span class="muted">${C.common.none}</span>`}${ctaChip(d)}${lockMark(lockOf(d, 'cta'))}</b></div>` +
       kvF(d, 'products', [R.dealProductsText(s, R.dealProductList(s, d.deal_id))].concat(R.dealProductList(s, d.deal_id).filter(x => d.campaign_id && !R.campaignHasProduct(s, d.campaign_id, x.tr_code))   // CR-09 §4.7: kept after it left the Campaign
         .map(x => C.msg.productKeptNotInCampaign(R.productShort(R.productByCode(s, x.tr_code) || { product_name: x.tr_code })))).filter(Boolean).join(' · ')) +   // CR-10 §4.14: delivery lives in Samples
       `<div class="kv"><span>${esc(F.link_brief)}</span><b>${d.link_brief ? `<a href="${esc(d.link_brief)}" target="_blank" rel="noopener">${esc(D.open)} ↗</a>` : `<span class="muted">${C.common.none}</span>`}${lockMark(lockOf(d, 'link_brief'))}</b></div>` +
+      `<div class="kv"><span>${esc(F.script_link)}</span><b>${d.script_link ? `<a href="${esc(d.script_link)}" target="_blank" rel="noopener">${esc(D.open)} ↗</a>` : `<span class="muted">${C.common.none}</span>`}${lockMark(lockOf(d, 'script_link'))}</b></div>` +
       kvF(d, 'remark', d.remark) + (d.status === 'Cancel' ? kvF(d, 'cancel_reason', d.cancel_reason) : '');
     const phases = R.phasesOfCampaign(s, d.campaign_id);
     const postCards = posts.map(x => { const a = ctx.accounts.get(x.account_id) || {}, done = R.postDone(x);
@@ -1114,28 +1181,35 @@ KT.screens.deals = (function () {
     /* header: KOL and deal ID never change · Campaign: ✎ for an admin while the deal has no dated post and is before Confirm QT */
     const campFe = lockOf(d, 'campaign_id');
     const head = dl.sec === 'header' ? `<div class="hdr-edit">${sectionFormHTML('header')}${secFoot()}</div>` : '';
+    /* CR-20 §4.6 — header (sticky): avatar · KOL (→ KOL modal) · Deal ID · Campaign · Phase · stage · Move stage · ‹ › n of m · ✕ ·
+       body: Journey across → Deal · Costs · Timeline · History | Payment · Shipments · Posts */
+    const nav = (() => { const i = dl.nav ? dl.nav.indexOf(d.deal_id) : -1; if (i < 0 || dl.nav.length < 2) return '';
+      return `<span class="dm-nav"><button type="button" class="icon-btn" data-dmnav="-1"${i > 0 ? '' : ' disabled'} aria-label="${esc(D.prevDeal)}" title="${esc(D.prevDeal)}">‹</button>` +
+        `<span class="muted small">${esc(D.navOf(i + 1, dl.nav.length))}</span><button type="button" class="icon-btn" data-dmnav="1"${i < dl.nav.length - 1 ? '' : ' disabled'} aria-label="${esc(D.nextDeal)}" title="${esc(D.nextDeal)}">›</button></span>`; })();
+    const moveBtn = can('deal.edit') && !R.campaignCancelled(s, d.campaign_id) ? `<button type="button" class="btn primary" data-act="move">${esc(D.move)}</button>` : '';
     return `<div class="dr-head">
-        <div class="dr-title"><div class="t"><h2><button type="button" data-kol="${esc(d.kol_id)}" title="${esc(D.openKol)}">${esc(k.display_name || d.kol_id)}</button>${U.copyBtnHTML(k.display_name || d.kol_id)}${lockMark(lockOf(d, 'kol_id'))}</h2>
+        ${dl.backKol ? `<button type="button" class="link backkol" data-backkol>${esc(D.backToKol(dl.backKol.name || dl.backKol.kolId))}</button>` : ''}
+        <div class="dr-title">${k.kol_id ? U.avatarHTML(k, 'md') : ''}<div class="t"><h2><button type="button" data-kol="${esc(d.kol_id)}" title="${esc(D.openKol)}">${esc(k.display_name || d.kol_id)}</button>${U.copyBtnHTML(k.display_name || d.kol_id)}${lockMark(lockOf(d, 'kol_id'))}</h2>
           ${dl.backTo ? `<button type="button" class="link backstage" data-backstage>${esc(D.backTo(dl.backTo))}</button>` : ''}
-          <div class="dr-sub"><span>${esc(d.deal_id)}${lockMark(lockOf(d, 'deal_id'))} · ${esc(camp.campaign_name || '')}${campFe.editable ? penBtn(d, 'header', F.campaign_id) : lockMark(campFe)}${p.phase_id ? ` · ${esc(R.phaseName(s, p.phase_id))}` : ''}</span>${stageChip(d)}${d.is_legacy ? `<span class="badge-legacy" title="${esc(D.legacyTip)}">${esc(D.legacy)}</span>` : ''}</div></div>${closeBtn}</div>
+          <div class="dr-sub"><span>${esc(d.deal_id)}${lockMark(lockOf(d, 'deal_id'))} · ${esc(camp.campaign_name || '')}${campFe.editable ? penBtn(d, 'header', F.campaign_id) : lockMark(campFe)}${p.phase_id ? ` · ${esc(R.phaseName(s, p.phase_id))}` : ''}</span>${stageChip(d)}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${d.is_legacy ? `<span class="badge-legacy" title="${esc(D.legacyTip)}">${esc(D.legacy)}</span>` : ''}</div></div>
+          <div class="dm-acts">${moveBtn}${nav}${closeBtn}</div></div>
         ${head}
-        ${can('deal.edit') && !R.campaignCancelled(s, d.campaign_id) ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="move">${esc(D.move)}</button></div>` : ''}
       </div>
       <div class="dr-body">
         ${issues.errs.length || issues.warns.length ? `<section class="sec"><div class="checks">${checksHTML(issues, '')}</div></section>` : ''}
         ${journeySecHTML(s, d, posts)}
-        ${KT.samples.sectionHTML(d)}
         <div class="dgrid"><div class="dg-l">
           ${secCard(d, 'info', D.secDeal, info2)}
           ${secCard(d, 'costs', D.secCosts, costs)}
           ${secCard(d, 'timeline', D.secTimeline, timeline)}
+          ${source}
+          <details class="sec"><summary><span>${esc(D.secHistory)}</span><span class="chev">${ICON.chevron}</span></summary>${historyHTML(s, d)}</details>
         </div><div class="dg-r">
           ${secCard(d, 'payment', D.secPayment, pay.replace('</b></div>', `${termChip(d)}${lockMark(lockOf(d, 'payment_term'))}</b></div>`))}
+          ${KT.samples.sectionHTML(d)}
           ${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
             can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}
         </div></div>
-        ${source}
-        <details class="sec"><summary><span>${esc(D.secHistory)}</span><span class="chev">${ICON.chevron}</span></summary>${historyHTML(s, d)}</details>
       </div>`;
   }
   /* ---------- the open section's form: inputs for open fields, the value + 🔒 for locked ones ---------- */
@@ -1148,13 +1222,14 @@ KT.screens.deals = (function () {
   }
   function sectionFormHTML(key) {
     const s = state(), d = dl.draft, stored = dealById(dl.id), accs = R.accountsOfKol(s, d.kol_id);
-    if (key === 'header') return `<div class="fields">${field('campaign_id', F.campaign_id, `<select id="f_campaign_id" data-f="campaign_id" data-key="campaign_id" data-combo="campaign">${campaignOptionsHTML(d.campaign_id, D.chooseCampaign)}</select>`, { req: 1, wide: 1, hint: esc(D.campaignMoveHint) })}</div>`;
+    if (key === 'header') return `<div class="fields">${field('campaign_id', F.campaign_id, `<select id="f_campaign_id" data-f="campaign_id" data-key="campaign_id" data-combo="campaign">${campaignOptionsHTML(d.campaign_id, D.chooseCampaign, { forDeal: true })}</select>`, { req: 1, wide: 1, hint: esc(D.campaignMoveHint) })}</div>`;
     if (key === 'info') return `<div class="fields">
         ${fieldOr(stored, 'pillar', F.pillar, selF(d, 'pillar', activeList('pillar_list', d.pillar), D.none), {}, d.pillar)}
         ${fieldOr(stored, 'pic', F.pic, selF(d, 'pic', picList(d.pic), D.none), { req: !d.is_legacy }, d.pic)}
         ${fieldOr(stored, 'cta', F.cta, selF(d, 'cta', activeList('cta_list', d.cta), D.none), { hint: '<span id="dl_ctaHint"></span>' }, d.cta)}
         ${lockOf(stored, 'products').editable ? productsField() : fieldOr(stored, 'products', F.products, '', { wide: 1 }, R.dealProductsText(s, d.products))}
         ${fieldOr(stored, 'link_brief', F.link_brief, inpF(d, 'link_brief', 'url'), { wide: 1 }, d.link_brief)}
+        ${fieldOr(stored, 'script_link', F.script_link, inpF(d, 'script_link', 'url'), { wide: 1 }, d.script_link)}
         ${field('remark', F.remark, `<textarea id="f_remark" data-f="remark" data-key="remark">${esc(asText(d.remark))}</textarea>`, { wide: 1 })}
         ${d.status === 'Cancel' ? field('cancel_reason', F.cancel_reason, inpF(d, 'cancel_reason'), { wide: 1 }) : ''}
       </div>`;
@@ -1183,7 +1258,10 @@ KT.screens.deals = (function () {
       : !isNew || !k ? '' : src === 'kol' ? `<span class="srctag">${esc(D.termFromKol)}</span>` : src === 'changed' ? `<span class="srctag">${esc(D.termChanged)}</span>` : '';
     const box = !isNew || !k ? '' : src === 'none' ? `<label class="tick"><input type="checkbox" data-saveterm${dl.saveTerm ? ' checked' : ''}> ${esc(D.saveAsDefault)}</label>`
       : src === 'changed' ? `<label class="tick"><input type="checkbox" data-updterm${dl.updateKolTerm ? ' checked' : ''}> ${esc(D.alsoUpdateKol)}</label>` : '';
-    return `<div class="fields">${termFe.editable ? field('payment_term', D.term, termSel, { req: isNew, hint }) : fieldOr(stored, 'payment_term', D.term, '', {}, C.term[R.termOf(d) || 'none'])}` +
+    /* CR-20 §4.8 — Package: which package of this KOL · Uses (the Rate card follows: unit price × uses) */
+    const pkgF = !stored || d.payment_term !== 'package' || !termFe.editable ? '' : field('package_id', C.move.package, `<select id="f_package_id" data-f="package_id" data-key="package_id">${optionsHTML(R.packageChoices(state(), stored.kol_id, today(), stored).map(x => ({ value: x.pkg.package_id, label: C.move.pkgOption(R.packageLabel(x.pkg), Math.max(0, x.left)) })), d.package_id || '', C.move.choosePackage)}</select>`, { req: 1 }) +
+      field('package_units', C.move.uses, `<input type="number" min="1" step="1" inputmode="numeric" id="f_package_units" data-f="package_units" data-key="package_units" value="${esc(asText(d.package_units || 1))}">`, { req: 1, hint: esc(C.move.fromPackage) });
+    return `<div class="fields">${termFe.editable ? field('payment_term', D.term, termSel, { req: isNew, hint }) : fieldOr(stored, 'payment_term', D.term, '', {}, C.term[R.termOf(d) || 'none'])}` + pkgF +
       (box ? `<div class="field"><label>&nbsp;</label>${box}</div>` : '') + `</div>` +
       `<div class="hint">${esc(R.termOf(d) === 'free' ? D.freeNoPay : C.pay.paidFromPayments)}</div>`;
   }
@@ -1205,265 +1283,21 @@ KT.screens.deals = (function () {
     const box = $('drawer_content').querySelector(`[data-secbox="${key}"], .hdr-edit`); if (box) box.scrollIntoView({ block: 'nearest' });
   }
   function cancelSection() { Object.assign(dl, { sec: null, draft: null, posts: null }); dl.touched.clear(); renderPanel(); }
-  /* ===================== CR-11 §4.4 — New deal: one create modal (L) · tabs Single KOL · Bulk shortlist (it opens on the tab used last) ===================== */
-  const ndTabKey = () => 'newdealtab_' + (userId() || '');
-  let nd = null;   // the open New deal modal: { m (the modal), tab, view (what Single KOL shows) }
-  /* o = { tab, campaignId, kolId (Single KOL with that KOL), lockKol (opened from KOL Master: 🔒 + Change), kolIds (Bulk shortlist with those ticked),
-     opener (focus goes back there), after(dealId) (the screen it was opened from shows the new deal) } */
+  /* ===================== CR-20 §4.1–4.5 — New deal: screen-newdeal.js (tabs From KOL Master · New KOL) ===================== */
+  /* o (as before): { tab, campaignId, kolId (one KOL — From KOL Master with it selected), kolIds, opener, after(dealId) } */
   function openNewDeal(o = {}) {
-    if (!guard('deal.edit')) return;
     if (dl.sec) { toast(C.common.blockWhileEditing); return; }
-    if (U.drawerOwner() === owner) U.closeDrawer();   // a deal open for viewing closes; the modal takes over
-    const tab = o.tab || (pref.get(ndTabKey(), 'single') === 'bulk' ? 'bulk' : 'single');
-    if (U.modalOpen()) U.closeModal();   // one modal at a time
-    const me = { tab, view: '', after: o.after || null }; nd = me;
-    me.m = U.createModal({ size: 'L', tabs: [{ key: 'single', label: C.bulk.tabSingle }, { key: 'bulk', label: C.bulk.tabBulk }], tab, opener: o.opener,
-      /* the first thing to fill: the KOL (the Campaign comes from the page) · on Bulk shortlist the search */
-      focus: () => (me.tab === 'bulk' ? '#bk_q' : dl.draft && !dl.draft.kol_id ? '#f_kol_id' : null),
-      onTab: key => { me.tab = key; pref.set(ndTabKey(), key); drawNew(true); me.m.focusFirst(); },
-      onClick: e => (me.tab === 'bulk' ? KT.bulk.click(e) : panelClick(e)),
-      isDirty: () => (dl.mode === 'new' && !!dl.dirty) || KT.bulk.isDirty(),   // what was typed on either tab
-      onClose: () => { if (nd !== me) return; nd = null; Object.assign(dl, { mode: 'none', id: null, draft: null, posts: null, ticks: null, createKol: null, addAcc: null, addProd: null }); dl.touched.clear(); KT.bulk.reset(); if (U.currentTab() === 'deals') setHash('deals'); markSelected(); } });
-    newDraft(o.campaignId ? { campaign_id: o.campaignId } : null);
-    if (o.kolId && R.kolById(state(), o.kolId)) { setDraftKol(o.kolId); dl.dirty = false; dl.kolLocked = !!o.lockKol; }
-    KT.bulk.init({ campaignId: o.campaignId || dl.draft.campaign_id, kolIds: o.kolIds });
-    drawNew(true);
+    KT.newDeal.open({ tab: o.tab === 'newkol' ? 'newkol' : 'master', campaignId: o.campaignId || dl.f.campaign || '', kolIds: o.kolIds || (o.kolId ? [o.kolId] : []), opener: o.opener, after: o.after });
   }
-  const startNewSingle = () => openNewDeal({ tab: 'single' });
-  const closeNewDeal = () => { if (nd) nd.m.close(); };
-  /* the Single KOL form, empty · keep = what Create & next carries over (Campaign · Start at · PIC · Pillar · CTA) · phase = the Phase picked */
-  function newDraft(keep, phase) {
-    const s = state(), step = R.shortlistStep(s.lookups), picked = dl.f.campaign || (phaseById(dl.f.phaseSel) || {}).campaign_id || '';
-    const draft = JSON.parse(JSON.stringify(R.DEAL_TEMPLATE));
-    R.MONEY_KEYS.concat(['gencode_period']).forEach(k => { draft[k] = ''; });
-    draft.products = [];
-    /* CR-04 §4.6: PIC = you when you are a PIC (else the KOL's, once a KOL is chosen) · §4.7: CTA from the Campaign */
-    const pic = R.defaultPic(U.me(), null);
-    Object.assign(draft, { deal_id: null, campaign_id: picked || R.defaultCampaignId(s, today()) || '', kol_id: '', sub_status: step ? step.sub_status : '', status: step ? step.status : 'List', pic: pic.pic || '' }, keep || {});
-    if (R.isBlank(draft.cta)) draft.cta = R.campaignCta(s, draft.campaign_id) || '';
-    Object.assign(dl, { mode: 'new', id: null, sec: null, draft, posts: [], ticks: new Set(), showDraft23: false, dirty: false, saveTerm: false, updateKolTerm: false, newOverrides: new Map(),
-      submitted: false, createKol: null, addAcc: null, addProd: null, kolText: null, termFromKol: false, kolLocked: false, termFromCampaign: false, pillarFromPhase: false, onlyProduct: false,
-      newPhase: phase && R.phasesOfCampaign(s, draft.campaign_id).some(p => p.phase_id === phase) ? phase : '',
-      picSource: keep && keep.pic ? (keep.pic === pic.pic ? pic.source : null) : pic.source, ctaFromCampaign: !R.isBlank(draft.cta) && draft.cta === R.campaignCta(s, draft.campaign_id) }); dl.touched.clear();
-    fillDefaults({ term: true, pillar: true, product: true });
-  }
-  /* CR-11 §4.11 — what a new deal starts with (each with a chip saying where from · a value picked by hand is never overwritten):
-     payment term the KOL's default → the Campaign's (§9 #12) · pillar the Phase's default (the Phase picked, else the one of the expected post date) ·
-     products the Campaign's only product */
-  function fillDefaults(what) {
-    if (dl.mode !== 'new' || !dl.draft) return;
-    const s = state(), d = dl.draft, k = R.kolById(s, d.kol_id);
-    if (what.term && (dl.termFromCampaign || R.isBlank(d.payment_term))) {
-      const t = R.termPrefill(s, k, d.campaign_id);
-      d.payment_term = t.term; dl.termFromKol = t.source === 'kol'; dl.termFromCampaign = t.source === 'campaign';
-      dl.saveTerm = t.source === 'campaign' ? false : !!k && !R.isTerm(k.default_payment_term);   // the Campaign's term does not become the KOL's default
-    }
-    if (what.pillar && (dl.pillarFromPhase || R.isBlank(d.pillar))) {
-      const x = R.pillarPrefill(s, d.campaign_id, dl.newPhase, d.expected_post_date);
-      if (x) { d.pillar = x.pillar; dl.pillarFromPhase = true; } else if (dl.pillarFromPhase) { d.pillar = ''; dl.pillarFromPhase = false; }
-    }
-    if (what.product && !(d.products || []).length) {
-      const code = R.onlyProduct(s, d.campaign_id);
-      if (code) { d.products = [{ tr_code: code, qty: '1', note: null }]; dl.onlyProduct = true; }
-    }
-  }
-  /* draw the open tab · Single KOL shows the form, or one of its panels in place (Create KOL · Add account · Add products) — never a second modal (§4.1) */
-  function drawNew(top) {
-    if (!nd || !nd.m) return;
-    if (nd.tab === 'bulk') { nd.view = 'bulk'; KT.bulk.draw(nd.m, top); return; }
-    const s = state(), c = s.campaigns.find(x => x.campaign_id === dl.draft.campaign_id);
-    nd.m.setSub(c ? D.addingTo(c.campaign_name) : '');
-    const view = dl.createKol ? 'ck' : dl.addAcc ? 'aa' : dl.addProd ? 'ap' : 'form', v = { ck: createKolView, aa: addAccountView, ap: addProductsView, form: formView }[view]();
-    const fresh = !!top || nd.view !== view; nd.view = view;
-    nd.m.setBody(v.body, !fresh); nd.m.setFoot(v.left, v.buttons);
-    if (view === 'ck') wireCreateKol(); else if (view === 'aa') wireAddAccount(); else if (view === 'ap') wireAddProducts(); else { wireForm(); check(); }
-    if (fresh && view !== 'form') nd.m.focusFirst();
-  }
-  /* where the form is: the modal for a new deal, the drawer for a section of a deal */
-  const formBox = () => (dl.mode === 'new' ? $('cm_root') : $('drawer_content'));
-  function cancelEdit() {
-    if (dl.mode === 'new') { if (nd) nd.m.requestClose(); return; }
-    cancelSection();
-  }
-  /* after Create: "Deal created · Open" (the drawer) · the row lit up in the list */
-  function createdToast(id) { toastAction(C.common.created(D.dealThing), C.common.open, () => openCreated(id), 8000); }
-  async function openCreated(id) {
-    if (nd && !(await nd.m.requestClose())) return;
-    if (U.currentTab() !== 'deals') { go('deals', { deal: id }); return; }
-    if (dealById(id)) select(id);
-  }
-  function showCreated(id) {
-    const d = dealById(id); if (!d || U.currentTab() !== 'deals') return;
-    if (document.querySelector(`#dl_body [data-id="${id}"]`)) flashRows([id]); else showBatch(d.campaign_id, [id]);
-  }
-  function setDraftKol(kolId) {
-    const s = state(), d = dl.draft, k = R.kolById(s, kolId); if (!k) return;
-    d.kol_id = kolId; dl.dirty = true;
-    if (dl.mode === 'new') {
-      /* CR-04 §4.6: you (a PIC) → the KOL's PIC → none; a PIC picked by hand stays */
-      if (!d.pic || dl.picSource) { const dp = R.defaultPic(U.me(), k); d.pic = dp.pic || ''; dl.picSource = dp.source; }
-      /* CR-04 §4.8: the KOL's default term (a KOL without one: choose, and "Save as this KOL's default" is ticked) · CR-11 §4.11: else the Campaign's (not saved to the KOL) */
-      const t = R.termPrefill(s, k, d.campaign_id);
-      d.payment_term = t.term; dl.termFromCampaign = t.source === 'campaign';
-      dl.saveTerm = !R.isTerm(k.default_payment_term) && t.source !== 'campaign'; dl.updateKolTerm = false; dl.termFromKol = t.source === 'kol'; dl.kolText = null;
-      const accs = R.accountsOfKol(s, kolId); dl.ticks = new Set(accs.length === 1 ? [accs[0].account_id] : []);
-    }
-    renderPanel();
-  }
-  const kolLabel = k => `${k.display_name} · ${k.kol_id}`;
-  /* what was typed → one KOL: "name · K0002" · or a name / @handle that only one KOL has (case, @ and spaces ignored) */
-  function resolveKol(text) {
-    const s = state(), v = R.trim(text), m = /(K\d+)\s*$/i.exec(v);
-    if (m && R.kolById(s, m[1].toUpperCase())) return m[1].toUpperCase();
-    const q = R.normKey(v); if (!q) return '';
-    const same = R.kolMatches(s, v, 50).filter(k => R.normKey(k.display_name) === q || R.accountsOfKol(s, k.kol_id).some(a => R.normKey(a.handle) === q));
-    return same.length === 1 ? same[0].kol_id : '';
-  }
-  /* CR-10 §4.10 — the KOL box no longer names a KOL: what came with the old one goes (payment term from it, accounts, PIC from it) · the text stays */
-  function clearDraftKol(text) {
-    const d = dl.draft; d.kol_id = ''; dl.kolText = text;
-    if (dl.termFromKol) d.payment_term = '';
-    Object.assign(dl, { termFromKol: false, saveTerm: false, updateKolTerm: false, ticks: new Set() });
-    fillDefaults({ term: true });
-    if (dl.picSource === 'kol') { const dp = R.defaultPic(U.me(), null); d.pic = dp.pic || ''; dl.picSource = dp.source; }
-    renderPanel();
-  }
-  /* ---------- CR-10 §4.10 — Create KOL inside New deal (the form keeps everything typed) ---------- */
-  function openCreateKol(text) {
-    if (!guard('kol.edit') && !guard('deal.edit')) return;
-    dl.createKol = { draft: R.createKolDraft(text, U.me()), touched: new Set(), submitted: false, anyway: false };
-    renderPanel();
-    const n = $('f_ck_display_name'); if (n) n.focus();
-  }
-  function createKolView() {
-    const CK = C.bulk.ck;
-    return { body: `<button type="button" class="link nd-back" data-act="ckBack">${esc(D.backToNew)}</button><h3 class="nd-ph">${esc(CK.title)}</h3><p class="muted small nd-psub">${esc(CK.sub)}</p>` + U.kolCreateHTML(dl.createKol.draft),
-      left: `<div class="checks" id="ck_checks"></div>`,
-      buttons: `<button type="button" class="btn" data-act="ckBack">${esc(C.bulk.back)}</button><button type="button" class="btn primary" data-act="ckCreate">${esc(CK.create)}</button>` };
-  }
-  const ckCheck = () => (dl.createKol ? U.kolCreateCheck(formBox(), dl.createKol) : null);
-  function wireCreateKol() { U.wireKolCreate(formBox(), dl.createKol, () => { dl.dirty = true; ckCheck(); }); ckCheck(); }
-  /* Create KOL → KOL Master (+ the account) → back to New deal with that KOL picked · everything else typed stays */
-  function ckCreate() {
-    const c = dl.createKol; if (!c || !guard('deal.edit')) return;
-    c.submitted = true;
-    const r = ckCheck(); if (!r || r.res.errs.length || (r.dup && !c.anyway)) return;
-    const s = state(), recs = R.createKolRecords(c.draft, { kolId: store.newId('kol'), accountId: store.newId('account') });
-    s.kol_master.push(recs.kol); if (recs.account) s.kol_accounts.push(recs.account);
-    dl.createKol = null; commit(C.bulk.ck.created(recs.kol.display_name));
-    setDraftKol(recs.kol.kol_id);
-  }
-  function draftPosts() {
-    if (dl.mode !== 'new') return dl.posts;
-    const s = state();
-    return [...dl.ticks].map(aid => Object.assign(R.blankPost(null, aid, (s.kol_accounts.find(a => a.account_id === aid) || {}).platform, dl.draft.expected_post_date || null),
-      { phase_override: dl.newPhase || (dl.newOverrides && dl.newOverrides.get(aid)) || null }));   // CR-11 §4.4: the Phase picked = every post's
-  }
-  /* ---------- CR-11 §4.1 — Add account (a panel in the modal): the account then ticked for a post ---------- */
-  function openAddAccount() {
-    if (!guard('deal.edit') || !dl.draft.kol_id) return;
-    dl.addAcc = { draft: { platform: '', handle: '', followers: '', profile_link: '' }, touched: new Set(), submitted: false };
-    drawNew(true);
-  }
-  function addAccountView() {
-    const k = R.kolById(state(), dl.draft.kol_id) || {};
-    return { body: `<button type="button" class="link nd-back" data-act="aaBack">${esc(D.backToNew)}</button><h3 class="nd-ph">${esc(D.aaTitle(k.display_name || ''))}</h3><p class="muted small nd-psub">${esc(D.aaSub)}</p>` + U.accountFieldsHTML(dl.addAcc.draft),
-      left: `<div class="checks" id="aa_checks"></div>`,
-      buttons: `<button type="button" class="btn" data-act="aaBack">${esc(C.bulk.back)}</button><button type="button" class="btn primary" data-act="aaCreate">${esc(D.aaCreate)}</button>` };
-  }
-  const aaCheck = () => (dl.addAcc ? U.accountCheck(formBox(), dl.draft.kol_id, dl.addAcc) : null);
-  function wireAddAccount() { U.wireAccount(formBox(), dl.addAcc, () => { if (dl.addAcc) aaCheck(); }); aaCheck(); }
-  function aaCreate() {
-    const a = dl.addAcc; if (!a || !guard('deal.edit')) return;
-    a.submitted = true; const res = aaCheck(); if (!res || res.errs.length) return;
-    const s = state(), rec = R.newAccountRecord(dl.draft.kol_id, a.draft, store.newId('account'));
-    s.kol_accounts.push(rec); dl.addAcc = null; dl.ticks.add(rec.account_id); dl.dirty = true;
-    commit(D.aaDone(rec.handle)); drawNew(true);
-  }
-  /* ---------- CR-11 §4.4 — + Add products to campaign (a panel in the modal · who may: CR-09 §4.7) ---------- */
-  function openAddProducts() {
-    if (!guard('campaign.products') || !dl.draft.campaign_id) return;
-    dl.addProd = { codes: R.campaignProductCodes(state(), dl.draft.campaign_id).slice() };
-    drawNew(true);
-  }
-  function addProductsView() {
-    const s = state(), cid = dl.draft.campaign_id, c = s.campaigns.find(x => x.campaign_id === cid) || {};
-    return { body: `<button type="button" class="link nd-back" data-act="apBack">${esc(D.backToNew)}</button><h3 class="nd-ph">${esc(D.apTitle(c.campaign_name || ''))}</h3><p class="muted small nd-psub">${esc(D.apSub)}</p>` +
-      U.productPickerHTML('nd_prodpick', dl.addProd.codes, code => R.productDealsInCampaign(s, cid, code).length, true),
-      left: `<div class="checks" id="nd_prodchk"></div>`,
-      buttons: `<button type="button" class="btn" data-act="apBack">${esc(C.bulk.back)}</button><button type="button" class="btn primary" data-act="apSave">${esc(D.apSave)}</button>` };
-  }
-  function wireAddProducts() {
-    const cid = dl.draft.campaign_id, chk = () => { const r = R.checkCampaignProducts(state(), cid, dl.addProd.codes); $('nd_prodchk').innerHTML = checksHTML(r, ''); return r; };
-    /* a new product is made in Settings / the Campaign drawer — not a second modal on top of this one */
-    U.wireProductPicker($('nd_prodpick'), { get: () => dl.addProd.codes, set: codes => { dl.addProd.codes = codes; chk(); }, locked: code => R.productDealsInCampaign(state(), cid, code).length, canNew: false, askUsed: true });
-    chk();
-  }
-  function apSave() {
-    if (!guard('campaign.products') || !dl.addProd) return;
-    const s = state(), cid = dl.draft.campaign_id, c = s.campaigns.find(x => x.campaign_id === cid) || {}, before = R.campaignProductCodes(s, cid), codes = dl.addProd.codes.slice();
-    if (R.checkCampaignProducts(s, cid, codes).errs.length) return;
-    if (JSON.stringify(before) !== JSON.stringify(codes)) {
-      R.setCampaignProducts(s, cid, codes);
-      s.campaign_events.push({ event_id: store.newCampaignEventId(), campaign_id: cid, type: 'products', from: { products: before }, to: { products: codes }, changed_at: new Date().toISOString(), changed_by: userId(), note: null });
-      commit(D.apSaved(c.campaign_name || ''));
-    }
-    dl.addProd = null; drawNew(true);
-  }
-  /* CR-11 §4.4 — the KOL once picked: name + copy · accounts (platform + followers) · Tier · Performance · Last worked */
-  function kolCardHTML(s, k) {
-    if (!k) return `<div class="nd-kol empty">${esc(D.kolCardEmpty)}</div>`;
-    const accs = R.accountsOfKol(s, k.kol_id), tier = R.tierOf(R.maxFollowers(accs), s.lookups.tier_rules || []) || R.UNKNOWN_TIER, last = R.lastWorked(s, k.kol_id);
-    return `<div class="nd-kol" id="nd_kolcard"><div class="nd-kh"><b>${U.nameHTML(k.display_name)}</b>${U.copyBtnHTML(k.display_name)}</div>` +
-      `<div class="nd-ka">${accs.map(a => `<span class="nd-acc">${pfIcon(a.platform)} @${esc(a.handle)} <span class="muted">${a.followers != null ? R.fmtNum(a.followers) : '—'}</span></span>`).join('') || `<span class="muted">${esc(D.cardNoAccount)}</span>`}</div>` +
-      `<div class="kv"><span>${esc(D.cardTier)}</span><b>${esc(tier)}</b></div><div class="kv"><span>${esc(D.cardPerf)}</span><b>${U.reliabilityChip(R.kolPerformance(s, k.kol_id, today()))}</b></div>` +
-      `<div class="kv"><span>${esc(D.cardLast)}</span><b>${last ? esc(R.dmy(last)) : `<span class="muted">${esc(D.cardNever)}</span>`}</b></div></div>`;
-  }
+  const startNewSingle = () => openNewDeal({});
+  const closeNewDeal = () => KT.newDeal.close();
+  /* where a section form is: the Deal modal */
+  const formBox = () => $('drawer_content');
+  const cancelEdit = () => cancelSection();
+  const draftPosts = () => dl.posts || [];
   const dateF = (f, d, extra) => dateHTML(`id="f_${f}" data-f="${f}" data-key="${f}"${extra || ''}`, d[f], { label: F[f] });
-  function formView() {
-    const s = state(), d = dl.draft, L = s.lookups, k = R.kolById(s, d.kol_id), accs = d.kol_id ? R.accountsOfKol(s, d.kol_id) : [];
-    const inp = (f, type) => `<input type="${type || 'text'}" id="f_${f}" data-f="${f}" data-key="${f}" value="${esc(asText(d[f]))}"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''} autocomplete="off">`;
-    const sel = (f, items, ph) => `<select id="f_${f}" data-f="${f}" data-key="${f}">${optionsHTML(items, d[f], ph)}</select>`;
-    const startSteps = R.stepsOf(L).filter(st => st.active !== false && !R.isCancelStep(st)).map(st => ({ value: st.sub_status, label: st.sub_status }));
-    const phases = R.phasesOfCampaign(s, d.campaign_id).map(p => ({ value: p.phase_id, label: R.phaseName(s, p.phase_id) }));
-    /* CR-02 §4.3 — the term decides which ticks apply; a new deal must have one (CR-04 §4.8: from the KOL default, or chosen here) */
-    const pay = payFormHTML(d, true, k, null);
-    const d23 = dl.showDraft23 ? ['expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date'].map(f => field(f, F[f], dateF(f, d))).join('')
-      : `<div class="field wide"><button type="button" class="link" data-act="showD23">${esc(D.showDraft23)}</button></div>`;
-    const accounts = d.kol_id ? (accs.map(a => `<label class="tick block"><input type="checkbox" data-tick="${esc(a.account_id)}"${dl.ticks.has(a.account_id) ? ' checked' : ''}> ` +
-      `${pfIcon(a.platform)} @${esc(a.handle)} <span class="muted">${R.fmtNum(a.followers)}</span></label><div class="newphase" data-newphase="${esc(a.account_id)}"></div>`).join('') || `<div class="hint">${esc(D.cardNoAccount)}</div>`) +
-      `<button type="button" class="link" data-act="addAccount">${esc(D.addAccount)}</button>` : `<div class="hint">${esc(D.chooseKolFirst)}</div>`;
-    const left = sec(D.secDeal, `<div class="fields">
-          ${field('campaign_id', F.campaign_id, `<select id="f_campaign_id" data-f="campaign_id" data-key="campaign_id" data-combo="campaign">${campaignOptionsHTML(d.campaign_id, D.chooseCampaign)}</select>`, { req: 1, wide: 1 })}
-          ${field('newphase', D.phaseField, `<select id="f_newphase" data-newphase-sel>${optionsHTML(phases, dl.newPhase, D.phaseAuto)}</select>`, { wide: 1, hint: esc(D.phaseHint) })}
-          ${dl.kolLocked && k ? field('kol_id', F.kol_id, `<div class="kollock" title="${esc(C.kol.lockedFrom)}"><span class="kl-n">🔒 <b>${esc(k.display_name)}</b> <span class="muted">· ${esc(k.kol_id)}</span></span>` +
-              `<button type="button" class="btn small" data-act="kolChange">${esc(C.kol.change)}</button></div>`, { req: 1, wide: 1, hint: esc(C.kol.lockedFrom) })
-            : field('kol_id', F.kol_id, `<div class="kolbox"><input id="f_kol_id" data-kolin data-key="kol_id" role="combobox" aria-expanded="false" aria-controls="dl_kolpop" aria-autocomplete="list" value="${esc(k ? kolLabel(k) : dl.kolText || '')}" placeholder="${esc(D.kolSearch)}" autocomplete="off"><div class="kolpop hidden" id="dl_kolpop" role="listbox"></div></div>`,
-            { req: 1, wide: 1, hint: `<button type="button" class="link" data-act="newKol">${esc(D.newKol)}</button>` })}
-          <div class="field wide"><label>${esc(D.postAccounts)}</label><div id="dl_posts">${accounts}</div></div>
-          ${field('sub_status', D.startStep, sel('sub_status', startSteps), { req: 1 })}
-          ${field('pic', F.pic, sel('pic', picList(d.pic), D.none), { req: !d.is_legacy, hint: dl.picSource ? `<span class="srctag">${esc(dl.picSource === 'user' ? D.picYou : D.picKol)}</span>` : '' })}
-          ${field('pillar', F.pillar, sel('pillar', activeList('pillar_list', d.pillar), D.none), { hint: dl.pillarFromPhase && d.pillar ? `<span class="chip sh-from">${esc(C.fill.fromPhase)}</span>` : '' })}
-          ${field('cta', F.cta, sel('cta', activeList('cta_list', d.cta), D.none), { hint: '<span id="dl_ctaHint"></span>' })}
-          ${productsField()}
-          ${field('link_brief', F.link_brief, inp('link_brief', 'url'), { wide: 1 })}
-          ${field('remark', F.remark, `<textarea id="f_remark" data-f="remark" data-key="remark">${esc(asText(d.remark))}</textarea>`, { wide: 1 })}
-        </div>`);
-    const right = kolCardHTML(s, k) + sec(D.secPayment, pay) +
-      sec(D.secCosts, costBlock(`<div class="fields">
-          ${field('rate_card', F.rate_card, asCost(inp('rate_card', 'number'), 'rate_card'))}${field('gencode_expense', F.gencode_expense, asCost(inp('gencode_expense', 'number'), 'gencode_expense'))}
-          ${field('gencode_period', F.gencode_period, inp('gencode_period', 'number'))}
-          ${field('gencode_start_date', F.gencode_start_date, dateF('gencode_start_date', d), { hint: `<button type="button" class="link" data-act="firstPost">${esc(D.useFirstPost)}</button> · ${esc(F.gencode_end_date)} <b id="dl_gend"></b>` })}
-          ${['basket_fee', 'asset_fee', 'expediting_fee'].map(f => field(f, F[f], asCost(inp(f, 'number'), f))).join('')}
-        </div>`, `<div class="kv total" style="margin-top:8px"><span>${esc(F.total_cost)}</span><b id="dl_total"></b></div>`, d.kol_id, d) + `<div id="dl_budget"></div>`) +
-      sec(D.secTimeline, `<div class="fields">${['brief_date', 'expected_draft1_date', 'approved_draft1_date'].map(f => field(f, F[f], dateF(f, d))).join('')}${d23}
-          ${field('expected_post_date', F.expected_post_date, dateF('expected_post_date', d))}</div>`);
-    return { body: `<div class="nd-grid"><div class="nd-col">${left}</div><div class="nd-col">${right}</div></div>`,
-      left: `<div class="checks" id="dl_checks"></div>`,
-      buttons: `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn" data-act="saveNext">${esc(D.createNext)}</button><button type="button" class="btn primary" data-act="save">${esc(D.createDeal)}</button>` };
-  }
   /* CR-06 §4.3 — a deal's products: only the Campaign's products, each with a qty (default 1) */
-  const productsField = () => `<div class="field wide"><label for="f_padd">${esc(F.products)}${dl.mode === 'new' && dl.onlyProduct ? ` <span class="chip sh-from">${esc(C.fill.onlyProduct)}</span>` : ''}</label><div class="dprods" id="dl_prods">${productsBox()}</div></div>`;
+  const productsField = () => `<div class="field wide"><label for="f_padd">${esc(F.products)}</label><div class="dprods" id="dl_prods">${productsBox()}</div></div>`;
   function productsBox() {
     const s = state(), d = dl.draft, P = C.products, list = d.products || [], all = R.campaignProducts(s, d.campaign_id).filter(p => p.active !== false);
     const free = all.filter(p => !list.some(x => R.sameCode(x.tr_code, p.tr_code)));
@@ -1471,7 +1305,7 @@ KT.screens.deals = (function () {
       return `<div class="dprod"><span class="pn" title="${esc(R.productLabel(p))}">${esc(R.productShort(p))} <span class="muted small">${esc(p.tr_code)}</span></span>` +
         `<label class="qty"><span class="muted small">${esc(P.qty)}</span><input type="number" min="1" step="1" inputmode="numeric" data-pq="${i}" data-key="product${i}_qty" value="${esc(x.qty)}" aria-label="${esc(`${P.qty} ${p.tr_code}`)}"></label>` +
         `<button type="button" class="x" data-pdel="${i}" aria-label="${esc(`${P.remove} ${p.tr_code}`)}">×</button></div>`; }).join('');
-    const add = !d.campaign_id ? '' : !all.length ? `<div class="hint">${esc(D.noProductsYet)}</div>` + (dl.mode === 'new' && can('campaign.products') ? `<button type="button" class="link nd-prodlink" data-act="apOpen">${esc(D.addProductsToCampaign)}</button>` : '')
+    const add = !d.campaign_id ? '' : !all.length ? `<div class="hint">${esc(D.noProductsYet)}</div>`
       : free.length ? `<select id="f_padd" data-padd aria-label="${esc(P.dealAdd)}"><option value="">${esc(P.dealAdd)}</option>${free.map(p => `<option value="${esc(p.tr_code)}">${esc(R.productLabel(p))}</option>`).join('')}</select>` : '';
     return (rows || (all.length || !d.campaign_id ? `<div class="hint">${esc(P.dealNone)}</div>` : '')) + add;
   }
@@ -1500,90 +1334,42 @@ KT.screens.deals = (function () {
   function wireForm() {
     const box = formBox(), d = dl.draft;
     U.enhanceCombos(box);
-    /* the Phase pickers are drawn by check(): one delegated listener for the drawer (added once) */
+    /* the Phase pickers are drawn by check(): one delegated listener for the modal (added once) */
     if (!box.dataset.phaseWired) {
       box.dataset.phaseWired = '1';
       box.addEventListener('change', e => {
         if (!editing()) return;
-        const pp = e.target.closest('[data-pphase]'), np = e.target.closest('[data-newpick]');
+        const pp = e.target.closest('[data-pphase]');
         if (pp) { dl.posts[+pp.dataset.pphase].phase_override = pp.value || null; dl.dirty = true; check(); }
-        if (np) { if (!dl.newOverrides) dl.newOverrides = new Map(); dl.newOverrides.set(np.dataset.newpick, np.value || null); dl.dirty = true; check(); }
       });
     }
     const dirty = () => { dl.dirty = true; };
     box.querySelectorAll('[data-f]').forEach(el => {
-      const f = el.dataset.f, h = () => { d[f] = el.value; dirty(); if (f === 'sub_status') d.status = R.statusOf(state().lookups, el.value) || d.status; check(); };
+      const f = el.dataset.f, h = () => { d[f] = el.value; dirty(); check(); };
       el.addEventListener('input', h);
       el.addEventListener('change', () => {
         h(); dl.touched.add(el.dataset.key);
         if (f === 'pic') dl.picSource = null;
         if (f === 'cta') dl.ctaFromCampaign = false;
-        if (f === 'pillar' && dl.mode === 'new') { dl.pillarFromPhase = false; renderPanel(); return; }
-        if (f === 'expected_post_date' && dl.mode === 'new' && !dl.newPhase && (dl.pillarFromPhase || R.isBlank(d.pillar))) { fillDefaults({ pillar: true }); renderPanel(); return; }
         if (f === 'campaign_id') { d.products = (d.products || []).filter(x => R.campaignHasProduct(state(), d.campaign_id, x.tr_code)); redrawProducts(); }
-        /* a new deal takes the Campaign's CTA unless one was picked by hand */
-        /* a new deal: the Campaign's CTA unless one was picked by hand · the Phase list is that Campaign's (CR-11 §4.4) */
-        if (f === 'campaign_id' && dl.mode === 'new') {
-          if (dl.ctaFromCampaign || R.isBlank(d.cta)) { d.cta = R.campaignCta(state(), d.campaign_id) || ''; dl.ctaFromCampaign = !R.isBlank(d.cta); }
-          if (dl.newPhase && !R.phasesOfCampaign(state(), d.campaign_id).some(p => p.phase_id === dl.newPhase)) dl.newPhase = '';
-          if (dl.onlyProduct && !(d.products || []).length) dl.onlyProduct = false;
-          fillDefaults({ term: true, pillar: true, product: true });
-          renderPanel(); return;
-        }
-        if (f === 'payment_term') { if (dl.mode === 'new') { dl.updateKolTerm = false; dl.termFromKol = false; dl.termFromCampaign = false; } renderPanel(); return; }
+        if (f === 'payment_term') { if (d.payment_term !== 'package') { d.package_id = null; d.package_units = 1; } renderPanel(); return; }
         check();
       });
       el.addEventListener('blur', () => { dl.touched.add(el.dataset.key); check(); });
     });
-    /* CR-10 §4.10 — the KOL box: names and @handles as you type · the last item creates a KOL from the text when nothing matches it exactly */
-    const kin = box.querySelector('[data-kolin]'), pop = $('dl_kolpop');
-    if (kin && pop) {
-      let act = -1;
-      const opts = () => [...pop.querySelectorAll('[data-kolopt]')];
-      const show = () => {
-        const s = state(), txt = kin.value.replace(/\s·\sK\d+$/, ''), q = R.normKey(txt), list = R.kolMatches(s, txt, 8);
-        const exact = list.some(k => R.normKey(k.display_name) === q || R.accountsOfKol(s, k.kol_id).some(a => R.normKey(a.handle) === q));
-        const create = dl.mode === 'new' && q && !exact ? `<button type="button" class="kolopt create" data-kolopt="__create" role="option">${esc(D.createKolOpt(R.trim(txt).replace(/^@+/, '')))}</button>` : '';
-        pop.innerHTML = list.map(k => `<button type="button" class="kolopt" data-kolopt="${esc(k.kol_id)}" role="option"><b>${esc(k.display_name)}</b> <span class="muted small">${esc(R.accountsOfKol(s, k.kol_id).slice(0, 2).map(a => '@' + a.handle).concat([k.kol_id]).join(' · '))}</span></button>`).join('') + create;
-        act = -1; pop.classList.toggle('hidden', !pop.innerHTML); kin.setAttribute('aria-expanded', String(!!pop.innerHTML));
-      };
-      const pick = v => { pop.classList.add('hidden'); kin.setAttribute('aria-expanded', 'false'); if (v === '__create') openCreateKol(kin.value); else if (v) { dl.touched.add('kol_id'); dirty(); setDraftKol(v); } };
-      kin.addEventListener('input', () => { dl.kolText = kin.value; show(); });
-      kin.addEventListener('focus', () => { if (R.trim(kin.value) && !d.kol_id) show(); });
-      kin.addEventListener('keydown', e => {
-        const it = opts();
-        if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && it.length) { e.preventDefault(); act = Math.max(0, Math.min(it.length - 1, act + (e.key === 'ArrowDown' ? 1 : -1))); it.forEach((b, i) => b.classList.toggle('on', i === act)); }
-        else if (e.key === 'Enter' && act >= 0 && it[act]) { e.preventDefault(); pick(it[act].dataset.kolopt); }
-        else if (e.key === 'Escape' && !pop.classList.contains('hidden')) { e.preventDefault(); e.stopPropagation(); pop.classList.add('hidden'); kin.setAttribute('aria-expanded', 'false'); }   // the list, not the modal
-      });
-      pop.addEventListener('mousedown', e => { const b = e.target.closest('[data-kolopt]'); if (b) { e.preventDefault(); pick(b.dataset.kolopt); } });
-      kin.addEventListener('change', () => setTimeout(() => {
-        if (!kin.isConnected || !dl.draft) return;
-        pop.classList.add('hidden');
-        const id = resolveKol(kin.value); dl.touched.add('kol_id'); dirty();
-        if (id && id !== d.kol_id) setDraftKol(id);
-        else if (!id && d.kol_id) clearDraftKol(kin.value);
-        else check();
-      }, 150));
-    }
     box.querySelectorAll('[data-bool]').forEach(el => el.addEventListener('change', () => { d[el.dataset.bool] = el.checked; dirty(); check(); }));
-    box.querySelectorAll('[data-newphase-sel]').forEach(el => el.addEventListener('change', () => { dl.newPhase = el.value; dirty();
-      if (dl.pillarFromPhase || R.isBlank(dl.draft.pillar)) { fillDefaults({ pillar: true }); renderPanel(); return; } check(); }));
-    box.querySelectorAll('[data-saveterm]').forEach(el => el.addEventListener('change', () => { dl.saveTerm = el.checked; }));
-    box.querySelectorAll('[data-updterm]').forEach(el => el.addEventListener('change', () => { dl.updateKolTerm = el.checked; }));
     box.querySelectorAll('[data-reason]').forEach(el => el.addEventListener('input', () => { dl.costReason = el.value; dirty(); check(); }));
     if (!box.dataset.prodWired) {
       box.dataset.prodWired = '1';
       box.addEventListener('change', e => {
         if (!editing() || !e.target.matches('[data-padd]') || !e.target.value) return;
-        dl.draft.products = (dl.draft.products || []).concat([{ tr_code: e.target.value, qty: '1', note: null }]); dl.dirty = true; dl.onlyProduct = false; redrawProducts(); check();
+        dl.draft.products = (dl.draft.products || []).concat([{ tr_code: e.target.value, qty: '1', note: null }]); dl.dirty = true; redrawProducts(); check();
       });
       box.addEventListener('input', e => {
         const q = e.target.closest('[data-pq]'); if (!editing() || !q) return;
         dl.draft.products[+q.dataset.pq].qty = q.value; dl.dirty = true; dl.touched.add(q.dataset.key); check();
       });
     }
-    box.querySelectorAll('[data-tick]').forEach(el => el.addEventListener('change', () => { el.checked ? dl.ticks.add(el.dataset.tick) : dl.ticks.delete(el.dataset.tick); dirty(); check(); }));
     box.querySelectorAll('[data-pi]').forEach(card => {
       const p = dl.posts[+card.dataset.pi];
       card.querySelectorAll('[data-p]').forEach(el => {
@@ -1594,44 +1380,47 @@ KT.screens.deals = (function () {
       });
     });
   }
+  /* CR-20 §4.8 — the Payment section with Package: a package of this KOL that has enough left (it is used from Confirm QT on) */
+  function packageErrs(s, stored, d) {
+    const p = R.packageById(s, d.package_id), units = Number(d.package_units), errs = [];
+    if (!p || p.kol_id !== stored.kol_id) return [{ field: 'package_id', msg: C.msg.packageRequired }];
+    if (!Number.isInteger(units) || units < 1) return [{ field: 'package_units', msg: C.msg.packageUnits }];
+    const st = R.packageStatus(s, p, today()), own = stored.package_id === p.package_id;
+    if (!own && (st === 'archived' || st === 'expired')) errs.push({ field: 'package_id', msg: C.msg.packageInactive });
+    else if (R.pillarStepReached(s.lookups, stored.sub_status) && stored.status !== 'Cancel' && units > R.packageRemaining(s, p, stored.deal_id)) errs.push({ field: 'package_id', msg: C.msg.packageNotEnough(Math.max(0, R.packageRemaining(s, p, stored.deal_id))) });
+    return errs;
+  }
   /* live checks: only checks, totals, hints, outlines and buttons change, so typing never loses focus */
   function check() {
+    if (!dl.draft || !dl.sec || !$('dl_checks')) return { errs: [], warns: [], infos: [], strict: [] };   // a late blur / change after Save or Cancel
     const s = state(), box = formBox(), d = dl.draft, ctx = R.dealContext(s), posts = draftPosts();
     const res = R.validateDeal(s, d, posts, today(), ctx);
-    if (dl.mode === 'new') res.errs.push(...R.checkNewDealTerm(d).errs, ...R.checkNewDealPillar(s.lookups, d).errs);
-    if (dl.mode === 'new' && R.campaignBlocksNew(s, d.campaign_id)) res.errs.push({ field: 'campaign_id', msg: R.campaignBlocksNew(s, d.campaign_id) });
-    /* a section in the drawer: only its own checks (CR-04 §4.5) */
+    /* a section of the modal: only its own checks (CR-04 §4.5) */
     if (dl.sec) {
       const stored = dealById(dl.id), fields = R.DEAL_SECTIONS[dl.sec] || [];
       const mine = f => (dl.sec === 'posts' ? /^post\d/.test(f || '') : fields.includes(f) || f === 'cost_reason' || (dl.sec === 'info' && /^product\d/.test(f || '')));
       res.errs = res.errs.filter(e => mine(e.field)); res.warns = res.warns.filter(w => mine(w.field)); res.infos = res.infos.filter(i => mine(i.field));
       if (dl.sec === 'info' && R.pillarCleared(s.lookups, stored, d)) res.errs.push({ field: 'pillar', msg: C.msg.pillarCannotClear });
+      if (dl.sec === 'info' && !R.isBlank(d.script_link) && !R.isHttps(d.script_link)) res.errs.push({ field: 'script_link', msg: C.msg.linkHttps });   // CR-20 §4.12
+      if (dl.sec === 'payment' && d.payment_term === 'package') res.errs.push(...packageErrs(s, stored, d));
       if (dl.sec === 'costs' && fields.some(f => lockOf(stored, f).needsReason) && !R.trim(dl.costReason)) res.errs.push({ field: 'cost_reason', msg: C.msg.costReasonRequired });
     }
-    /* CR-10 §4.10: a new deal shows an error after Save, or after you leave that field — never on a fresh form */
-    const quiet = dl.mode === 'new' && !dl.submitted, shown = quiet ? res.errs.filter(e => dl.touched.has(e.field)) : res.errs;
-    $('dl_checks').innerHTML = checksHTML({ errs: shown, warns: res.warns.filter(w => w.kind !== 'phase'), infos: res.infos }, res.errs.length ? '' : C.common.ok);
+    $('dl_checks').innerHTML = checksHTML({ errs: res.errs, warns: res.warns.filter(w => w.kind !== 'phase'), infos: res.infos }, res.errs.length ? '' : C.common.ok);
     if ($('dl_total')) $('dl_total').textContent = R.baht(R.totalCost(d));
     U.priceRefFree(box, R.termOf(d) === 'free');
     if ($('dl_gend')) $('dl_gend').textContent = R.dmy(R.gencodeEndDate(d)) || C.common.none;
     if ($('dl_budget')) $('dl_budget').innerHTML = budgetHTML(s, d, ctx);
     if ($('dl_ctaHint')) { const c = R.campaignCta(s, d.campaign_id); $('dl_ctaHint').innerHTML = !c ? '' : R.isBlank(d.cta) || d.cta === c ? `<span class="srctag">${esc(D.ctaFromCampaign(c))}</span>` : `<span class="chip-diff">${esc(D.ctaDiffers)}</span> <span class="muted">${esc(D.ctaCampaign(c))}</span>`; }
     box.querySelectorAll('[data-key]').forEach(el => el.classList.toggle('invalid', dl.touched.has(el.dataset.key) && res.errs.some(e => e.field === el.dataset.key)));
-    box.querySelectorAll('[data-act="save"],[data-act="saveNext"],[data-act="secSave"]').forEach(b => { b.disabled = !quiet && res.errs.length > 0; });
+    box.querySelectorAll('[data-act="secSave"]').forEach(b => { b.disabled = res.errs.length > 0; });
     const phases = R.phasesOfCampaign(s, d.campaign_id);
     const paint = (el, sig, html) => { if (el && el.dataset.sig !== sig) { el.dataset.sig = sig; el.innerHTML = html; } };
-    if (dl.mode === 'new') posts.forEach(p => {
-      const r = R.resolvePostPhase(p, phases), el = box.querySelector(`[data-newphase="${p.account_id}"]`);
-      if (dl.newPhase) { paint(el, 'picked:' + dl.newPhase, ''); return; }   // the Phase field above decides
-      paint(el, `${d.campaign_id}|${r.kind}|${r.candidates}|${p.phase_override || ''}`, r.kind === 'auto' ? `<span class="muted small">${esc(D.phaseFromDate)}</span> ${phaseTagHTML(r)}`
-        : phaseFieldHTML(r, phases, `data-newpick="${esc(p.account_id)}" aria-label="${esc(F.phase_override)}"`, p.phase_override));
-    });
-    if (dl.mode !== 'new' && dl.sec === 'posts') dl.posts.forEach((p, i) => {
+    if (dl.sec === 'posts') dl.posts.forEach((p, i) => {
       const r = R.resolvePostPhase(p, phases), pb = box.querySelector(`[data-phasebox="${i}"] .pbox`);
       paint(pb, `${d.campaign_id}|${r.kind}|${r.candidates}|${r.phase}|${p.phase_override || ''}`, phaseFieldHTML(r, phases, `data-pphase="${i}" data-key="post${i}_phase_override" aria-label="${esc(F.phase_override)}"`, p.phase_override));
       if (pb) { const sel = pb.querySelector('select'); if (sel) sel.classList.toggle('invalid', res.warns.some(w => w.field === `post${i}_phase_override`)); }
     });
-    if (dl.mode !== 'new' && dl.sec === 'posts') dl.posts.forEach((p, i) => {
+    if (dl.sec === 'posts') dl.posts.forEach((p, i) => {
       const el = box.querySelector(`[data-hint="${i}"]`); if (!el) return;
       const td = R.tiktokDate(p.post_link);
       let cls = 'hint', html = esc(D.tiktokHint);
@@ -1646,7 +1435,7 @@ KT.screens.deals = (function () {
     const x = Object.assign({}, d);
     R.MONEY_KEYS.concat(['gencode_period']).forEach(k => { x[k] = R.isBlank(x[k]) ? null : Number(x[k]); });
     R.DATE_KEYS.forEach(k => { x[k] = R.isBlank(x[k]) ? null : x[k]; });
-    ['pillar', 'pic', 'cta', 'link_brief', 'remark', 'cancel_reason'].forEach(k => { x[k] = R.trim(x[k]) || null; });
+    ['pillar', 'pic', 'cta', 'link_brief', 'script_link', 'remark', 'cancel_reason', 'package_id'].forEach(k => { x[k] = R.trim(x[k]) || null; });
     x.payment_term = R.isTerm(x.payment_term) ? x.payment_term : null;
     x.products = (x.products || []).map(p => ({ tr_code: p.tr_code, qty: Number(p.qty), note: R.trim(p.note) || null }));
     return x;
@@ -1664,32 +1453,10 @@ KT.screens.deals = (function () {
     const first = parseInt(store.newId('post').slice(1), 10);
     return Array.from({ length: n }, (_, i) => 'P' + String(first + i).padStart(6, '0'));
   }
-  function save(next) {
+  function save() {
     if (!guard('deal.edit')) return;
-    if (dl.mode === 'new') dl.submitted = true;
-    const s = state(), td = today(), res = check();
+    const res = check();
     if (res.errs.length) { res.errs.forEach(e => dl.touched.add(e.field)); check(); return; }
-    const d = normDeal(dl.draft);
-    if (dl.mode === 'new') {
-      const accountIds = [...dl.ticks], dealId = store.newId('deal');
-      const extra = {}; Object.keys(R.DEAL_TEMPLATE).forEach(k => { if (!['deal_id', 'campaign_id', 'legacy_phase_id', 'kol_id', 'status', 'sub_status', 'pic'].includes(k)) extra[k] = d[k]; });
-      const out = R.newDeal(s, { dealId, logId: store.newLogId(), campaignId: d.campaign_id, kolId: d.kol_id, sub: d.sub_status, pic: d.pic, extra, accountIds,
-        postIds: nextPostIds(accountIds.length), phaseOverrides: accountIds.map(aid => dl.newPhase || (dl.newOverrides && dl.newOverrides.get(aid)) || null), date: td, now: new Date(), user: userId(), note: null });
-      s.deals.push(out.deal); s.deal_status_log.push(out.log); out.posts.forEach(p => s.deal_posts.push(p));
-      R.setDealProducts(s, dealId, d.products);
-      const kol = R.kolById(s, d.kol_id);
-      /* CR-04 §4.8: keep the term as the KOL's default (no default yet) · or replace it ("Also update KOL default") */
-      if (kol && R.isTerm(d.payment_term) && ((dl.saveTerm && !R.isTerm(kol.default_payment_term)) || (dl.updateKolTerm && R.termSource(kol, d.payment_term) === 'changed'))) kol.default_payment_term = d.payment_term;
-      commit();
-      /* CR-11 §4.2 — Create deal: the modal closes, the new row lights up · Create & next: a fresh form that keeps Campaign · Phase · Start at · PIC · Pillar · CTA */
-      const kept = { campaign_id: d.campaign_id, pic: d.pic, cta: d.cta || '', sub_status: d.sub_status, status: d.status, pillar: d.pillar || '' }, phase = dl.newPhase, after = nd && nd.after;
-      renderLeft();
-      if (after) after(dealId);
-      if (next && nd) { newDraft(kept, phase); drawNew(true); nd.m.focusFirst(); }
-      else { closeNewDeal(); showCreated(dealId); }
-      createdToast(dealId);
-      return;
-    }
     saveSection(res);
   }
   /* CR-04 §4.5 — one section is saved: only its open fields change · one event (edit, or cost with the admin's reason) ·
@@ -1716,6 +1483,12 @@ KT.screens.deals = (function () {
       const open = (R.DEAL_SECTIONS[sec] || []).filter(f => lockOf(stored, f).editable);
       open.forEach(f => { next[f] = d[f]; });
       delete next.products;
+      /* CR-20 §4.8 — Payment term Package: the package sets the Rate card (unit price × uses) · another term lets the package go */
+      if (sec === 'payment') {
+        if (next.payment_term === 'package') { const pk = R.packageById(s, next.package_id); next.package_units = Number(next.package_units) || 1; if (pk) next.rate_card = Math.round(R.unitPrice(pk) * next.package_units * 100) / 100; }
+        else Object.assign(next, { package_id: null, package_units: 1, package_paid: false });
+        if ((stored.rate_card ?? null) !== (next.rate_card ?? null)) changes = changes.concat(R.diffFields(stored, next, ['rate_card']));
+      }
       /* CR-06 §4.3: products live in deal_products — one change in the same event · moving to another Campaign drops the old Campaign's products */
       const before = R.dealProductList(s, stored.deal_id);
       let after = open.includes('products') ? d.products : before;
@@ -1739,26 +1512,31 @@ KT.screens.deals = (function () {
 
   function panelClick(e) {
     if (e.target.closest('[data-backstage]')) { if (dl.backTo) openStagePop(dl.backTo, true); return; }
+    /* CR-20 §4.6 — ‹ › · ‹ Back to <KOL> (the KOL modal again, on its tab) · a Draft step of the Journey → its notes (§4.13) */
+    const nv = e.target.closest('[data-dmnav]'); if (nv) { if (!nv.disabled) navStep(+nv.dataset.dmnav); return; }
+    if (e.target.closest('[data-backkol]')) { const b = dl.backKol; U.requestCloseDrawer().then(ok => { if (ok && b) KT.profile.open(b.kolId, { tab: b.tab }); }); return; }
+    const nt = e.target.closest('[data-notes]'); if (nt && dl.mode === 'view') { KT.move.openNotes(dl.id, +nt.dataset.notes, { opener: nt, after: () => { if (dl.mode === 'view') renderPanel(); } }); return; }
     if (dl.mode === 'view' && KT.samples.click(e, () => { renderLeft(); renderPanel(); })) return;   // CR-10 §4.14
     /* CR-08 §4.5 — the Payment section: a run opens in Payments */
     const prun = e.target.closest('[data-payrun]'); if (prun) { go('payments', { tab: 'runs', run: prun.dataset.payrun }); return; }
-    const kb = e.target.closest('[data-kol]'); if (kb) { go('kol', { id: kb.dataset.kol, back: dl.id }); return; }
+    /* CR-17 §4.2 — Mark paid / Mark unpaid of an instalment, here */
+    const dp = e.target.closest('[data-dpaid]'); if (dp) { KT.screens.payments.markPaid(dp, [dp.dataset.dpaid], () => { renderLeft(); renderPanel(); }); return; }
+    const du = e.target.closest('[data-dunpaid]'); if (du) { KT.screens.payments.markUnpaid(du.dataset.dunpaid, () => { renderLeft(); renderPanel(); }); return; }
+    /* CR-16 §4.1 — the KOL's profile (a deal opened from that profile just closes, back to it) */
+    const kb = e.target.closest('[data-kol]'); if (kb) { if (dl.backKol && dl.backKol.kolId === kb.dataset.kol) { const b = dl.backKol; U.requestCloseDrawer().then(ok => { if (ok) KT.profile.open(b.kolId, { tab: b.tab }); }); }
+      else if (dl.over && KT.profile.currentId() === kb.dataset.kol) U.requestCloseDrawer(); else KT.profile.open(kb.dataset.kol, { backDeal: dl.over ? null : dl.id }); return; }
     const ud = e.target.closest('[data-usedate]');
     if (ud) { const [i, date] = ud.dataset.usedate.split('|'); dl.posts[+i].post_date = date; dl.dirty = true; setDate($(`f_post${i}_post_date`), date); check(); return; }
     const pdel = e.target.closest('[data-pdel]'); if (pdel) { dl.draft.products.splice(+pdel.dataset.pdel, 1); dl.dirty = true; if (dl.onlyProduct) { dl.onlyProduct = false; renderPanel(); return; } redrawProducts(); check(); return; }
     const pd = e.target.closest('[data-postdel]'); if (pd) { dl.posts.splice(+pd.dataset.postdel, 1); dl.dirty = true; renderPanel(); return; }
     const pl = e.target.closest('[data-plan]');
-    if (pl && !pl.disabled) { if (pl.dataset.plan === 'script') changePlan('script', pl.checked); else changePlan(pl.dataset.plan); return; }
+    if (pl && !pl.disabled) { changePlan(pl.dataset.plan); return; }
     const es = e.target.closest('[data-edsec]'); if (es) { startSection(es.dataset.edsec); return; }
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const act = b.dataset.act, d = dl.draft;
     if (act === 'secCancel') cancelSection();
-    else if (act === 'secSave') save(false);
+    else if (act === 'secSave') save();
     else if (act === 'move') openMove(dl.id);
-    else if (act === 'cancel') cancelEdit();
-    else if (act === 'save') save(false);
-    else if (act === 'saveNext') save(true);
-    else if (act === 'showD23') { dl.showDraft23 = true; renderPanel(); }
     else if (act === 'firstPost') {
       const dates = draftPosts().map(p => p.post_date || p.expected_post_date).filter(Boolean).sort(), first = dates[0] || d.expected_post_date;
       if (first) { d.gencode_start_date = first; setDate($('f_gencode_start_date'), first); dl.dirty = true; check(); }
@@ -1771,17 +1549,7 @@ KT.screens.deals = (function () {
       dl.dirty = true; renderPanel();
       const cards = $('drawer_content').querySelectorAll('[data-pi]'); if (cards.length) cards[cards.length - 1].scrollIntoView({ block: 'nearest' });
     }
-    else if (act === 'addAccount') { if (dl.mode === 'new') openAddAccount(); else go('kol', { id: d.kol_id, edit: true, back: d.deal_id }); }
-    else if (act === 'aaBack') { dl.addAcc = null; drawNew(true); }
-    else if (act === 'aaCreate') aaCreate();
-    else if (act === 'apOpen') openAddProducts();
-    else if (act === 'apBack') { dl.addProd = null; drawNew(true); }
-    else if (act === 'apSave') apSave();
-    else if (act === 'kolChange') { dl.kolLocked = false; drawNew(); const i = $('f_kol_id'); if (i) { i.focus(); i.select(); } }
-    else if (act === 'newKol') openCreateKol(($('f_kol_id') || {}).value || '');   // CR-10 §4.10: never opens another KOL's edit page
-    else if (act === 'ckBack') { dl.createKol = null; drawNew(true); }
-    else if (act === 'ckCreate') ckCreate();
-    else if (act === 'ckUse') { const id = e.target.closest('[data-kolid]').dataset.kolid; dl.createKol = null; setDraftKol(id); }
+    else if (act === 'addAccount') KT.profile.open(d.kol_id, { edit: true, backDeal: dl.over ? null : d.deal_id });
   }
 
   /* ===================== CR-11 §4.3 — Deal drawer › + Add post: a modal (M) over the drawer, the deal fixed ===================== */
@@ -1830,68 +1598,27 @@ KT.screens.deals = (function () {
     chk();
   }
 
-  /* ===================== Move stage ===================== */
-  function openMove(id = dl.id, preset) {
+  /* ===================== Move stage (CR-20: screen-move.js — what the target needs comes from R.stageRequirements) ===================== */
+  /* fromDrop: a card dropped on that stage — Cancel puts it back where it was */
+  function openMove(id = dl.id, preset, fromDrop) {
     if (!guard('deal.edit')) return;
     if (dl.sec && dl.id === id) { toast(C.common.blockWhileEditing); return; }
-    const s = state(), d = dealById(id), L = s.lookups, nx = R.nextStep(L, d);
-    const o = { to: preset || (nx.step ? nx.step.sub_status : ''), date: today(), note: '', cancelReason: '', addRound: false };
-    const optional = new Set(nx.optional.map(x => x.sub_status)), plan = R.planOf(d);
-    /* the plan's steps + Cancel; a Draft beyond the plan is offered with "+ Add draft round" (CR-02 §4.2) */
-    const opts = R.stepsOf(L).filter(st => st.active !== false && st.sub_status !== d.sub_status && (R.isCancelStep(st) || R.inPlan(st, plan) || R.draftNo(st))).map(st => ({
-      value: st.sub_status, label: `${st.sub_status}${nx.step && st.sub_status === nx.step.sub_status ? ` · ${D.moveNext}` : optional.has(st.sub_status) ? ` · ${D.moveOptional}`
-        : !R.inPlan(st, plan) ? ` · ${D.moveNotPlanned}` : ''}` }));
-    openDialog(`<div class="dlg-h">${esc(D.moveTitle(d.deal_id, kolName(d.kol_id)))}</div><div class="dlg-b">
-      <p class="muted small" style="margin-top:0">${esc(D.moveFrom)} ${stageChip(d)}</p>
-      <div class="fields">
-        <div class="field wide"><label for="mv_to">${esc(D.moveTo)} <span class="req">*</span></label><select id="mv_to">${optionsHTML(opts, o.to, D.chooseStep)}</select></div>
-        <div class="field"><label for="mv_date">${esc(D.moveDate)} <span class="req">*</span></label>${dateHTML('id="mv_date"', o.date, { label: D.moveDate })}</div>
-        <div class="field wide hidden" id="mv_reasonW"><label for="mv_reason">${esc(D.moveReason)} <span class="req">*</span></label><input id="mv_reason" autocomplete="off"></div>
-        <div class="field wide"><label for="mv_note">${esc(D.moveNote)}</label><textarea id="mv_note"></textarea><div class="hint">${esc(D.moveNoteHint)}</div></div>
-        <div class="field wide hidden" id="mv_roundW"><label class="tick"><input type="checkbox" id="mv_round"> ${esc(D.addRound)}</label></div>
-        <div class="field wide hidden" id="mv_termW"><label for="mv_term">${esc(D.term)} <span class="req">*</span></label><select id="mv_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), '', D.chooseTerm)}</select><div class="hint">${esc(D.moveTermHint)}</div></div>
-        <div class="field wide hidden" id="mv_pillarW"><label for="mv_pillar">${esc(D.pillar)} <span class="req">*</span></label><select id="mv_pillar">${optionsHTML(activeList('pillar_list', null), '', D.choosePillar)}</select></div>
-      </div><div class="checks" id="mv_checks" style="margin-top:12px"></div></div>
-      <div class="dlg-f"><button type="button" class="btn" id="mv_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="mv_ok">${esc(D.moveConfirm)}</button></div>`);
-    const chk = () => {
-      $('mv_reasonW').classList.toggle('hidden', !R.isCancelStep(R.stepOf(L, o.to)));
-      const k = R.draftNo(R.stepOf(L, o.to)), beyond = !!k && k > plan.drafts;
-      $('mv_roundW').classList.toggle('hidden', !beyond); if (!beyond) { o.addRound = false; $('mv_round').checked = false; }
-      /* CR-03 §4.6: a pillar is needed from Confirm QT on (imported deals are only reminded) */
-      $('mv_pillarW').classList.toggle('hidden', !(o.to && R.isBlank(d.pillar) && R.pillarStepReached(L, o.to)));
-      $('mv_termW').classList.toggle('hidden', !(o.to && !d.is_legacy && !R.isTerm(R.termOf(d)) && R.pillarStepReached(L, o.to) && !R.pillarStepReached(L, d.sub_status)));
-      const res = o.to ? R.checkMove(s, d, o.to, o) : { errs: [{ field: 'to', msg: C.msg.moveStepUnknown }], warns: [], infos: [] };
-      $('mv_checks').innerHTML = checksHTML(res, ''); $('mv_ok').disabled = res.errs.length > 0; return res;
-    };
-    $('mv_to').addEventListener('change', e => { o.to = e.target.value; chk(); });
-    $('mv_date').addEventListener('input', e => { o.date = e.target.value; chk(); });
-    $('mv_reason').addEventListener('input', e => { o.cancelReason = e.target.value; chk(); });
-    $('mv_note').addEventListener('input', e => { o.note = e.target.value; chk(); });
-    $('mv_round').addEventListener('change', e => { o.addRound = e.target.checked; chk(); });
-    $('mv_pillar').addEventListener('change', e => { o.pillar = e.target.value; chk(); });
-    $('mv_term').addEventListener('change', e => { o.paymentTerm = e.target.value; chk(); });
-    $('mv_cancel').addEventListener('click', () => { closeDialog(); if (preset) renderLeft(); });
-    $('mv_ok').addEventListener('click', async () => {
-      if (chk().errs.length || !guard('deal.edit')) return;
-      if (R.zeroCostMove(s, d, o.to) && !(await zeroCostAsk())) { if (preset) renderLeft(); return; }
-      const r = R.applyMove(s, d, o.to, o, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId() });
-      s.deals[s.deals.indexOf(d)] = r.deal; s.deal_status_log.push(r.log); if (r.quote) s.kol_rate_quotes.push(r.quote); r.events.forEach(ev => s.deal_events.push(ev));
-      closeDialog(); commit(D.moveDone(d.deal_id, o.to));
-      renderLeft(); if (dl.mode === 'view' && dl.id === d.deal_id) renderPanel();
-    });
-    chk();
+    KT.move.open(id, preset, { opener: document.activeElement, onCancel: () => { if (fromDrop) renderLeft(); },
+      onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); } });
   }
 
   function reset() { Object.assign(dl, { mode: 'none', id: null, draft: null, posts: null, ticks: null, status: '', f: blankFilter(), selected: new Set(), limit: PAGE }); dl.touched.clear(); }
   /* used by Dashboard › Operations: the same inline PIC menu, bulk Reassign / Set pillar and PIC cell */
-  /* CR-10 §4.11 — after Bulk shortlist: Deals › Table of that Campaign, Group by Stage, the Shortlist group open, the new rows lit up for 5 s */
-  function showBatch(campaignId, dealIds) {
-    Object.assign(dl, { view: 'table', tab: 'open', reason: '' }); pref.set('dealview', 'table'); pref.set('dealgroupby3', 'stage');
+  /* CR-10 §4.11 — after Add n deals: Deals › Table of that Campaign, Group by Stage, the Shortlist group open, the new rows lit up for 5 s ·
+     openId (CR-20 Add & open first): that deal's modal opens */
+  function showBatch(campaignId, dealIds, openId) {
+    Object.assign(dl, { view: 'table', reason: '' }); tabSel(); dl.tab = 'all'; pref.set('dealview', 'table'); pref.set('dealgroupby3', 'stage');
     dl.f = Object.assign(blankFilter(), { campaign: campaignId }); pref.set('dealcamp', campaignId); choosePic('all');
     const L = state().lookups, subs = new Set(dealIds.map(id => (dealById(id) || {}).sub_status).concat([(R.shortlistStep(L) || {}).sub_status]).filter(Boolean));
     subs.forEach(sub => { const st = R.stepOf(L, sub); if (st) setCollapsed('stage:' + R.stageName(st), false); }); saveGroups();
     if (U.currentTab() !== 'deals') go('deals'); else renderLeft();
     flashRows(dealIds);
+    if (openId) setTimeout(() => { if (dealById(openId)) select(openId); }, 350);
   }
   /* new rows (Table) or cards (Pipeline) lit up for 5 s, the first one in view */
   function flashRows(ids) {
@@ -1900,5 +1627,6 @@ KT.screens.deals = (function () {
       setTimeout(() => document.querySelectorAll('#dl_body .flash').forEach(el => el.classList.remove('flash')), 5000); }, 300);
   }
 
-  return { render, reset, onSuspend: owner.onSuspend, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails };
+  return { render, reset, onSuspend: owner.onSuspend, openOver, isOver: () => !!dl.over, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails,
+    openMove, currentCampaign: () => dl.f.campaign || '' };
 })();

@@ -48,12 +48,12 @@
       assert.equal(x.committed + x.shortlist, 1881579, 'Committed + Shortlist (CR-03 split)');
       assert.equal(x.budget, 2748400);
       assert.equal(x.paid, 774579);
-      assert.equal(x.overdue, 11);
+      assert.equal(x.overdue, 5, 'CR-15: 11 before — the 6 deals at Brief wait on Script, which has no due date yet');
       assert.equal(x.unpaid, 130);
       const expected = { CH: 868800, KS: 348300, AC: 84500, PH: 579979 };
       for (const [id, v] of Object.entries(expected)) { const c = R.campaignSummary(s, id); assert.equal(c.committed + c.shortlist, v, id); }
     });
-    test('migration rules: Draft 3 date → 3 rounds · Approve Script in the log → Script · paid_50 → 50/50 · KOL default → deal', () => {
+    test('migration rules: Draft 3 date → 3 rounds · Script in the log → Script · paid_50 → 50/50 · KOL default → deal', () => {
       const v1 = asV1(fresh());
       deal(v1, 'D000044').expected_draft3_date = '2026-10-20';
       v1.deal_status_log.push({ log_id: 9001, deal_id: 'D000044', from_sub_status: 'Brief', status: 'Inprocess', sub_status: 'Approve Script' });
@@ -97,7 +97,7 @@
       assert.equal(r.ok, true);
       assert.equal(r.migratedFrom, 1);
       assert.equal(st.state.schema_version, S.SCHEMA_VERSION);
-      assert.deepEqual(st.counts(), { campaigns: 5, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214, pick_lists: 0 });   // CR-10 §3: the v11 migration
+      assert.deepEqual(st.counts(), { campaigns: 5, phases: 9, kol_master: 911, kol_accounts: 928, kol_rate_quotes: 524, deals: 305, deal_posts: 313, deal_status_log: 770, deal_events: 0, users: 9, campaign_events: 0, products: 0, campaign_products: 0, deal_products: 0, payee_profiles: 0, payment_lines: 0, payment_runs: 0, sample_shipments: 214, pick_lists: 0, shipping_addresses: 0, campaign_budget_changes: 4, kol_packages: 0, step_notes: 0 });   // CR-10 §3: the v11 migration · CR-18: an initial budget row a Campaign (the 5th has none) · CR-20: packages, notes
       assert.deepEqual(countBy(st.state.deals, d => d.draft_rounds), { 1: 237, 2: 68 });
       assert.equal(JSON.parse(st.backup().text).schema_version, S.SCHEMA_VERSION);
     });
@@ -115,73 +115,73 @@
   });
 
   describe('CR-02 R1 · content plan', () => {
-    test('plan steps: 1 round = Brief · Draft 1 · Post; Script / Draft 2 only when planned', () => {
+    /* CR-15: Script and Approve are in every plan · a Brief deal waits on Script (no Script due → no due) */
+    test('plan steps (CR-15): 1 round = Brief · Script · Draft 1 · Approve · Post; Draft 2–3 only when planned', () => {
       const s = fresh(), names = d => R.planSteps(s.lookups, d).map(x => x.sub_status);
-      assert.deepEqual(names(deal(s, 'D000296')), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Approve Draft 1', 'Post']);
-      assert.deepEqual(names(deal(s, 'D000001')), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Approve Draft 1', 'Approve Draft 2', 'Post']);
-      assert.deepEqual(names({ ...deal(s, 'D000044'), draft_rounds: 3, script_required: true }).slice(3),
-        ['Brief', 'Approve Script', 'Approve Draft 1', 'Approve Draft 2', 'Approve Draft 3', 'Post']);
-      assert.deepEqual(R.planOf({ draft_rounds: 9 }), { drafts: 1, script: false }, 'bad values fall back to 1 round');
+      assert.deepEqual(names(deal(s, 'D000296')), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Approve', 'Post']);
+      assert.deepEqual(names(deal(s, 'D000001')), ['Shortlist', 'Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Draft 2', 'Approve', 'Post']);
+      assert.deepEqual(names({ ...deal(s, 'D000044'), draft_rounds: 3 }).slice(3), ['Brief', 'Script', 'Draft 1', 'Draft 2', 'Draft 3', 'Approve', 'Post']);
+      assert.deepEqual(R.dealPlan(s.lookups, deal(s, 'D000296')), R.planSteps(s.lookups, deal(s, 'D000296')));
+      assert.deepEqual(R.planOf({ draft_rounds: 9 }), { drafts: 1 }, 'bad values fall back to 1 round');
     });
-    test('next step after the last planned Draft is Post; with 2 rounds Draft 1 → Draft 2', () => {
+    test('next step after the last planned Draft is Approve, then Post; with 2 rounds Draft 1 → Draft 2', () => {
       const s = fresh(), L = s.lookups;
-      assert.equal(R.nextStep(L, { sub_status: 'Approve Draft 1', draft_rounds: 1 }).step.sub_status, 'Post');
-      assert.equal(R.nextStep(L, { sub_status: 'Approve Draft 1', draft_rounds: 2 }).step.sub_status, 'Approve Draft 2');
-      assert.equal(R.nextStep(L, { sub_status: 'Approve Draft 2', draft_rounds: 2 }).step.sub_status, 'Post');
+      assert.equal(R.nextStep(L, { sub_status: 'Draft 1', draft_rounds: 1 }).step.sub_status, 'Approve');
+      assert.equal(R.nextStep(L, { sub_status: 'Draft 1', draft_rounds: 2 }).step.sub_status, 'Draft 2');
+      assert.equal(R.nextStep(L, { sub_status: 'Draft 2', draft_rounds: 2 }).step.sub_status, 'Approve');
+      assert.equal(R.nextStep(L, { sub_status: 'Approve', draft_rounds: 2 }).step.sub_status, 'Post');
       /* D000051 plans 2 rounds: due = expected Draft 2 date */
       const d = deal(s, 'D000051');
       assert.equal(R.dueDate(s, d), '2026-09-20');
       assert.equal(R.isOverdue(s, d, TODAY), true);
     });
-    test('TC-15 basis: D000044 (Brief, 1 round) → Approve Draft 2 is an error unless a round is added', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
-      const no = R.checkMove(s, d, 'Approve Draft 2', opts());
+    test('TC-15 basis: D000044 (Brief, 1 round) → Draft 2 is an error unless a round is added', () => {
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30 });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
+      const no = R.checkMove(s, d, 'Draft 2', opts());
       assert.ok(no.errs.some(e => e.code === 'add_round' && e.msg === C.msg.moveDraftNotInPlan(2, 1)));
-      const yes = R.checkMove(s, d, 'Approve Draft 2', opts({ addRound: true }));
+      const yes = R.checkMove(s, d, 'Draft 2', opts({ addRound: true }));
       assert.deepEqual(yes.errs, []);
       assert.ok(yes.infos.some(i => i.msg === C.msg.moveAddsRound(1, 2)));
-      assert.ok(yes.warns.some(w => w.msg === C.msg.moveSkip('Approve Draft 1')));
-      const r = R.applyMove(s, d, 'Approve Draft 2', opts({ addRound: true }), { logId: 771, eventId: 1, now: new Date('2026-10-05T03:00:00Z') });
+      assert.ok(yes.warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TODAY).slice(0, 5), 'Script, Draft 1')), 'CR-15: Script and Draft 1 are marked done');
+      const r = R.applyMove(s, d, 'Draft 2', opts({ addRound: true }), { logId: 771, eventId: 1, now: new Date('2026-10-05T03:00:00Z') });
       assert.equal(r.deal.draft_rounds, 2);
-      assert.equal(r.deal.sub_status, 'Approve Draft 2');
-      assert.equal(r.log.sub_status, 'Approve Draft 2');
-      assert.deepEqual(r.event, { event_id: 1, deal_id: 'D000044', type: 'plan', from: { draft_rounds: 1, script_required: false },
-        to: { draft_rounds: 2, script_required: false }, changed_at: '2026-10-05T03:00:00.000Z', changed_by: null, note: null });
+      assert.equal(r.deal.sub_status, 'Draft 2');
+      assert.equal(r.log.sub_status, 'Draft 2');
+      assert.deepEqual(r.event, { event_id: 1, deal_id: 'D000044', type: 'plan', from: { draft_rounds: 1 },
+        to: { draft_rounds: 2 }, changed_at: '2026-10-05T03:00:00.000Z', changed_by: null, note: null });
       assert.equal(d.draft_rounds, 1, 'the input deal is not changed');
-      assert.equal(R.applyMove(s, d, 'Approve Draft 1', opts(), { logId: 772 }).event, null);
+      assert.equal(R.applyMove(s, d, 'Draft 1', opts(), { logId: 772 }).event, null);
     });
-    test('Script outside the plan is an error; skipping counts planned steps only', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
-      assert.ok(R.checkMove(s, d, 'Approve Script', opts()).errs.some(e => e.msg === C.msg.moveScriptNotInPlan));
-      assert.deepEqual(R.checkMove(s, { ...d, script_required: true }, 'Approve Script', opts()).errs, []);
-      assert.ok(R.checkMove(s, { ...d, script_required: true }, 'Approve Draft 1', opts()).warns.some(w => w.msg === C.msg.moveSkip('Approve Script')));
-      assert.deepEqual(R.checkMove(s, d, 'Approve Draft 1', opts()).warns, [], 'Script not planned → nothing skipped');
-      const d1 = { ...d, sub_status: 'Approve Draft 1', draft_rounds: 2 };
-      assert.ok(R.checkMove(s, d1, 'Post', opts()).warns.some(w => w.msg === C.msg.moveSkip('Approve Draft 2')));
+    test('CR-15: Script is in every plan (no toggle) · steps passed on the way count planned steps only', () => {
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, expected_draft1_date: '2026-09-05' });   // CR-03 pillar · CR-20 §4.7 term / Gencode days · §4.15 Script asks for the expected Draft 1 date
+      const dd = R.dmy(TODAY).slice(0, 5);
+      assert.deepEqual(R.checkMove(s, d, 'Script', opts()).errs, []);
+      assert.ok(R.checkMove(s, d, 'Draft 1', opts()).warns.some(w => w.msg === C.msg.moveAutoDone(dd, 'Script')));
+      assert.deepEqual(R.checkMove(s, d, 'Script', opts()).warns, [], 'the next step: nothing passed on the way');
+      const d1 = { ...d, sub_status: 'Draft 1', draft_rounds: 2 };
+      assert.ok(R.checkMove(s, d1, 'Post', opts()).warns.some(w => w.msg === C.msg.moveAutoDone(dd, 'Draft 2, Approve')));
+      assert.deepEqual(R.skippedSteps(s, { ...d, sub_status: 'Draft 1', draft_rounds: 1 }, 'Post', opts()).map(x => x.sub_status), ['Approve'], 'TC-08: Draft 1 → Post passes Approve');
+      assert.deepEqual(R.skippedSteps(s, d1, 'Brief', opts()), [], 'going back marks nothing');
     });
-    test('TC-16 basis: rounds already passed cannot be removed; Script cannot be switched off once passed', () => {
+    test('TC-16 basis: rounds already passed cannot be removed (CR-15: Script has no switch any more)', () => {
       const s = fresh();
       assert.equal(R.planLimits(s, deal(s, 'D000001')).minDrafts, 2, 'Posted with 2 rounds');
-      assert.equal(R.planLimits(s, { ...deal(s, 'D000001'), sub_status: 'Approve Draft 2', status: 'Inprocess' }).minDrafts, 2);
+      assert.equal(R.planLimits(s, { ...deal(s, 'D000001'), sub_status: 'Draft 2', status: 'Inprocess' }).minDrafts, 2);
       assert.equal(R.planLimits(s, deal(s, 'D000051')).minDrafts, 1, 'at Draft 1 of 2 → may drop to 1');
-      assert.ok(R.checkPlan(s, deal(s, 'D000001'), { drafts: 1, script: false }).errs.some(e => e.msg === C.msg.planDraftsPassed(2)));
-      assert.deepEqual(R.checkPlan(s, deal(s, 'D000051'), { drafts: 1, script: false }).errs, []);
-      assert.ok(R.checkPlan(s, deal(s, 'D000051'), { drafts: 4, script: false }).errs.length);
-      const scripted = { ...deal(s, 'D000044'), script_required: true, sub_status: 'Approve Draft 1' };
-      assert.equal(R.planLimits(s, scripted).scriptLocked, true);
-      assert.ok(R.checkPlan(s, scripted, { drafts: 1, script: false }).errs.some(e => e.msg === C.msg.planScriptPassed));
-      assert.equal(R.planLimits(s, { ...scripted, sub_status: 'Brief' }).scriptLocked, false);
+      assert.ok(R.checkPlan(s, deal(s, 'D000001'), { drafts: 1 }).errs.some(e => e.msg === C.msg.planDraftsPassed(2)));
+      assert.deepEqual(R.checkPlan(s, deal(s, 'D000051'), { drafts: 1 }).errs, []);
+      assert.ok(R.checkPlan(s, deal(s, 'D000051'), { drafts: 4 }).errs.length);
+      assert.ok(!('scriptLocked' in R.planLimits(s, deal(s, 'D000044'))));
       const lim = R.planLimits(s, deal(s, 'D000187'));
       assert.equal(lim.minDrafts, R.planOf(deal(s, 'D000187')).drafts, 'Cancel with unknown step before keeps the plan');
     });
     test('applyPlan returns the changed deal and a plan event; no change → no event', () => {
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
-      const r = R.applyPlan(d, { drafts: 2, script: true }, { eventId: 5, now: new Date('2026-10-05T03:00:00Z') });
+      const r = R.applyPlan(d, { drafts: 2 }, { eventId: 5, now: new Date('2026-10-05T03:00:00Z') });
       assert.equal(r.deal.draft_rounds, 2);
-      assert.equal(r.deal.script_required, true);
       assert.equal(r.event.type, 'plan');
-      assert.deepEqual(r.event.to, { draft_rounds: 2, script_required: true });
-      assert.equal(R.applyPlan(d, { drafts: 1, script: false }, { eventId: 6 }).event, null);
+      assert.deepEqual(r.event.to, { draft_rounds: 2 }, 'CR-15: the plan is the number of drafts only');
+      assert.equal(R.applyPlan(d, { drafts: 1 }, { eventId: 6 }).event, null);
     });
     test('date checks use planned rounds only; dates of a round outside the plan → info', () => {
       const s = fresh(), d = { ...deal(s, 'D000044'), expected_draft2_date: '2026-09-01' };
@@ -203,7 +203,7 @@
     const base = { rate_card: 1000, docs_done: false, paid_50: false, paid_full: false };
     test('TC-06: paymentState', () => {
       assert.equal(R.paymentState({ ...base, payment_term: 'prepaid', status: 'Inprocess', sub_status: 'Brief' }, TODAY), 'overdue');
-      assert.equal(R.paymentState({ ...base, payment_term: 'split_50', paid_50: true, status: 'Inprocess', sub_status: 'Approve Draft 1' }, TODAY), 'deposit_paid');
+      assert.equal(R.paymentState({ ...base, payment_term: 'split_50', paid_50: true, status: 'Inprocess', sub_status: 'Draft 1' }, TODAY), 'deposit_paid');
       assert.equal(R.paymentState({ ...base, payment_term: 'postpaid', status: 'Complete', sub_status: 'Post' }, TODAY), 'due');
       assert.equal(R.paymentState({ ...base, payment_term: 'free', status: 'Complete', sub_status: 'Post' }, TODAY), 'free');
       assert.equal(R.paymentState({ ...base, payment_term: null, paid_full: true, status: 'Inprocess', sub_status: 'Brief' }, TODAY), 'paid');
@@ -215,7 +215,7 @@
       assert.equal(st({ payment_term: 'split_50', status: 'Inprocess', sub_status: 'Brief' }), 'overdue', 'no deposit at Brief');
       assert.equal(st({ payment_term: 'split_50', paid_50: true, status: 'Complete', sub_status: 'Post' }), 'due');
       assert.equal(st({ payment_term: 'split_50', status: 'List', sub_status: 'Contacted' }), 'not_due');
-      assert.equal(st({ payment_term: 'postpaid', status: 'Inprocess', sub_status: 'Approve Draft 1' }), 'not_due');
+      assert.equal(st({ payment_term: 'postpaid', status: 'Inprocess', sub_status: 'Draft 1' }), 'not_due');
       assert.equal(st({ payment_term: null, status: 'Complete', sub_status: 'Post' }), 'due');
       assert.equal(st({ payment_term: null, status: 'Inprocess', sub_status: 'Brief' }), 'not_due');
       assert.equal(st({ payment_term: 'prepaid', status: 'Cancel', sub_status: 'Cancel' }), 'not_due', 'a cancelled deal owes nothing');
@@ -263,7 +263,7 @@
       const a = R.shortlistDeal(s, 'K0011', { dealId: 'D000306', logId: 771, phaseId: 'KS-P2', pic: 'Ja', date: TODAY });
       assert.equal(a.deal.payment_term, null);
       assert.equal(a.deal.draft_rounds, 1);
-      assert.equal(a.deal.script_required, false);
+      assert.ok(!('script_required' in a.deal), 'CR-15: no longer written');
       k.default_payment_term = 'postpaid';
       assert.equal(R.shortlistDeal(s, 'K0011', { dealId: 'D000306', logId: 771, phaseId: 'KS-P2', pic: 'Ja', date: TODAY }).deal.payment_term, 'postpaid');
       assert.equal(R.shortlistDeal(s, 'K0011', { dealId: 'D000306', logId: 771, phaseId: 'KS-P2', pic: 'Ja', date: TODAY, paymentTerm: 'free' }).deal.payment_term, 'free');
@@ -277,7 +277,8 @@
     });
     test('deals CSV carries plan, term and the payment state', () => {
       const s = fresh(), row = R.dealsRows(s, [deal(s, 'D000296')], TODAY)[0];
-      assert.ok(['draft_rounds', 'script_required', 'payment_term', 'payment_state'].every(k => R.DEALS_COLS.includes(k)));
+      assert.ok(['draft_rounds', 'payment_term', 'payment_state', 'expected_script_date', 'script_date', 'expected_approve_date', 'approved_date'].every(k => R.DEALS_COLS.includes(k)));
+      assert.ok(!R.DEALS_COLS.includes('script_required'), 'CR-15: not used any more');
       assert.equal(row.draft_rounds, 1);
       assert.equal(row.payment_term, null);
       assert.equal(row.payment_state, 'paid');
@@ -303,22 +304,22 @@
       assert.deepEqual(rows.map(d => d.deal_id), ['D000296']);
       assert.equal(R.kolById(s, rows[0].kol_id).display_name, 'phriknit');
     });
-    test('TC-10 basis: D000296 stage = Brief ● · Draft 1 ● · Post ◯ (1 round); payment Not set · Paid', () => {
+    test('TC-10 basis (CR-15): D000296 stage = Brief ● · Script ● · Draft 1 ● · Approve ◯ · Post (1 round = 5 dots); payment Not set · Paid', () => {
       const s = fresh(), d = deal(s, 'D000296');
-      assert.deepEqual(R.stageDots(s.lookups, d).map(x => [x.step.sub_status, x.state]), [['Brief', 'done'], ['Approve Draft 1', 'done'], ['Post', 'next']]);
+      assert.deepEqual(R.stageDots(s.lookups, d).map(x => [x.step.sub_status, x.state]), [['Brief', 'done'], ['Script', 'done'], ['Draft 1', 'done'], ['Approve', 'next'], ['Post', 'todo']]);
       assert.equal(C.stage.draftOf(R.draftNo(R.stepOf(s.lookups, d.sub_status)), R.planOf(d).drafts), 'Draft 1 of 1');
       assert.equal(`${C.termShort[R.termOf(d) || 'none']} · ${C.payState[R.paymentState(d, TODAY)]}`, 'Not set · Paid');
     });
-    test('TC-11 basis: D000001 stage = 4 dots (Brief · Draft 1 · Draft 2 · Post), all done', () => {
+    test('TC-11 basis (CR-15): D000001 stage = 6 dots (Brief · Script · Draft 1 · Draft 2 · Approve · Post), all done', () => {
       const s = fresh(), dots = R.stageDots(s.lookups, deal(s, 'D000001'));
-      assert.deepEqual(dots.map(x => x.step.sub_status), ['Brief', 'Approve Draft 1', 'Approve Draft 2', 'Post']);
+      assert.deepEqual(dots.map(x => x.step.sub_status), ['Brief', 'Script', 'Draft 1', 'Draft 2', 'Approve', 'Post']);
       assert.ok(dots.every(x => x.state === 'done'));
     });
-    test('stage dots: List and Cancel have none; Script adds a dot; the next step is a ring', () => {
+    test('stage dots: List and Cancel have none; a planned Draft adds a dot; the next step is a ring', () => {
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
       assert.deepEqual(R.stageDots(s.lookups, { ...d, status: 'List', sub_status: 'Contacted' }), []);
       assert.deepEqual(R.stageDots(s.lookups, { ...d, status: 'Cancel', sub_status: 'Cancel' }), []);
-      assert.deepEqual(R.stageDots(s.lookups, { ...d, script_required: true, draft_rounds: 2 }).map(x => x.state), ['done', 'next', 'todo', 'todo', 'todo']);
+      assert.deepEqual(R.stageDots(s.lookups, { ...d, draft_rounds: 2 }).map(x => x.state), ['done', 'next', 'todo', 'todo', 'todo', 'todo']);
     });
     test('TC-13 basis: PIC change → event; undo writes the reverse change marked undo', () => {
       const s = fresh(), d = deal(s, 'D000302');
@@ -359,11 +360,11 @@
   describe('CR-02 R3 · drawer, Move stage, payment term, Pipeline, Needs attention', () => {
     test('TC-15: Move to Draft 2 with + Add draft round → rounds 2, a plan event and a status log', () => {
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
-      assert.ok(R.checkMove(s, d, 'Approve Draft 2', opts()).errs.some(e => e.code === 'add_round'));
-      const r = R.applyMove(s, d, 'Approve Draft 2', opts({ addRound: true }), { logId: 771, eventId: 1 });
+      assert.ok(R.checkMove(s, d, 'Draft 2', opts()).errs.some(e => e.code === 'add_round'));
+      const r = R.applyMove(s, d, 'Draft 2', opts({ addRound: true }), { logId: 771, eventId: 1 });
       assert.equal(r.deal.draft_rounds, 2);
       assert.equal(r.event.type, 'plan');
-      assert.equal(r.log.sub_status, 'Approve Draft 2');
+      assert.equal(r.log.sub_status, 'Draft 2');
     });
     test('TC-16: Drafts − is blocked once Draft 2 is passed', () => {
       const s = fresh(), d = { ...deal(s, 'D000001') };
@@ -391,15 +392,15 @@
       assert.equal(pa.beforeBrief, 0);
       assert.equal(R.overviewTiles(s, ids, '2026-08-01', TODAY, TODAY).unpaid, 130);
     });
-    test('TC-21: Pipeline PH-OCT has no Script / Draft 2 / Draft 3 column when no deal plans them', () => {
+    test('TC-21: Pipeline PH-OCT has no Draft 2 / Draft 3 column when no deal plans them (CR-15: Script and Approve always)', () => {
       const s = fresh(), cols = R.pipeline(s, 'PH-OCT').map(c => c.step.sub_status);
       const planned = s.deals.filter(d => d.phase_id === 'PH-OCT').map(d => R.planOf(d));
-      assert.ok(planned.every(p => p.drafts === 1 && !p.script), 'seed: PH-OCT deals plan 1 round');
-      assert.ok(!cols.includes('Approve Script') && !cols.includes('Approve Draft 2') && !cols.includes('Approve Draft 3'));
-      assert.ok(cols.includes('Approve Draft 1') && cols.includes('Post'));
+      assert.ok(planned.every(p => p.drafts === 1), 'seed: PH-OCT deals plan 1 round');
+      assert.ok(!cols.includes('Draft 2') && !cols.includes('Draft 3'));
+      assert.ok(cols.includes('Script') && cols.includes('Draft 1') && cols.includes('Approve') && cols.includes('Post'));
       deal(s, 'D000296').draft_rounds = 2;
-      assert.ok(R.pipeline(s, 'PH-OCT').some(c => c.step.sub_status === 'Approve Draft 2'), 'a planned round brings its column back');
-      assert.ok(R.pipeline(s, 'CH-P1').some(c => c.step.sub_status === 'Approve Draft 2'), 'CH-P1 has 2-round deals');
+      assert.ok(R.pipeline(s, 'PH-OCT').some(c => c.step.sub_status === 'Draft 2'), 'a planned round brings its column back');
+      assert.ok(R.pipeline(s, 'CH-P1').some(c => c.step.sub_status === 'Draft 2'), 'CH-P1 has 2-round deals');
     });
     test('merging keeps the default term of the KOL that is removed when the kept one has none', () => {
       const s = fresh();

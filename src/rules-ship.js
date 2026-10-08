@@ -121,6 +121,7 @@ Object.assign(KT.rules, (function (R, C) {
     const events = [];
     pickListShipments(state, pl).filter(sh => pickable(Object.assign({}, sh, { pick_list_id: null }))).forEach((sh, i) => {
       events.push(R.updateShipment(sh, { kind: 'shipped', date: o.date, carrier: o.carrier, tracking: (o.trackings || [])[i] || '' }, { eventId: ctx.eventId(), now: ctx.now, user: ctx.user }));
+      R.pinAddress(state, sh);   // CR-16 §4.3: the address it went to is kept
     });
     return events;
   }
@@ -145,7 +146,7 @@ Object.assign(KT.rules, (function (R, C) {
     return { shipment_id: o.id, deal_id: deal ? deal.deal_id : null, kol_id: d.kol_id, items: (d.items || []).map(x => ({ tr_code: x.tr_code, qty: Math.max(1, Math.round(Number(x.qty) || 1)) })),
       ship_by: sb || null, status: 'to_ship', ship_by_overridden: !!deal && isISODate(d.ship_by) && d.ship_by !== auto, shipped_date: null, carrier: null, tracking_no: null, delivered_date: null,
       problem_reason: null, not_required_reason: null, source: deal ? 'manual' : 'other', note: trim(d.note) || null, purpose: d.purpose,
-      campaign_id: deal ? deal.campaign_id : d.campaign_id || null, pick_list_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };
+      campaign_id: deal ? deal.campaign_id : d.campaign_id || null, pick_list_id: null, address_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };
   }
   /* the products to offer: the deal's, else the Campaign's, else none (any product of the catalog can be added) */
   function shipItemsDefault(state, d) {

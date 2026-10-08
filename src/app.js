@@ -58,6 +58,7 @@
   }
   async function setViewAs(role) {
     if ((KT.ui.me() || {}).role !== 'admin') return;
+    if (!(await KT.profile.requestClose({ quiet: true, noRefresh: true }))) return;
     if (drawerOwner() && !(await KT.ui.requestCloseDrawer())) return;
     KT.ui.roleOverride.set(role === 'admin' ? null : role);
     if (current && !KT.ui.canSeeTab(current)) location.hash = C.tabs[0].route;
@@ -77,7 +78,8 @@
     $('userMenu').open = false; closeNav();
     const s = KT.ui.state(), u = KT.ui.R.userById(s, b.dataset.user);
     if (!u || u.user_id === (KT.ui.me() || {}).user_id) return;
-    /* the open drawer was drawn for the previous person */
+    /* the open drawer (and KOL profile) was drawn for the previous person */
+    if (!(await KT.profile.requestClose({ quiet: true, noRefresh: true }))) return;
     if (drawerOwner() && !(await KT.ui.requestCloseDrawer())) return;
     s.meta = Object.assign({}, s.meta, { current_user_id: u.user_id });
     KT.vault.lock();   // CR-08 §4.4: the next person unlocks for themselves
@@ -153,9 +155,17 @@
   function renderNav() {
     renderUser(); renderMore();
     $('nav').innerHTML = visibleTabs().map(t => `<button type="button" class="sn-item${t.key === current ? ' active' : ''}" data-tab="${t.key}"${t.key === current ? ' aria-current="page"' : ''}>` +
-      `<span class="ic">${ICON.nav[t.icon] || ''}</span><span class="lb">${esc(t.label)}</span></button>`).join('');
-    navTips();
+      `<span class="ic">${ICON.nav[t.icon] || ''}</span><span class="lb">${esc(t.label)}</span><span class="nbadge hidden" data-nbadge="${t.key}"></span></button>`).join('');
+    navTips(); navBadges();
   }
+  /* CR-17 §4.5 — the number of Campaigns waiting for a decision, on Campaign & Phase (only for those who approve) · kept up to date after every save */
+  function navBadges() {
+    const b = $('nav').querySelector('[data-nbadge="campaign"]'); if (!b) return;
+    const n = KT.ui.R.canApprove(KT.ui.actor()) ? KT.ui.R.approvalCount(KT.ui.state()) : 0;
+    b.textContent = n ? String(n) : ''; b.classList.toggle('hidden', !n);
+    b.setAttribute('aria-label', n ? C.approval.badge(n) : ''); b.title = n ? C.approval.badge(n) : '';
+  }
+  KT.ui.onCommit = navBadges;
   function showTab(key, id) {
     if (!KT.screens[key]) key = C.tabs[0].key;
     const prev = current; current = key;
@@ -169,10 +179,12 @@
   $('nav').addEventListener('click', e => {
     const b = e.target.closest('button[data-tab]'); if (!b) return;
     closeNav();
+    if (e.target.closest('.nbadge:not(.hidden)') && b.dataset.tab === 'campaign') { location.hash = '#' + tabOf('campaign').route + '/approvals'; return; }   // CR-17 v1.2: the badge opens Approvals
     if (current === b.dataset.tab) { if (drawerOwner()) KT.ui.requestCloseDrawer(); }
     else location.hash = tabOf(b.dataset.tab).route;
   });
-  window.addEventListener('hashchange', () => { const h = parseHash(); showTab(h.tab, h.id); });
+  /* CR-16 §4.1 — the KOL profile is asked first: Back closes it (after "Discard changes?" when something was typed) */
+  window.addEventListener('hashchange', async () => { const h = parseHash(); if (!(await KT.profile.onHashChange(h))) return; showTab(h.tab, h.id); });
   KT.ui.currentTab = () => current;
   KT.ui.refresh = () => showTab(current);
   KT.ui.renderNav = renderNav;
@@ -191,6 +203,7 @@
   applyNavMode();
   applyTheme(pref.get('theme', 'light'));
   renderBanners();
+  KT.photos.init();   // CR-16 §4.4 — the profile photos of this browser (IndexedDB) · the screens draw them once they are read
   const h = parseHash();
   if (!h.tab && (KT.ui.me() || {}).role === 'accounting') { history.replaceState(null, '', '#payments/accounting'); Object.assign(h, { tab: 'payments', id: 'accounting' }); }
   if (!h.tab) history.replaceState(null, '', '#' + C.tabs[0].route);

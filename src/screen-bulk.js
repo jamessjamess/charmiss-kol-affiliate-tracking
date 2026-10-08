@@ -1,163 +1,225 @@
-/* screen-bulk.js — CR-10 §4.11: New deal › Bulk shortlist. Pick many KOLs from KOL Master (the same filters · Not in this campaign yet ·
-   select a page or every match · at most 200) and add them to a Campaign as Shortlist deals: preview who is added / skipped, Confirm,
-   then Deals › Table of that Campaign (Group by Stage) with the new rows lit up and Undo for 10 seconds.
-   CR-11 §4.4: a tab of the New deal modal (screen-deals.js openNewDeal) — no dialog of its own · its values stay while you switch tabs ·
-   KOL Master (rows ticked → Add to campaign as shortlist) opens the modal on this tab. → KT.bulk */
+/* screen-bulk.js — CR-20 §4.2–4.3 · §4.10: New deal › From KOL Master (the default tab) — pick 1 or many KOLs that are in KOL Master already
+   (the filters of before + Worked in (other Campaigns) + Posted only · Not in this campaign yet · select a page or every match · at most 200)
+   and fill only a little per KOL in the Selected panel: Rate (the Latest rate, "Avg ฿x") · Post due ("→ Phase 2") · Payment term when the
+   deals start at Contacted (optional) or Confirm QT (required — the rules of R.stageRequirements, through R.checkMove) · Package.
+   Add n deals → Deals › Table of that Campaign with the new rows lit up and Undo. The header (Campaign · Phase · Assign to · Pillar · Start at ·
+   Products) is the New deal modal's (screen-newdeal.js), the same on both tabs. → KT.bulk */
 KT.bulk = (function () {
   'use strict';
   const U = KT.ui;
-  const { C, R, $, esc, state, today, store, commit, toastAction, optionsHTML, campaignOptionsHTML, picList, userId, guard, pfIcon, activeList } = U;
-  const B = C.bulk, T = C.kol;
+  const { C, R, $, esc, state, today, store, commit, toast, toastAction, optionsHTML, picList, userId, guard, pfIcon, dateHTML, setDate, checksHTML } = U;
+  const B = C.bulk, T = C.kol, MV = C.move;
   const PAGE = 50;
-  const blank = () => ({ q: '', platform: '', tier: '', type: '', category: '', pic: '', status: 'Active', lastWorked: '', perf: '', notIn: true });
-  let bk = null, m = null;   // this tab's values · the modal it is drawn in
+  const blank = () => ({ q: '', platform: '', tier: '', type: '', category: '', owner: '', status: 'Active', lastWorked: '', perf: '', workedIn: [], postedOnly: false, notIn: true });
+  let bk = null, api = null;   // this tab's values · the New deal modal (header + its modal handle)
 
-  /* KOL Master → the New deal modal on this tab, those KOLs ticked */
-  function open(o = {}) { KT.screens.deals.openNewDeal({ tab: 'bulk', kolIds: o.kolIds, campaignId: o.campaignId }); }
-  /* the modal opened: this tab starts with its own values (kept while you switch tabs) */
+  /* KOL Master (rows ticked → Add to campaign) opens New deal on this tab with those KOLs selected */
+  function open(o = {}) { KT.newDeal.open({ tab: 'master', kolIds: o.kolIds, campaignId: o.campaignId }); }
   function init(o = {}) {
-    const s = state();
-    bk = { campaign: o.campaignId || R.defaultCampaignId(s, today()) || '', phase: '', pic: 'me', pillar: '', f: blank(), sel: new Set(o.kolIds || []), page: 0, stage: 'pick', fromKol: !!(o.kolIds && o.kolIds.length), dirty: false };
-    if (bk.fromKol) bk.f.notIn = false;   // KOL Master picked them already
+    bk = { f: blank(), sel: new Map(), page: 0, submitted: false, dirty: false, rows: [] };
+    (o.kolIds || []).forEach(id => addSel(id));
+    if ((o.kolIds || []).length) bk.f.notIn = false;   // KOL Master picked them already
   }
-  const reset = () => { bk = null; m = null; };
-  /* something chosen here (KOLs ticked · Campaign · Phase · PIC · Pillar) — the filters do not count */
+  const reset = () => { bk = null; api = null; };
   const isDirty = () => !!(bk && bk.dirty);
-
-  /* ---------- the KOLs that match ---------- */
-  function matches() {
-    const s = state(), rules = s.lookups.tier_rules || [], f = bk.f, q = R.normKey(f.q), perf = R.kolPerfAll(s, today());
-    const accBy = new Map(); s.kol_accounts.forEach(a => { if (!accBy.has(a.kol_id)) accBy.set(a.kol_id, []); accBy.get(a.kol_id).push(a); });
-    const inCamp = new Set(s.deals.filter(d => d.campaign_id === bk.campaign && !R.isCancelled(d)).map(d => d.kol_id));
-    return s.kol_master.map(k => {
-      const accs = accBy.get(k.kol_id) || [], mf = R.maxFollowers(accs), tier = R.tierOf(mf, rules) || R.UNKNOWN_TIER, pf = perf.get(k.kol_id) || {};
-      if (q && ![k.display_name].concat(accs.map(a => a.handle)).some(v => R.normKey(v).includes(q))) return null;
-      if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.tier && tier !== f.tier) || (f.type && (k.kol_type || '') !== f.type) || (f.category && k.kol_category !== f.category) ||
-        (f.pic && (k.pic || '') !== (f.pic === '__none' ? '' : f.pic)) || (f.status && (k.kol_status || 'Active') !== f.status) || (f.lastWorked && pf.bucket !== f.lastWorked) ||
-        (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id))) return null;
-      const quote = R.latestQuote(s, k.kol_id);
-      return { k, accs, mf, tier, pf, rate: quote ? R.totalCost(quote) || null : null, inCamp: inCamp.has(k.kol_id) };
-    }).filter(Boolean).sort((a, b) => a.k.display_name.localeCompare(b.k.display_name, 'th'));
+  /* a selected KOL's row: Rate = the Latest rate (CR-07) · Post due · Payment term = the KOL's default */
+  function addSel(id) {
+    const s = state(), k = R.kolById(s, id); if (!k || bk.sel.has(id)) return;
+    const ref = R.costReference(s, id), latest = ref.latest ? ref.latest.values.rate_card : null;
+    bk.sel.set(id, { rate: latest != null ? String(latest) : '', latest, avg: ref.average ? ref.average.total : null, postDue: '', term: R.isTerm(k.default_payment_term) ? k.default_payment_term : '', packageId: '', units: '1' });
   }
+  const selectKols = ids => { if (!bk) return; ids.forEach(addSel); bk.dirty = true; };
 
-  /* ---------- draw (into the modal: body + footer) ---------- */
-  function draw(modal, top) {
-    m = modal; if (!bk) init({});
-    const s = state(), L = s.lookups, myPic = R.picName(U.me()), c = s.campaigns.find(x => x.campaign_id === bk.campaign);
-    m.setSub(c ? C.deal.addingTo(c.campaign_name) : '');
-    if (bk.stage === 'preview') { drawPreview(); return; }
-    const sel = (id, label, items, v, ph) => `<label class="tlab">${esc(label)} <select id="${id}">${optionsHTML(items, v, ph)}</select></label>`;
-    const phases = R.sortPhases(s.phases.filter(p => p.campaign_id === bk.campaign));
-    m.setBody(`<div class="bk" id="bk_root">` +
-      `<div class="bk-top"><div class="field"><label for="bk_camp">${esc(B.campaign)} <span class="req">*</span></label><select id="bk_camp" data-combo="campaign">${campaignOptionsHTML(bk.campaign, B.chooseCampaign)}</select></div>` +
-      `<div class="field"><label for="bk_phase">${esc(B.phase)}</label><select id="bk_phase">${optionsHTML(phases.map(p => ({ value: p.phase_id, label: R.phaseName(s, p.phase_id) })), bk.phase, B.autoPhase)}</select></div>` +
-      `<div class="field"><label for="bk_pic">${esc(B.pic)}</label><select id="bk_pic">${optionsHTML([{ value: 'me', label: myPic ? B.picMe(myPic) : B.picMeNone }, { value: 'kol', label: B.picKol }].concat(picList().map(n => ({ value: n, label: n }))), bk.pic)}</select></div>` +
-      `<div class="field"><label for="bk_pillar">${esc(B.pillar)}${bk.pillarFromPhase && bk.pillar ? ` <span class="chip sh-from">${esc(C.fill.fromPhase)}</span>` : ''}</label><select id="bk_pillar">${optionsHTML(activeList('pillar_list', null), bk.pillar, C.deal.none)}</select></div>` +
-      `<div class="field"><label>${esc(B.stage)}</label><div class="bk-lock" title="${esc(B.stageTip)}">${esc((R.shortlistStep(L) || {}).sub_status || 'Shortlist')} 🔒</div></div>` +
-      (R.onlyProduct(s, bk.campaign) ? `<div class="field"><label>${esc(C.deal.f.products)}</label><div class="bk-lock">${esc(R.productLabel(R.productByCode(s, R.onlyProduct(s, bk.campaign)) || { tr_code: R.onlyProduct(s, bk.campaign), product_name: '' }))} <span class="chip sh-from">${esc(C.fill.onlyProduct)}</span></div></div>` : '') + `</div>` +
-      `<div class="bk-main"><div class="bk-left"><div class="toolbar bk-tools"><input type="search" class="search" id="bk_q" placeholder="${esc(T.search)}" value="${esc(bk.f.q)}" autocomplete="off">` +
+  /* ---------- the KOLs that match (R.kolPickerFilter) ---------- */
+  function matches() { const h = api.header(); return R.kolPickerFilter(state(), bk.f, h.campaign, today()); }
+
+  /* ---------- draw ---------- */
+  function draw(a, top) {
+    api = a; if (!bk) init({});
+    const s = state(), L = s.lookups, h = api.header(), sel = (id, label, items, v, ph, tip) => `<label class="tlab"${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)} <select id="${id}">${optionsHTML(items, v, ph)}</select></label>`;
+    const wi = workedHTML();
+    api.m.setBody(api.headerHTML() + `<div class="bk-main"><div class="bk-left"><div class="toolbar bk-tools" id="bk_tools"><input type="search" class="search" id="bk_q" placeholder="${esc(T.search)}" value="${esc(bk.f.q)}" autocomplete="off">` +
         sel('bk_fplatform', T.platform, (L.platform_list || []), bk.f.platform, T.allPlatforms) + sel('bk_ftier', T.tier, R.tierOrder(L.tier_rules), bk.f.tier, T.allTiers) +
         sel('bk_ftype', B.type, (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label })), bk.f.type, B.any) +
         sel('bk_fcat', B.category, U.distinct(s.kol_master.map(k => k.kol_category)), bk.f.category, B.any) +
-        sel('bk_fpic', B.picCol, picList().map(n => ({ value: n, label: n })).concat([{ value: '__none', label: C.deal.unassigned }]), bk.f.pic, B.any) +
+        sel('bk_fowner', B.kolOwner, picList().map(n => ({ value: n, label: n })).concat([{ value: '__none', label: C.deal.unassigned }]), bk.f.owner, B.any, B.kolOwnerTip) +
         sel('bk_fstatus', B.status, R.KOL_STATUSES, bk.f.status, B.any) +
         sel('bk_flast', C.perf.colLastWorked, R.LAST_WORKED.map(v => ({ value: v, label: C.perf.last[v] })), bk.f.lastWorked, B.any) +
         sel('bk_fperf', B.perf, R.BADGES.map(v => ({ value: v, label: C.perf.badge ? C.perf.badge[v] || v : v })), bk.f.perf, B.any) +
+        `<span class="tlab bk-worked">${esc(B.workedIn)} ${wi}</span><label class="tick small"><input type="checkbox" id="bk_posted"${bk.f.postedOnly ? ' checked' : ''}${bk.f.workedIn.length ? '' : ' disabled'}> ${esc(B.postedOnly)}</label>` +
         `<label class="tick small"><input type="checkbox" id="bk_notin"${bk.f.notIn ? ' checked' : ''}> ${esc(B.notInCampaign)}</label>` +
-        `<button type="button" class="btn small ghost" data-bkclear>${U.ICON.close}<span>${esc(C.common.clearAllFilters)}</span></button></div>` +
+        `<button type="button" class="btn small ghost hidden" data-bkclear id="bk_clear">${U.ICON.close}<span>${esc(C.common.clearAllFilters)}</span></button></div>` +
         `<div id="bk_selbar"></div><div id="bk_list"></div></div>` +
-      `<aside class="bk-right"><div class="bk-rh"><b id="bk_seln"></b><button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div><div id="bk_selected" class="bk-sel"></div><div id="bk_sum" class="bk-sum"></div></aside></div></div>`, !top, 'flush');
-    m.setFoot(`<span class="muted small" id="bk_max"></span>`, `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="bk_add" data-bkadd></button>`);
-    const root = $('bk_root'); if (!root) return;   // the modal closed meanwhile
+      `<aside class="bk-right" id="bk_right"><div class="bk-rh"><b id="bk_seln"></b><button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div>` +
+        `<div class="bk-ptools"><button type="button" class="btn small" data-bkdueall>${esc(B.setPostDueAll)}</button><button type="button" class="btn small" data-bklatest>${esc(B.useLatest)}</button><button type="button" class="btn small" data-bkclearrates>${esc(B.clearRates)}</button></div>` +
+        `<div id="bk_selected" class="bk-sel"></div><div id="bk_sum" class="bk-sum"></div></aside></div>`, !top, 'flush nd-body');
+    api.m.setFoot(`<div class="checks" id="bk_checks"></div>`, `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn" data-bkadd="open" id="bk_addopen">${esc(B.addOpenFirst)}</button><button type="button" class="btn primary" id="bk_add" data-bkadd="add"></button>`);
+    const root = $('cm_body'); if (!root) return;
+    api.wireHeader(root);
     root.addEventListener('change', onChange);
-    let qT; root.addEventListener('input', e => { if (e.target.id === 'bk_q') { clearTimeout(qT); qT = setTimeout(() => { if (!bk) return; bk.f.q = e.target.value; bk.page = 0; drawList(); }, 150); } });
-    U.enhanceCombos(root);
-    drawList();
+    root.addEventListener('input', onInput);
+    let qT; $('bk_q').addEventListener('input', e => { clearTimeout(qT); qT = setTimeout(() => { if (!bk) return; bk.f.q = e.target.value; bk.page = 0; drawList(); drawTools(); }, 150); });
+    drawList(); drawTools();
   }
+  /* Clear all filters shows when a filter differs from how the tab opens (Status Active · Not in this campaign yet ticked) — Worked in counts too (§4.3) */
+  const filtersUsed = () => R.pickerActive(Object.assign({}, bk.f, { status: bk.f.status === 'Active' ? '' : bk.f.status || 'any', notIn: !bk.f.notIn })).length > 0;
+  /* §4.3 Worked in: the other Campaigns (approved) · drawn again on each change so its button says what is picked */
+  function workedHTML() {
+    const s = state(), h = api.header(), camps = s.campaigns.filter(c => c.campaign_id !== h.campaign && R.isApproved(c)).map(c => ({ value: c.campaign_id, label: c.campaign_name }));
+    bk.f.workedIn = bk.f.workedIn.filter(id => camps.some(c => c.value === id));
+    return U.multiSelect({ id: 'bk_worked', options: camps, value: bk.f.workedIn, label: U.msLabel(bk.f.workedIn, camps, B.workedInAny), aria: B.workedIn,
+      onChange: v => { bk.f.workedIn = v; if (!v.length) bk.f.postedOnly = false; bk.page = 0; const el = document.querySelector('[data-ms="bk_worked"]'); if (el) el.outerHTML = workedHTML(); drawList(); drawTools(); } });
+  }
+  function drawTools() { const c = $('bk_clear'); if (c) c.classList.toggle('hidden', !filtersUsed()); const p = $('bk_posted'); if (p) p.disabled = !bk.f.workedIn.length; }
   function drawList() {
-    const rows = matches(), pages = Math.max(1, Math.ceil(rows.length / PAGE)); bk.page = Math.min(bk.page, pages - 1); bk.rows = rows;
+    if (!$('bk_list')) return;
+    const s = state(), rows = matches(), pages = Math.max(1, Math.ceil(rows.length / PAGE)); bk.page = Math.min(bk.page, pages - 1); bk.rows = rows;
     const page = rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE), allPage = page.length > 0 && page.every(r => bk.sel.has(r.k.kol_id));
     const fol = n => (n ? R.fmtNum(n) : '—');
     $('bk_list').innerHTML = !rows.length ? U.noMatchHTML(T.noMatch, []) : `<div class="tablewrap bk-wrap"><table class="tbl bk-tbl"><thead><tr><th class="cb"><input type="checkbox" id="bk_page" aria-label="${esc(B.selectPage)}"${allPage ? ' checked' : ''}></th>` +
-      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th>${esc(C.perf.colLastWorked)}</th><th>${esc(B.perf)}</th><th>${esc(B.picCol)}</th><th class="num">${esc(B.colRate)}</th></tr></thead><tbody>` +
-      page.map(r => `<tr class="click${bk.sel.has(r.k.kol_id) ? ' selected' : ''}" data-bkrow="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-bksel="${esc(r.k.kol_id)}"${bk.sel.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
-        `<td class="bk-kol"><b>${esc(r.k.display_name)}</b>${r.inCamp ? ` <span class="chip">${esc(B.inCampaign)}</span>` : ''}${(r.k.kol_status || 'Active') !== 'Active' ? ` <span class="chip warn-chip">${esc(r.k.kol_status)}</span>` : ''}</td>` +
+      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th>${esc(B.colLastCampaign)}</th><th>${esc(B.perf)}</th><th title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th class="num">${esc(B.colRate)}</th></tr></thead><tbody>` +
+      page.map(r => { const q = R.latestQuote(s, r.k.kol_id), rate = q && !R.isBlank(q.rate_card) ? q.rate_card : null, li = R.lastWorkedInfo(s, r.k.kol_id);
+        return `<tr class="click${bk.sel.has(r.k.kol_id) ? ' selected' : ''}" data-bkrow="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-bksel="${esc(r.k.kol_id)}"${bk.sel.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
+        `<td class="bk-kol"><span class="bk-kn">${U.avatarHTML(r.k, 'sm')}<b>${U.nameHTML(r.k.display_name)}</b></span>${r.inCamp ? ` <span class="chip">${esc(B.inCampaign)}</span>` : ''}${(r.k.kol_status || 'Active') !== 'Active' ? ` <span class="chip warn-chip">${esc(r.k.kol_status)}</span>` : ''}</td>` +
         `<td>${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p, 'posted', p)).join('')}</td><td class="num">${fol(r.mf)}</td><td><span class="chip">${esc(r.tier)}</span></td>` +
-        `<td>${esc(R.kolTypeLabel ? R.kolTypeLabel(state().lookups, r.k.kol_type) || '' : r.k.kol_type || '')}</td><td>${r.pf.last ? esc(R.dmy(r.pf.last)) : '<span class="muted">—</span>'}</td>` +
-        `<td>${r.pf.perf ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${esc(r.k.pic || '')}</td><td class="num">${r.rate ? R.baht(r.rate) : '<span class="muted">—</span>'}</td></tr>`).join('') + `</tbody></table></div>` +
+        `<td>${esc(R.kolTypeLabel ? R.kolTypeLabel(s.lookups, r.k.kol_type) || '' : r.k.kol_type || '')}</td><td>${li ? esc(R.campaignName(s, li.campaignId) || '') : '<span class="muted">—</span>'}</td>` +
+        `<td>${r.pf.perf ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${esc(r.k.pic || '')}</td><td class="num">${rate != null ? R.baht(rate) : '<span class="muted">—</span>'}</td></tr>`; }).join('') + `</tbody></table></div>` +
       (pages > 1 ? `<div class="bk-pager"><button type="button" class="btn small" data-bkpage="-1"${bk.page ? '' : ' disabled'}>‹</button><span class="muted small">${esc(B.pageOf(bk.page + 1, pages, rows.length))}</span><button type="button" class="btn small" data-bkpage="1"${bk.page < pages - 1 ? '' : ' disabled'}>›</button></div>` : '');
     const pageSel = page.filter(r => bk.sel.has(r.k.kol_id)).length, allSel = rows.length > 0 && rows.every(r => bk.sel.has(r.k.kol_id));
-    $('bk_selbar').innerHTML = allPage && rows.length > page.length && !allSel ? `<div class="bk-banner">${esc(B.pageSelected(pageSel))} · <button type="button" class="link" data-bkall>${esc(B.selectAllMatching(rows.length))}</button></div>`
+    $('bk_selbar').innerHTML = allPage && rows.length > page.length && !allSel ? `<div class="bk-banner">${esc(B.pageSelected(pageSel))} · <button type="button" class="link" data-bkall>${esc(B.selectAllMatching(Math.min(rows.length, R.MAX_BULK)))}</button></div>`
       : allSel && rows.length > page.length ? `<div class="bk-banner">${esc(B.allSelected(rows.length))} · <button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div>` : '';
     drawSide();
   }
-  function plan() { return R.bulkShortlistPlan(state(), [...bk.sel], bk.campaign, { pic: bk.pic, me: R.picName(U.me()) || '' }); }
-  function drawSide() {
-    const s = state(), n = bk.sel.size, p = plan(), over = n > R.MAX_BULK;
-    $('bk_seln').textContent = B.selectedN(n);
-    $('bk_selected').innerHTML = !n ? `<div class="hint">${esc(B.noneSelected)}</div>` : [...bk.sel].map(id => { const k = R.kolById(s, id); return k ? `<div class="bk-si"><span>${esc(k.display_name)}</span><button type="button" class="x" data-bkrm="${esc(id)}" aria-label="${esc(B.remove(k.display_name))}">×</button></div>` : ''; }).join('');
-    $('bk_sum').innerHTML = bk.campaign ? `<div>${esc(B.willAdd(p.create.length))} · <span class="muted">${esc(B.willSkip(p.skip.length))}</span></div>` : `<div class="hint">${esc(B.chooseCampaign)}</div>`;
-    $('bk_max').textContent = over ? B.maxPerBatch(R.MAX_BULK) : '';
-    const add = $('bk_add'); add.textContent = B.addN(p.create.length); add.disabled = over || !p.create.length || p.errs.length > 0;
+  const startAt = () => api.header().startAt;
+  const needsTerm = () => { const st = R.stepOf(state().lookups, startAt()); return !!st && st.sub_status !== (R.shortlistStep(state().lookups) || {}).sub_status && !R.isCancelStep(st); };
+  /* the deal a selected row would make (for R.checkMove: what Start at needs — the one rule of R.stageRequirements) */
+  function pseudo(id, x) {
+    const h = api.header();
+    return { deal: Object.assign(JSON.parse(JSON.stringify(R.DEAL_TEMPLATE)), { deal_id: null, kol_id: id, campaign_id: h.campaign, sub_status: null, status: null, pillar: h.pillar || null }),
+      form: { date: today(), today: today(), pillar: h.pillar || '', paymentTerm: x.term || '', packageId: x.packageId || '', packageUnits: x.units || '1', rateCard: KT.move.money(x.rate), postDue: x.postDue || '' } };
   }
-  function drawPreview() {
-    const s = state(), p = plan(), camp = (s.campaigns.find(c => c.campaign_id === bk.campaign) || {}).campaign_name || '';
-    m.setBody(`<h3 class="nd-ph">${esc(B.previewTitle)}</h3><p style="margin-top:0"><b>${esc(B.previewLine(p.create.length, camp, p.skip.length))}</b></p>` +
-      (p.warns.length ? `<div class="checks">${p.warns.map(w => `<div class="check warn">! <span>${esc(w.msg)}</span></div>`).join('')}</div>` : '') +
-      (p.skip.length ? `<div class="tablewrap" style="max-height:40vh"><table class="tbl compact-sm"><thead><tr><th>${esc(B.colKol)}</th><th>${esc(B.reason)}</th></tr></thead><tbody>` +
-        p.skip.map(x => `<tr><td>${esc(x.kol.display_name)}</td><td>${esc(B.skipReason[x.reason])}</td></tr>`).join('') + `</tbody></table></div>` : '') +
-      `<p class="muted small">${esc(B.previewHint)}</p>`);
-    m.setFoot('', `<button type="button" class="btn" data-bkback>${esc(B.back)}</button><button type="button" class="btn primary" data-bkconfirm${p.create.length && !p.errs.length ? '' : ' disabled'}>${esc(B.confirm(p.create.length))}</button>`);
+  function rowChecks(id, x) {
+    const p = pseudo(id, x), r = R.checkMove(state(), p.deal, startAt(), p.form);
+    return r.errs.filter(e => !['to', 'pillar'].includes(e.field));   // the pillar is the header's (one message there)
+  }
+  function plan() { const h = api.header(); return R.bulkShortlistPlan(state(), [...bk.sel.keys()], h.campaign, { pic: h.assign || 'me', me: R.picName(U.me()) || '' }); }
+  function drawSide() {
+    if (!$('bk_selected')) return;
+    const s = state(), h = api.header(), n = bk.sel.size, p = plan(), over = n > R.MAX_BULK, showTerm = needsTerm(), termReq = R.pillarStepReached(s.lookups, startAt());
+    $('bk_seln').textContent = B.selectedH(n);
+    const skip = new Set(p.skip.map(x => x.kol.kol_id));
+    $('bk_selected').innerHTML = !n ? `<div class="hint">${esc(B.noneSelected)}</div>` : [...bk.sel.entries()].map(([id, x]) => {
+      const k = R.kolById(s, id); if (!k) return '';
+      const errs = bk.submitted && !skip.has(id) ? rowChecks(id, x) : [], bad = f => errs.some(e => e.field === f);
+      const tier = R.tierOf(R.maxFollowers(R.accountsOfKol(s, id)), s.lookups.tier_rules || []) || R.UNKNOWN_TIER;
+      const pk = x.term === 'package' ? R.packageChoices(s, id, today(), null).map(c => ({ value: c.pkg.package_id, label: MV.pkgOption(R.packageLabel(c.pkg), Math.max(0, c.left)) })) : [];
+      const pkObj = x.term === 'package' && x.packageId ? R.packageById(s, x.packageId) : null, rateAuto = !!pkObj;
+      const rateVal = rateAuto ? R.fmtNum(R.unitPrice(pkObj) * (Number(x.units) || 1)) : KT.move.fmtMoney(x.rate);
+      return `<div class="bk-srow${skip.has(id) ? ' skipped' : ''}${errs.length ? ' bad' : ''}" data-srow="${esc(id)}"><div class="bk-sk"><b>${U.nameHTML(k.display_name)}</b> <span class="chip">${esc(tier)}</span>${skip.has(id) ? ` <span class="muted small">${esc(B.skipReason[p.skip.find(y => y.kol.kol_id === id).reason])}</span>` : ''}` +
+          `<button type="button" class="x" data-bkrm="${esc(id)}" aria-label="${esc(B.removeRow(k.display_name))}">×</button></div>` +
+        `<div class="bk-sf"><label class="bk-f"><span>${esc(B.rate)}</span><input type="text" inputmode="decimal" class="mv-money${bad('rate_card') ? ' invalid' : ''}" data-srate="${esc(id)}" value="${esc(rateVal)}"${rateAuto ? ' disabled' : ''} autocomplete="off">` +
+          `<span class="muted small">${rateAuto ? esc(MV.fromPackage) : x.avg != null ? esc(B.avg(R.baht(x.avg))) : '&nbsp;'}</span></label>` +
+        `<label class="bk-f"><span>${esc(B.postDue)}</span>${dateHTML(`data-sdue="${esc(id)}"`, x.postDue, { label: B.postDue })}<span class="muted small" data-sphase="${esc(id)}">${esc(KT.move.phaseHint(h.campaign, x.postDue)) || '&nbsp;'}</span></label>` +
+        (showTerm ? `<label class="bk-f"><span>${esc(B.term)}${termReq ? ' <span class="req">*</span>' : ''}</span><select data-sterm="${esc(id)}"${bad('payment_term') ? ' class="invalid"' : ''}>${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), x.term, MV.chooseTerm)}</select><span>&nbsp;</span></label>` : '') +
+        (showTerm && x.term === 'package' ? `<label class="bk-f"><span>${esc(MV.package)} <span class="req">*</span></span><select data-spkg="${esc(id)}"${bad('package_id') ? ' class="invalid"' : ''}>${optionsHTML(pk, x.packageId, MV.choosePackage)}</select><span>&nbsp;</span></label>` +
+          `<label class="bk-f bk-uses"><span>${esc(B.uses)}</span><input type="number" min="1" step="1" data-suses="${esc(id)}" value="${esc(x.units)}"><span>&nbsp;</span></label>` : '') +
+        `</div>${errs.length ? `<div class="bk-serr">${errs.map(e => `<span>${esc(e.msg)}</span>`).join('')}</div>` : ''}</div>`;
+    }).join('');
+    /* the money: Remaining → after adding (the rates of the rows that will be added) */
+    const c = s.campaigns.find(x => x.campaign_id === h.campaign), add = p.create.reduce((a, x) => { const r = bk.sel.get(x.kol.kol_id), pk = r.term === 'package' && r.packageId ? R.packageById(s, r.packageId) : null;
+      return a + (pk ? R.unitPrice(pk) * (Number(r.units) || 1) : Number(KT.move.money(r.rate)) || 0); }, 0);
+    const committedNow = c ? (R.dealContext(s).committedByCampaign.get(c.campaign_id) || 0) : 0;
+    const remain = c && !R.isBlank(c.budget_kol) ? Number(c.budget_kol) - committedNow : null, after = remain == null ? null : remain - add;
+    const noDue = p.create.filter(x => !bk.sel.get(x.kol.kol_id).postDue).length;
+    /* "2 rows need a rate" · "1 row needs a payment term" — each thing a row misses counts once for that row */
+    const what = f => (f === 'rate_card' ? B.needRate : f === 'package_id' || f === 'package_units' ? B.needPackage : f === 'payment_term' ? B.needTerm : null);
+    const byWhat = new Map();
+    if (bk.submitted) p.create.forEach(x => new Set(rowChecks(x.kol.kol_id, bk.sel.get(x.kol.kol_id)).map(e => what(e.field)).filter(Boolean)).forEach(w => byWhat.set(w, (byWhat.get(w) || 0) + 1)));
+    $('bk_sum').innerHTML = !h.campaign ? `<div class="hint">${esc(B.chooseCampaign)}</div>` :
+      (remain == null ? `<div class="muted small">${esc(B.noBudgetLine)}</div>` : `<div class="bk-budget"><span class="${after < 0 ? 'over' : ''}">${esc(B.remainingLine(R.baht(remain), R.baht(after)))}</span>` +
+        (after < 0 && add > 0 ? `<div class="check warn">! <span>${esc(C.msg.campaignOver(R.baht(-after)))}</span></div>` : '') + `</div>`) +
+      `<div>${esc(B.willAddSkip(p.create.length, p.skip.length))}</div>` + (noDue ? `<div class="muted small">${esc(B.withoutDue(noDue))}</div>` : '') +
+      [...byWhat.entries()].map(([w, k]) => `<div class="check err">✕ <span>${esc(B.rowsNeed(k, w))}</span></div>`).join('');
+    $('bk_checks').innerHTML = over ? checksHTML({ errs: [{ msg: B.maxPerBatch(R.MAX_BULK) }], warns: [], infos: [] }, '') : p.errs.length && n ? checksHTML({ errs: p.errs, warns: [], infos: [] }, '') : '';
+    const addB = $('bk_add'); addB.textContent = B.addDeals(p.create.length); addB.disabled = over || !p.create.length || p.errs.length > 0;
+    $('bk_addopen').disabled = addB.disabled;
   }
 
-  /* ---------- events (the modal sends its clicks here while this tab is open) ---------- */
+  /* ---------- events ---------- */
   function click(e) {
-    const t = e.target; if (!bk) return;
-    if (t.id === 'bk_page') { const on = t.checked; bk.rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE).forEach(r => (on ? bk.sel.add(r.k.kol_id) : bk.sel.delete(r.k.kol_id))); bk.dirty = true; drawList(); return; }
-    const cb = t.closest('[data-bksel]'); if (cb) { cb.checked ? bk.sel.add(cb.dataset.bksel) : bk.sel.delete(cb.dataset.bksel); bk.dirty = true; drawList(); return; }
-    if (t.closest('[data-bkall]')) { bk.rows.forEach(r => bk.sel.add(r.k.kol_id)); bk.dirty = true; drawList(); return; }
-    if (t.closest('[data-bkclearsel]')) { bk.sel.clear(); bk.dirty = true; drawList(); return; }
-    const rm = t.closest('[data-bkrm]'); if (rm) { bk.sel.delete(rm.dataset.bkrm); bk.dirty = true; drawList(); return; }
-    const pg = t.closest('[data-bkpage]'); if (pg) { bk.page += +pg.dataset.bkpage; drawList(); return; }
-    if (t.closest('[data-bkclear]')) { bk.f = Object.assign(blank(), { notIn: bk.f.notIn }); bk.page = 0; draw(m); return; }
-    const row = t.closest('[data-bkrow]'); if (row && !t.closest('a,button,input')) { const id = row.dataset.bkrow; bk.sel.has(id) ? bk.sel.delete(id) : bk.sel.add(id); bk.dirty = true; drawList(); return; }
-    if (t.closest('[data-bkadd]')) { if (!$('bk_add').disabled) { bk.stage = 'preview'; draw(m, true); } return; }
-    if (t.closest('[data-bkback]')) { bk.stage = 'pick'; draw(m, true); return; }
-    if (t.closest('[data-bkconfirm]')) confirm();
+    const t = e.target; if (!bk) return false;
+    if (api && api.headerClick(e)) return true;
+    if (t.id === 'bk_page') { const on = t.checked; bk.rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE).forEach(r => (on ? addSel(r.k.kol_id) : bk.sel.delete(r.k.kol_id))); bk.dirty = true; drawList(); return true; }
+    const cb = t.closest('[data-bksel]'); if (cb) { cb.checked ? addSel(cb.dataset.bksel) : bk.sel.delete(cb.dataset.bksel); bk.dirty = true; drawList(); return true; }
+    if (t.closest('[data-bkall]')) { bk.rows.slice(0, R.MAX_BULK).forEach(r => addSel(r.k.kol_id)); bk.dirty = true; drawList(); return true; }
+    if (t.closest('[data-bkclearsel]')) { bk.sel.clear(); bk.dirty = true; drawList(); return true; }
+    const rm = t.closest('[data-bkrm]'); if (rm) { bk.sel.delete(rm.dataset.bkrm); bk.dirty = true; drawList(); return true; }
+    const pg = t.closest('[data-bkpage]'); if (pg) { bk.page += +pg.dataset.bkpage; drawList(); return true; }
+    if (t.closest('[data-bkclear]')) { bk.f = blank(); bk.page = 0; draw(api); return true; }
+    if (t.closest('[data-bklatest]')) { bk.sel.forEach(x => { if (x.latest != null) x.rate = String(x.latest); }); bk.dirty = true; drawSide(); return true; }
+    if (t.closest('[data-bkclearrates]')) { bk.sel.forEach(x => { x.rate = ''; }); bk.dirty = true; drawSide(); return true; }
+    const da = t.closest('[data-bkdueall]'); if (da) { dueAll(da); return true; }
+    const row = t.closest('[data-bkrow]'); if (row && !t.closest('a,button,input')) { const id = row.dataset.bkrow; bk.sel.has(id) ? bk.sel.delete(id) : addSel(id); bk.dirty = true; drawList(); return true; }
+    const ad = t.closest('[data-bkadd]'); if (ad) { if (!ad.disabled) confirm(ad.dataset.bkadd === 'open'); return true; }
+    return false;
+  }
+  function dueAll(anchor) {
+    if (!bk.sel.size) return;
+    U.popForm(anchor, { title: B.setDueTitle, ok: B.apply, focus: '.dtext', body: `<div class="field"><label>${esc(B.postDue)}</label>${dateHTML('id="bk_dueall"', '', { label: B.postDue })}</div>`,
+      onOk: m => { const v = m.querySelector('#bk_dueall').value; if (!R.isISODate(v)) { U.popFormError(m, C.msg.dateInvalid(B.postDue)); return false; } bk.sel.forEach(x => { x.postDue = v; }); bk.dirty = true; drawSide(); return true; } });
+  }
+  function onInput(e) {
+    if (!bk) return;
+    const r = e.target.closest('[data-srate]'); if (r) { bk.sel.get(r.dataset.srate).rate = r.value; bk.dirty = true; return; }
+    const u = e.target.closest('[data-suses]'); if (u) { bk.sel.get(u.dataset.suses).units = u.value; bk.dirty = true; return; }
+    const du = e.target.closest('[data-sdue]'); if (du && R.isISODate(du.value)) { bk.sel.get(du.dataset.sdue).postDue = du.value; const ph = document.querySelector(`[data-sphase="${CSS.escape(du.dataset.sdue)}"]`); if (ph) ph.textContent = KT.move.phaseHint(api.header().campaign, du.value); }
   }
   function onChange(e) {
-    const t = e.target, map = { bk_fplatform: 'platform', bk_ftier: 'tier', bk_ftype: 'type', bk_fcat: 'category', bk_fpic: 'pic', bk_fstatus: 'status', bk_flast: 'lastWorked', bk_fperf: 'perf' };
+    const t = e.target, map = { bk_fplatform: 'platform', bk_ftier: 'tier', bk_ftype: 'type', bk_fcat: 'category', bk_fowner: 'owner', bk_fstatus: 'status', bk_flast: 'lastWorked', bk_fperf: 'perf' };
     if (!bk) return;
-    if (map[t.id]) { bk.f[map[t.id]] = t.value; bk.page = 0; drawList(); return; }
-    if (t.id === 'bk_notin') { bk.f.notIn = t.checked; bk.page = 0; drawList(); return; }
-    if (t.id === 'bk_camp') { bk.campaign = t.value; bk.phase = ''; if (bk.pillarFromPhase) { bk.pillar = ''; bk.pillarFromPhase = false; } bk.dirty = true; draw(m); return; }
-    /* CR-11 §4.11 — the Phase's default pillar (a pillar picked by hand stays) */
-    if (t.id === 'bk_phase') { bk.phase = t.value; bk.dirty = true;
-      if (bk.pillarFromPhase || !bk.pillar) { const p = bk.phase ? R.phaseDefaultPillar(state(), bk.phase) : null; bk.pillar = p || ''; bk.pillarFromPhase = !!p; draw(m); } return; }
-    if (t.id === 'bk_pic') { bk.pic = t.value; bk.dirty = true; drawSide(); return; }
-    if (t.id === 'bk_pillar') { bk.pillar = t.value; bk.pillarFromPhase = false; bk.dirty = true; draw(m); }
+    if (map[t.id]) { bk.f[map[t.id]] = t.value; bk.page = 0; drawList(); drawTools(); return; }
+    if (t.id === 'bk_notin') { bk.f.notIn = t.checked; bk.page = 0; drawList(); drawTools(); return; }
+    if (t.id === 'bk_posted') { bk.f.postedOnly = t.checked; bk.page = 0; drawList(); drawTools(); return; }
+    const r = t.closest('[data-srate]'); if (r) { r.value = KT.move.fmtMoney(r.value); drawSide(); return; }
+    const du = t.closest('[data-sdue]'); if (du) { bk.sel.get(du.dataset.sdue).postDue = R.isISODate(du.value) ? du.value : ''; bk.dirty = true; drawSide(); return; }
+    const tm = t.closest('[data-sterm]'); if (tm) { const x = bk.sel.get(tm.dataset.sterm); x.term = tm.value; if (x.term !== 'package') x.packageId = ''; bk.dirty = true; drawSide(); return; }
+    const pk = t.closest('[data-spkg]'); if (pk) { bk.sel.get(pk.dataset.spkg).packageId = pk.value; bk.dirty = true; drawSide(); return; }
+    const u = t.closest('[data-suses]'); if (u) { drawSide(); }
   }
-  /* create the deals · a Phase picked = one planned post on the KOL's biggest account in that Phase · then Deals › Table with Undo */
-  function confirm() {
+  /* the header changed (Campaign · Start at …): the list (Not in this campaign) and the panel follow */
+  const headerChanged = () => { if (bk && $('bk_list')) { drawList(); drawTools(); } };
+
+  /* ---------- Add n deals (§4.2 · §4.10): the rows that miss what Start at needs → red, scrolled to · else every deal at once, Undo ---------- */
+  function confirm(openFirst) {
     if (!guard('deal.edit')) return;
-    const s = state(), p = plan(); if (!p.create.length || p.errs.length) return;
-    const n = p.create.length, batchId = 'B' + Date.now().toString(36), firstLog = store.newLogId();
+    const s = state(), h = api.header(), p = plan(); if (!p.create.length || p.errs.length) return;
+    bk.submitted = true;
+    const bad = p.create.filter(x => rowChecks(x.kol.kol_id, bk.sel.get(x.kol.kol_id)).length);
+    if (bad.length || api.headerErrors().length) { drawSide(); api.showHeaderErrors(); const el = document.querySelector(`[data-srow="${CSS.escape(bad.length ? bad[0].kol.kol_id : '')}"]`); if (el) el.scrollIntoView({ block: 'center' }); return; }
+    const n = p.create.length, batchId = 'B' + Date.now().toString(36), firstLog = store.newLogId(), step = R.stepOf(s.lookups, h.startAt) || R.shortlistStep(s.lookups);
     const dealIds = []; for (let i = 0; i < n; i++) { const id = store.newId('deal'); dealIds.push(id); s.deals.push({ deal_id: id, _reserve: true }); }
     s.deals = s.deals.filter(d => !d._reserve);
-    const made = R.bulkShortlistDeals(s, p, bk.campaign, { batchId, dealIds, logIds: dealIds.map((_, i) => firstLog + i), date: today(), now: new Date(), user: userId(), pillar: bk.pillar });
     let postN = parseInt(store.newId('post').slice(1), 10);
-    const only = R.onlyProduct(s, bk.campaign);   // CR-11 §4.11: the Campaign's only product goes on every deal
-    made.forEach(({ deal, log }) => {
-      s.deals.push(deal); s.deal_status_log.push(log);
-      if (only) s.deal_products.push({ deal_id: deal.deal_id, tr_code: only, qty: 1, note: null });
-      if (bk.phase) {
-        const acc = R.accountsOfKol(s, deal.kol_id).slice().sort((a, b) => (Number(b.followers) || 0) - (Number(a.followers) || 0))[0];
-        if (acc) s.deal_posts.push(Object.assign(R.blankPost(deal.deal_id, acc.account_id, acc.platform, null), { post_id: 'P' + String(postN++).padStart(6, '0'), phase_override: bk.phase, metrics_source: null, metrics_updated_by: null }));
-      }
+    const made = [];
+    p.create.forEach((x, i) => {
+      const r = bk.sel.get(x.kol.kol_id), pk = r.term === 'package' && r.packageId ? R.packageById(s, r.packageId) : null, units = Number(r.units) || 1;
+      const rate = pk ? Math.round(R.unitPrice(pk) * units * 100) / 100 : R.isBlank(KT.move.money(r.rate)) ? null : Number(KT.move.money(r.rate));
+      const acc = R.accountsOfKol(s, x.kol.kol_id).slice().sort((a, b) => (Number(b.followers) || 0) - (Number(a.followers) || 0))[0];
+      const withPost = !!acc && (!!r.postDue || !!h.phase);
+      const out = R.newDeal(s, { dealId: dealIds[i], logId: firstLog + i, campaignId: h.campaign, kolId: x.kol.kol_id, sub: step.sub_status, pic: h.assign || x.pic || null,
+        prefill: { pillar: h.pillar || null, payment_term: R.isTerm(r.term) ? r.term : null, rate_card: rate, expected_post_date: r.postDue || null, package_id: pk ? pk.package_id : null, package_units: pk ? units : 1, created_batch_id: batchId },
+        accountIds: withPost ? [acc.account_id] : [], postIds: withPost ? ['P' + String(postN++).padStart(6, '0')] : [], phaseOverrides: [h.phase || null], date: today(), now: new Date(), user: userId(), note: C.bulk.logNote });
+      if (!R.isTerm(r.term)) out.deal.payment_term = R.isTerm(x.term) ? x.term : null;
+      out.posts.forEach(pp => Object.assign(pp, { metrics_source: null, metrics_updated_by: null }));
+      s.deals.push(out.deal); s.deal_status_log.push(out.log); out.posts.forEach(pp => s.deal_posts.push(pp));
+      R.setDealProducts(s, out.deal.deal_id, (h.products || []).map(c => ({ tr_code: c, qty: 1, note: null })));
+      made.push(out.deal);
     });
-    const snap = new Map(made.map(x => [x.deal.deal_id, JSON.stringify(x.deal)])), campaignId = bk.campaign;
-    KT.screens.deals.closeNewDeal(); commit();
-    KT.screens.deals.showBatch(campaignId, dealIds);
+    const snap = new Map(made.map(d => [d.deal_id, JSON.stringify(d)])), campaignId = h.campaign, after = api.after;
+    KT.newDeal.close(); commit();
+    if (after) after(dealIds[0]);
+    if (openFirst) { KT.screens.deals.showBatch(campaignId, dealIds, dealIds[0]); }
+    else KT.screens.deals.showBatch(campaignId, dealIds);
     toastAction(B.added(n), C.deal.undo, () => {
       const st = state(), keep = new Set(R.batchUntouched(st, batchId, snap).map(d => d.deal_id));
       st.deals = st.deals.filter(d => !keep.has(d.deal_id)); st.deal_status_log = st.deal_status_log.filter(l => !keep.has(l.deal_id)); st.deal_posts = st.deal_posts.filter(x => !keep.has(x.deal_id));
@@ -166,5 +228,5 @@ KT.bulk = (function () {
     }, 10000);
   }
 
-  return { open, init, reset, isDirty, draw, click };
+  return { open, init, reset, isDirty, draw, click, selectKols, headerChanged };
 })();

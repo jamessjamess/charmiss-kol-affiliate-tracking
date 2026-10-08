@@ -10,7 +10,7 @@
   describe('CR-05 R1 · KOL Manager, View as role, schema v5', () => {
     test('TC-02: the matrix has 4 roles and the rows of §4.1', () => {
       assert.deepEqual(R.ROLES.slice(0, 4), ['admin', 'kol_manager', 'staff', 'viewer']);   // CR-09 §4.16 adds Accounting after these
-      const grid = R.PERMISSIONS.filter(p => p.key !== 'campaign.products').slice(0, 10).map(p => [p.key].concat(R.ROLES.slice(0, 4).map(r => (p[r] ? 1 : 0))));   // CR-08 §4.9 adds the Payments rows after these · CR-09 §4.7 Campaign products
+      const grid = R.PERMISSIONS.filter(p => !['campaign.products', 'campaign.draft', 'settings.ops'].includes(p.key)).slice(0, 10)   /* CR-17 adds campaign.draft (Staff) · settings.ops */.map(p => [p.key].concat(R.ROLES.slice(0, 4).map(r => (p[r] ? 1 : 0))));   // CR-08 §4.9 adds the Payments rows after these · CR-09 §4.7 Campaign products
       assert.deepEqual(grid, [
         ['view', 1, 1, 1, 1], ['deal.edit', 1, 1, 1, 0], ['kol.edit', 1, 1, 1, 0], ['deal.money', 1, 1, 0, 0], ['kol.merge', 1, 1, 0, 0],
         ['campaign.edit', 1, 1, 0, 0], ['settings.lists', 1, 1, 0, 0], ['settings.tiers', 1, 0, 0, 0], ['data.restore', 1, 0, 0, 0], ['roles', 1, 0, 0, 0]]);
@@ -35,7 +35,7 @@
       assert.equal(v.role, 'viewer'); assert.equal(v.user_id, 'U000'); assert.equal(A.role, 'admin', 'the user record is not changed');
       assert.equal(R.can(v, 'deal.edit'), false);
       assert.equal(R.actingAs(A, null), A);
-      const r = R.applyMove(s, deal(s, 'D000044'), 'Approve Draft 1', { date: '2026-10-05', note: '', pillar: 'Awareness' }, { logId: 9999, quoteId: 'Q99999', eventId: 1, now: new Date(), user: A.user_id });
+      const r = R.applyMove(s, deal(s, 'D000044'), 'Draft 1', { date: '2026-10-05', note: '', pillar: 'Awareness' }, { logId: 9999, quoteId: 'Q99999', eventId: 1, now: new Date(), user: A.user_id });
       assert.equal(r.log.changed_by, 'U000', 'TC-04: the log carries the admin, not the role');
     });
     test('migration v4 → v5: short_code removed · status fields null · no role_override anywhere in the state or a Backup (TC-08)', () => {
@@ -106,7 +106,7 @@
       const s = fresh(), rows = [600000, 300000, 200000].map((a, i) => row('P' + i, `2026-11-0${i * 3 + 1}`, `2026-11-0${i * 3 + 2}`, a));
       const v = R.validatePhasePlan(s, camp('New Campaign', 1000000), rows, []);
       assert.deepEqual(v.errs, []);
-      assert.deepEqual(v.warns.map(w => [w.kind, w.msg]), [['over', C.msg.planOver('฿100,000')]]);
+      assert.deepEqual(v.warns.map(w => [w.kind, w.msg, w.red]), [['over', C.planner.barOver('฿100,000'), true]]);   // CR-18 §4.2: red, in English
     });
     test('TC-20: Split evenly · Fill remaining', () => {
       assert.deepEqual(R.splitEvenly(4), [25, 25, 25, 25]);
@@ -126,8 +126,8 @@
     test('overlap and gap are reported by name · % without a Campaign budget warns · unallocated is info', () => {
       const s = fresh();
       const v = R.validatePhasePlan(s, camp('X', 1000), [row('A', '2026-11-01', '2026-11-10', 200), row('B', '2026-11-08', '2026-11-12', 300), row('C', '2026-11-20', '2026-11-25', 100)], []);
-      assert.deepEqual(v.warns.map(w => w.msg), [C.msg.phaseOverlap('Phase 1 · A', 'Phase 2 · B', '08/11', '10/11')]);
-      assert.deepEqual(v.infos.map(i => i.msg), [C.msg.planUnallocated('฿400'), C.msg.planGap('13/11', '19/11')]);
+      assert.deepEqual(v.warns.map(w => w.msg), [C.planner.barUnder('฿400', '฿600', '฿1,000'), C.msg.phaseOverlap('Phase 1 · A', 'Phase 2 · B', '08/11', '10/11')]);   // CR-18: short of the budget = red
+      assert.deepEqual(v.infos.map(i => i.msg), [C.msg.planGap('13/11', '19/11')]);
       assert.deepEqual(R.validatePhasePlan(s, camp('X', ''), [row('A', '2026-11-01', '2026-11-10', '', { budget_pct: '50' })], [], { pctUsed: true }).warns.map(w => w.msg), [C.msg.planPctNoBudget]);
       assert.equal(R.validatePhasePlan(s, camp('Kiss Signal Lip Gloss', 1), [], []).errs[0].msg, C.msg.campaignNameDup('Kiss Signal Lip Gloss'));
     });
@@ -186,10 +186,12 @@
     });
     test('TC-34: Operations (PIC All) — queue sizes · Overdue most late first', () => {
       const s = fresh(), Q = R.opsQueues(s, { campaign: '', pic: '', tier: '' }, TD);
-      assert.deepEqual(R.QUEUES.map(k => [k, Q[k].length]), [['overdue', 11], ['unpaid', 130], ['beforeBrief', 0], ['termNotSet', 70], ['pillarNotSet', 252], ['noDate', 48], ['needsPhase', 0], ['outside', 24], ['noProducts', 4]], 'CR-06 adds the Campaign queue noProducts');
+      assert.deepEqual(R.QUEUES.map(k => [k, Q[k].length]), [['overdue', 5], ['unpaid', 130], ['beforeBrief', 0], ['termNotSet', 70], ['pillarNotSet', 252], ['noDate', 48], ['needsPhase', 0], ['outside', 24], ['noProducts', 4]], 'CR-06 adds the Campaign queue noProducts');
       const rows = R.queueRows(s, 'overdue', Q.overdue, TD);
-      assert.equal(rows[0].deal.deal_id, 'D000098');
-      assert.equal(rows[0].issue, C.ops.issueOverdue('Approve Draft 1', '17/06/2026', 110));
+      /* CR-15: D000098 (Brief) waits on Script, which has no due date — the most late is now D000051's Draft 2 */
+      assert.equal(rows[0].deal.deal_id, 'D000051');
+      assert.equal(rows[0].issue, C.ops.issueOverdue('Draft 2', '20/09/2026', 15));
+      assert.ok(R.queueRows(s, 'overdue', Q.overdue, TD).some(r => r.issue === C.ops.issueOverdue('Post', '24/09/2026', 11)), 'Draft 1 (1 round) → Approve with no date → the Post due');
       assert.ok(rows.every((r, i) => !i || rows[i - 1].rank >= r.rank));
     });
     test('TC-35 / TC-36: Pang only sees Pang · Workload open deals add up to 70', () => {
@@ -237,7 +239,7 @@
       s.campaigns.push({ campaign_id: 'CMP-0001', campaign_name: 'Next Launch', budget_kol: 100, status_override: null });
       s.phases.push({ phase_id: 'PHS-0001', campaign_id: 'CMP-0001', label: 'P1', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 100 });
       assert.deepEqual(R.sortCampaigns(s.campaigns, s.phases, TD).map(c => c.campaign_id), ['CH', 'PH', 'CMP-0001', 'KS', 'AC']);
-      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'on_hold', 'complete', 'cancelled']);
+      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled']);   // CR-17 v1.2: + Pending approval · Rejected in the order of the tabs
       const p = R.portfolio(s, '2026-07-08', TD, TD), pAll = R.portfolio(s, '2026-07-08', TD, TD, true);
       assert.equal(p.rows.some(r => r.campaign.campaign_id === 'AC'), false);
       assert.equal(pAll.total.committed - p.total.committed, 7800, 'Include cancelled adds Acne back');

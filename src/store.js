@@ -84,18 +84,46 @@
      phases.default_pillar  a label with exactly one pillar word → that pillar (seed: KS Phase 1 Awareness · KS Phase 2 Conversion) · else null — deals untouched
      campaigns.default_payment_term = null · lookups.metrics_checkpoints = [7] (days after the post)
      deal_events         type 'payment_hold' (from → to, note = the reason) · 'shipment'
-     the stored data from before is kept once in localStorage (charmiss_kol_tracker_v1_before_v12) — Settings › Data can download it */
+     the stored data from before is kept once in localStorage (charmiss_kol_tracker_v1_before_v12) — Settings › Data can download it
+   schema_version 13 (CR-14) — kol_master.contact_id (LINE ID · Agency + person · work e-mail · DM handle · never a phone number) = null for every KOL
+                         (rules-kol.js migrateV13 · nothing is read from the notes)
+   schema_version 14 (CR-15) — the journey of today (rules-journey.js migrateV14): lookups.journey_steps = Shortlist · Contacted · Confirm QT · Brief ·
+                         Script · Draft 1–3 · Approve · Post · Cancel (a label someone typed stays with its step) · sub_status Approve Script → Script ·
+                         Approve Draft n → Draft n in deals and deal_status_log (dates untouched) · deals + expected_script_date · script_date ·
+                         expected_approve_date · approved_date (null) · deals.script_required is no longer used (kept) ·
+                         a copy of the data from before stays in localStorage (charmiss_kol_tracker_v1_before_v14)
+   schema_version 15 (CR-16) — rules-profile.js migrateV15: payee_profiles + label ("Primary") · is_default (one a KOL) · archived ·
+                         shipping_addresses (new: address_id AD-0001 · kol_id · label · is_default · archived · secure {recipient · phone · address},
+                         encrypted) — the shipping details a payee held (secure_ship) move there as they are (never decrypted) ·
+                         deals.payee_id · sample_shipments.address_id · kol_master.photo (metadata; the picture is in IndexedDB kol_photos) = null ·
+                         a copy of the data from before replaces the v14 one (charmiss_kol_tracker_v1_before_v15)
+   schema_version 16 (CR-17) — rules-ops.js migrateV16: lookups.ops_mode simple / simple · payment_lines paid_by · paid_ref · sent_at (= the run's submitted_at
+                         when it was With Accounting) · sent_by · unpaid_reason · campaigns / phases approval_status 'approved' · approval · pending_change null
+   schema_version 17 (CR-18) — rules-budget.js migrateV17: campaign_budget_changes (new: change_id BG-0001 · campaign_id · type initial / increase / decrease ·
+                         amount · allocations [{ phase_id | 'unallocated', amount }] · reason · note · status pending / approved / rejected / cancelled ·
+                         requested_by · requested_at · decided_by · decided_at · reject_reason · budget_before · budget_after) — one approved initial row
+                         (by "system") for every Campaign with a budget · campaigns.budget_kol = the approved total · phases.budget_kol = approved
+   schema_version 18 (CR-19) — rules-overview.js migrateV18: lookups.pillar_list + "Awareness & Consideration" (after Awareness) · a Phase with no
+                         default_pillar whose label says Awareness and Consideration gets it · campaigns.pillar_target / lookups.pillar_target_default kept, unused
+   schema_version 19 (CR-20) — rules-package.js migrateV19: kol_packages (new: package_id PKG000001 · kol_id · name · units_total · price_total · start_date ·
+                         valid_until · payee_id · payment_status to_pay / sent / paid · paid_date · note · archived · created_by · created_at · updated_at) ·
+                         step_notes (new: deal_id + step_key draft_1 / draft_2 / draft_3 · note · links [] · image_ids [] · updated_by · updated_at — the images
+                         themselves are in IndexedDB step_images, never here) · deals + package_id null · package_units 1 · package_paid false · script_link null ·
+                         payment_lines + package_id null · payment term 'package' (R.PAYMENT_TERMS) */
+
 KT.store = (function (R) {
   'use strict';
   const KEY = 'charmiss_kol_tracker_v1';
   const CORRUPT_KEY = KEY + '_corrupt';
   const BEFORE_KEY = KEY + '_before_v12';   // CR-11 §3: the data as it was before schema 12
+  const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
+  const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 12;
+  const SCHEMA_VERSION = 19;
   const QUOTA_MB = 5;
-  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists'];
+  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes'];
   /* collections that older versions do not have yet (they are created by migrate) */
-  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12 };
+  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12, shipping_addresses: 15, campaign_budget_changes: 17, kol_packages: 19, step_notes: 19 };
   /* client-side IDs continue from the highest number in use */
   const ID_FORMATS = {
     kol: { prefix: 'K', coll: 'kol_master', key: 'kol_id', width: 4 },
@@ -103,6 +131,7 @@ KT.store = (function (R) {
     quote: { prefix: 'Q', coll: 'kol_rate_quotes', key: 'quote_id', width: 5 },
     deal: { prefix: 'D', coll: 'deals', key: 'deal_id', width: 6 },
     payee: { prefix: 'PY-', coll: 'payee_profiles', key: 'payee_id', width: 4 },
+    address: { prefix: 'AD-', coll: 'shipping_addresses', key: 'address_id', width: 4 },   // CR-16 §4.3
     line: { prefix: 'PL-', coll: 'payment_lines', key: 'line_id', width: 6 },
     post: { prefix: 'P', coll: 'deal_posts', key: 'post_id', width: 6 },
     user: { prefix: 'U', coll: 'users', key: 'user_id', width: 3 },
@@ -135,11 +164,12 @@ KT.store = (function (R) {
     return errs;
   }
   /* v1 → v2 (see the top of this file) */
+  /* (old data: the step names of before CR-15 — v14 renames them later) */
   const draftRoundsOf = d => (d.expected_draft3_date || d.approved_draft3_date || d.sub_status === 'Approve Draft 3') ? 3
     : (d.expected_draft2_date || d.approved_draft2_date || d.sub_status === 'Approve Draft 2') ? 2 : 1;
   function toV2(obj) {
-    const script = new Set();
-    obj.deal_status_log.forEach(l => { if (l.sub_status === R.SCRIPT_STEP || l.from_sub_status === R.SCRIPT_STEP) script.add(l.deal_id); });
+    const script = new Set(), OLD_SCRIPT = 'Approve Script';
+    obj.deal_status_log.forEach(l => { if (l.sub_status === OLD_SCRIPT || l.from_sub_status === OLD_SCRIPT) script.add(l.deal_id); });
     const kolTerm = new Map();
     obj.kol_master.forEach(k => {
       if (k.default_payment_term === undefined) k.default_payment_term = null;
@@ -263,6 +293,20 @@ KT.store = (function (R) {
   function toV11(obj) { R.migrateSamples(obj); obj.schema_version = 11; }
   /* v11 → v12 (see the top of this file) — go_live = the Bangkok date of the upgrade */
   function toV12(obj, now) { R.migrateV12(obj, R.dateOfTimestamp((now || new Date()).toISOString())); obj.schema_version = 12; }
+  /* v12 → v13 (CR-14 §3) */
+  function toV13(obj) { R.migrateV13(obj); }
+  /* v13 → v14 (CR-15 §3) */
+  function toV14(obj) { R.migrateV14(obj); }
+  /* v14 → v15 (CR-16 §3) */
+  function toV15(obj) { R.migrateV15(obj); }
+  /* v15 → v16 (CR-17 §3): ops_mode simple / simple · payment lines paid_by / paid_ref / sent_at / sent_by / unpaid_reason · Campaigns / Phases approved */
+  function toV16(obj) { R.migrateV16(obj); }
+  /* v16 → v17 (CR-18 §3): campaign_budget_changes · an approved initial row for every Campaign with a budget (the numbers do not change) */
+  function toV17(obj, now) { R.migrateV17(obj, (now || new Date()).toISOString()); }
+  /* v17 → v18 (CR-19 §4.6): pillar_list + Awareness & Consideration · Phase default pillars that say it · deals untouched */
+  function toV18(obj) { R.migrateV18(obj); }
+  /* v18 → v19 (CR-20 §3): kol_packages · step_notes · deals package_id / package_units / package_paid / script_link · payment_lines package_id */
+  function toV19(obj) { R.migrateV19(obj); }
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -276,6 +320,13 @@ KT.store = (function (R) {
     if (obj.schema_version === 9) toV10(obj);
     if (obj.schema_version === 10) toV11(obj);
     if (obj.schema_version === 11) toV12(obj, now);
+    if (obj.schema_version === 12) toV13(obj);
+    if (obj.schema_version === 13) toV14(obj);
+    if (obj.schema_version === 14) toV15(obj);
+    if (obj.schema_version === 15) toV16(obj);
+    if (obj.schema_version === 16) toV17(obj, now);
+    if (obj.schema_version === 17) toV18(obj);
+    if (obj.schema_version === 18) toV19(obj);
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }
@@ -322,6 +373,8 @@ KT.store = (function (R) {
         const was = obj.schema_version;
         /* CR-11 §3 — before the go-live upgrade, a copy of what was stored stays aside (once; no room = no copy, the upgrade still runs) */
         if (was < 12) { try { if (!storage.getItem(BEFORE_KEY)) storage.setItem(BEFORE_KEY, raw); status.beforeCopy = BEFORE_KEY; } catch (_) { status.beforeCopy = null; } }
+        /* CR-15 §3 — and before the journey upgrade (v14) */
+        if (was < 15) { try { if (!storage.getItem(BEFORE15_KEY)) { storage.removeItem(BEFORE14_KEY); storage.setItem(BEFORE15_KEY, raw); } status.beforeCopy = BEFORE15_KEY; } catch (_) { /* no room: the upgrade still runs */ } }
         state = migrate(obj, now()); status.source = 'local';
         /* save the upgraded data right away so the next open does not migrate again */
         if (was < SCHEMA_VERSION) { status.migratedFrom = was; save(); }
@@ -345,12 +398,16 @@ KT.store = (function (R) {
       try { obj = JSON.parse(text); } catch (e) { return { ok: false, errors: ['not_json'] }; }
       const errors = shapeErrors(obj);
       if (errors.length) return { ok: false, errors };
-      return { ok: true, counts: counts(obj), current: counts(state), backupAt: obj.local && obj.local.last_backup_at, obj };
+      const photos = obj.photos && typeof obj.photos === 'object' && !Array.isArray(obj.photos) ? Object.keys(obj.photos).length : 0;   // CR-16 §4.4
+      return { ok: true, counts: counts(obj), current: counts(state), backupAt: obj.local && obj.local.last_backup_at, photos, obj };
     }
     function restore(text, fileName) {
       const p = previewRestore(text);
       if (!p.ok) return p;
       const was = p.obj.schema_version, me = state && state.meta && state.meta.current_user_id;
+      /* CR-16 §4.4 — the pictures of a backup "with photos" go back to IndexedDB (ui.js), never into the state / localStorage */
+      const photos = p.photos ? p.obj.photos : null; delete p.obj.photos;
+      const stepImages = p.obj.step_images && typeof p.obj.step_images === 'object' && !Array.isArray(p.obj.step_images) ? p.obj.step_images : null; delete p.obj.step_images;   // CR-20 §4.13
       state = migrate(p.obj, now());
       const scrubbed = R.scrubSensitive(state);   // CR-08 §4.4
       /* the person in this browser stays the same when the backup has that user (active) */
@@ -359,7 +416,7 @@ KT.store = (function (R) {
       state.local.restored_from = fileName || null;
       status.corrupt = false;
       save();
-      return { ok: true, counts: counts(state), migratedFrom: was < SCHEMA_VERSION ? was : null, scrubbed };
+      return { ok: true, counts: counts(state), migratedFrom: was < SCHEMA_VERSION ? was : null, scrubbed, photos, stepImages };
     }
     function reset() {
       const keepBackupAt = state.local.last_backup_at;
@@ -369,8 +426,8 @@ KT.store = (function (R) {
       save();
     }
     function newId(kind) { const f = ID_FORMATS[kind]; return nextId(f.prefix, state[f.coll], f.key, f.width); }
-    /* the copy kept before the schema 12 upgrade (text) · null when there is none */
-    function beforeCopy() { try { return storage ? storage.getItem(BEFORE_KEY) : null; } catch (e) { return null; } }
+    /* the copy kept before an upgrade (text — the newest: before v14, else before v12) · null when there is none */
+    function beforeCopy() { try { return storage ? storage.getItem(BEFORE15_KEY) || storage.getItem(BEFORE14_KEY) || storage.getItem(BEFORE_KEY) : null; } catch (e) { return null; } }
 
     return {
       get state() { return state; },
@@ -383,6 +440,6 @@ KT.store = (function (R) {
     };
   }
 
-  return { KEY, CORRUPT_KEY, BEFORE_KEY, THEME_KEY, SCHEMA_VERSION, QUOTA_MB, COLLECTIONS, ADDED_IN, ID_FORMATS, PILLAR_TARGET_DEFAULT, CTA_DEFAULT, ADMIN_USER,
+  return { KEY, CORRUPT_KEY, BEFORE_KEY, BEFORE14_KEY, BEFORE15_KEY, THEME_KEY, SCHEMA_VERSION, QUOTA_MB, COLLECTIONS, ADDED_IN, ID_FORMATS, PILLAR_TARGET_DEFAULT, CTA_DEFAULT, ADMIN_USER,
     fromSeed, shapeErrors, migrate, counts, nextId, nextNumber, backupFilename, daysSinceBackup, createStore };
 })(KT.rules);

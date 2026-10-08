@@ -62,7 +62,7 @@ Object.assign(KT.rules, (function (R, C) {
      postpaid / not set = Full at Complete · free = nothing · a cancelled deal or a ฿0 deal = nothing (a ฿0 deal is "Needs check") →
      [{ deal_id, milestone, amount, reached (owed now), due_date, paid, paid_date, term_not_set }] — paid comes from the deal's flags */
   function dueLines(state, deal, today) {
-    const term = termOf(deal), total = totalCost(deal);
+    const term = termOf(deal), total = term === 'package' ? R.extrasOf(deal) : totalCost(deal);
     if (term === 'free' || deal.status === 'Cancel' || total <= 0) return [];
     const L = state.lookups, qt = R.stepOf(L, 'Confirm QT'), cur = R.stepOf(L, deal.sub_status), complete = deal.status === 'Complete';
     const atQt = complete || (!!cur && !!qt && !R.isCancelStep(cur) && cur.sort_order >= qt.sort_order);
@@ -70,6 +70,7 @@ Object.assign(KT.rules, (function (R, C) {
     const mk = (milestone, amount, reached, due, paid, paidDate) => ({ deal_id: deal.deal_id, milestone, amount: round2(amount), reached, due_date: reached ? due || null : null,
       paid, paid_date: paid ? paidDate || null : null, term_not_set: !term });
     if (term === 'prepaid') return [mk('full', total, atQt, d.qt, !!deal.paid_full, deal.paid_full_date)];
+    if (term === 'package') return [mk('extras', total, atQt, d.qt, !!deal.paid_full, deal.paid_full_date)];   // CR-20 §4.11: the costs on top of the package, owed at Confirm QT
     if (term === 'split_50') {
       const dep = Math.round(total / 2);
       return [mk('deposit', dep, atQt, d.qt, !!deal.paid_50 || !!deal.paid_full, deal.paid_50_date || deal.paid_full_date), mk('final', total - dep, complete, d.done, !!deal.paid_full, deal.paid_full_date)];
@@ -84,7 +85,8 @@ Object.assign(KT.rules, (function (R, C) {
   /* what payee.secure holds (encrypted) — never stored in plain text */
   const BANK_FIELDS = ['account_name', 'bank_name', 'account_no', 'full_name', 'id_address', 'phone', 'wht_contact', 'tax_id'];
   const BANK_REQUIRED = ['account_name', 'bank_name', 'account_no', 'full_name'];
-  const payeeOfKol = (state, kolId) => (state.payee_profiles || []).find(p => p.kol_id && p.kol_id === kolId) || null;
+  /* CR-16 §4.2 — a KOL may have more than one payee: this is its default (R.defaultPayee) */
+  const payeeOfKol = (state, kolId) => R.defaultPayee(state, kolId);
   const payeeById = (state, id) => (state.payee_profiles || []).find(p => p.payee_id === id) || null;
   /* the handle a payee goes by: the KOL's account with the most followers */
   function mainHandle(state, kolId) {
@@ -93,7 +95,8 @@ Object.assign(KT.rules, (function (R, C) {
   }
   function blankPayee(state, o) {
     const S = paySettings(state.lookups), type = PAYEE_TYPES.includes(o.payee_type) ? o.payee_type : 'individual';
-    return { payee_id: o.payee_id, kol_id: o.kol_id || null, account_handle: o.kol_id ? mainHandle(state, o.kol_id) : trim(o.account_handle).replace(/^@+/, ''), payee_type: type, vat_registered: false,
+    return { payee_id: o.payee_id, kol_id: o.kol_id || null, label: trim(o.label) || 'Primary', is_default: o.is_default !== false, archived: false,   // CR-16
+      account_handle: o.kol_id ? mainHandle(state, o.kol_id) : trim(o.account_handle).replace(/^@+/, ''), payee_type: type, vat_registered: false,
       default_wht_rate: type === 'company' ? S.default_wht_company : S.default_wht_individual, price_basis: 'gross', bank_name: null, account_last4: null,
       docs: { id_copy: null, bank_book: null, company_cert: null, vat_cert: null }, docs_link: null, secure: null,
       details_version: 0, details_updated_at: null, details_updated_by: null, needs_verification: false, verified_at: null, verified_by: null,
@@ -143,7 +146,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   /* ===================== payee-details CSV (§4.4 Import) ===================== */
-  const PAYEE_CSV_COLS = ['account_handle', 'payee_type', 'full_name', 'id_address', 'phone', 'wht_contact', 'bank_name', 'account_name', 'account_no', 'tax_id', 'docs_link'];
+  const PAYEE_CSV_COLS = ['account_handle', 'payee_type', 'full_name', 'id_address', 'phone', 'wht_contact', 'bank_name', 'account_name', 'account_no', 'tax_id', 'docs_link', 'payee_label'];   // CR-16: + payee_label (not required)
   const normHandle = h => trim(h).replace(/^@+/, '').toLowerCase();
   /* table (first row = header) → rows: match (a KOL by account handle) · new (no KOL, or an unlinked payee by handle) · error ·
      has_details = that payee already has bank details (Skip or Replace is chosen in the dialog) */
@@ -166,8 +169,11 @@ Object.assign(KT.rules, (function (R, C) {
       if (!PAYEE_TYPES.includes(type)) errs.push(M.payeeType);
       validateBankDetails(row).errs.forEach(e => errs.push(e.msg));
       if (!isBlank(row.docs_link) && (looksSensitive(row.docs_link) || !R.isHttpLink(row.docs_link))) errs.push(M.payeeLink);
+      /* CR-16 §4.2 — payee_label: the label of a payee added to a KOL that has one already (Add as another payee) */
+      const label = trim(row.payee_label) || null;
+      if (label && (label.length > R.PAYEE_LABEL_MAX || looksSensitive(label))) errs.push(M.payeeImportLabel);
       rows.push({ n, handle: trim(row.account_handle).replace(/^@+/, ''), kol, payee, kind: errs.length ? 'error' : kol ? 'match' : 'new', has_details: !!(payee && payee.secure),
-        payee_type: type, docs_link: row.docs_link || null, details: bankRecord(row), errs });
+        payee_type: type, docs_link: row.docs_link || null, label, details: bankRecord(row), errs });
     });
     return { headerError: null, rows };
   }
@@ -178,7 +184,8 @@ Object.assign(KT.rules, (function (R, C) {
   const dealOf = (state, id) => (id ? state.deals.find(d => d.deal_id === id) || null : null);
   const runOf = (state, id) => (id ? (state.payment_runs || []).find(r => r.run_id === id) || null : null);
   /* a line's payee: the one it names, else the payee of its KOL (bank details may be entered after the line was requested) */
-  const payeeOfLine = (state, l) => (l.payee_id ? payeeById(state, l.payee_id) : null) || (l.kol_id ? payeeOfKol(state, l.kol_id) : null);
+  /* CR-16: else the payee its deal picked, else the KOL's default */
+  const payeeOfLine = (state, l) => (l.payee_id ? payeeById(state, l.payee_id) : null) || (l.deal_id && dealOf(state, l.deal_id) ? R.payeeOfDeal(state, dealOf(state, l.deal_id)) : null) || (l.kol_id ? payeeOfKol(state, l.kol_id) : null);
   /* post evidence: every post planned for the deal has a link and a post date */
   const postEvidence = (state, dealId) => { const ps = R.postsOf(state, dealId); return ps.length > 0 && ps.every(R.postDone); };
   /* what a line still needs (§4.4): the payee's documents and bank details · post evidence for the Final / Full instalment of a deal (not prepaid) · nothing when it reimburses staff */
@@ -206,21 +213,24 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* an expected date for an instalment not owed yet: Final / Full at Complete → the deal's expected post date (else the earliest expected post) · Confirm QT ones have none */
   function expectedDue(state, deal, milestone) {
-    if (milestone === 'deposit' || (milestone === 'full' && termOf(deal) === 'prepaid')) return null;
+    if (milestone === 'deposit' || milestone === 'extras' || milestone === 'package' || (milestone === 'full' && termOf(deal) === 'prepaid')) return null;
     return deal.expected_post_date || R.postsOf(state, deal.deal_id).filter(p => !p.post_date).map(p => p.expected_post_date).filter(Boolean).sort()[0] || null;
   }
   const picOfLine = (state, l, deal) => (deal ? deal.pic || null : R.picName(R.userById(state, l.created_by)) || null);
   /* one row of To pay — a stored line, or an instalment worked out from the deal that nobody has requested yet (virtual) */
   function payItem(state, today, o) {
-    const l = o.line, deal = o.deal || dealOf(state, l && l.deal_id), payee = l ? payeeOfLine(state, l) : deal ? payeeOfKol(state, deal.kol_id) : null;
-    const base = l || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
+    const l = o.line, deal = o.deal || dealOf(state, l && l.deal_id), pkg = o.pkg ? R.packagePayBase(state, o.pkg) : null;
+    /* CR-20 §4.8 — a package's row: its payee, else the KOL's default */
+    const payee = l ? payeeOfLine(state, l) : pkg ? (pkg.payee_id ? payeeById(state, pkg.payee_id) : null) || payeeOfKol(state, pkg.kol_id) : deal ? R.payeeOfDeal(state, deal) : null;   // CR-16: the deal's payee
+    const base = l || pkg || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
       price_basis: null, wht_rate: null, pay_to: 'payee', status: 'open' };
     const tax = l ? { gross: l.gross, vat: l.vat, wht: l.wht, net: l.net, wht_rate: l.wht_rate } : taxOf(state, base, payee);
-    const status = l ? lineStatus(state, l, today) : !o.inst.reached ? 'not_due' : docsRequired(state, base, payee).length ? 'missing_docs' : 'ready';
+    const status = l ? lineStatus(state, l, today) : !pkg && !o.inst.reached ? 'not_due' : docsRequired(state, base, payee).length ? 'missing_docs' : 'ready';
     const kol = base.kol_id ? R.kolById(state, base.kol_id) : null;
-    return { key: l ? l.line_id : `${deal.deal_id}:${base.milestone}`, line: l || null, virtual: !l, source: base.source, deal, deal_id: base.deal_id || null, milestone: base.milestone,
+    return { key: l ? l.line_id : pkg ? `${pkg.package_id}:package` : `${deal.deal_id}:${base.milestone}`, line: l || null, virtual: !l, source: base.source, deal, deal_id: base.deal_id || null, milestone: base.milestone,
+      package_id: base.package_id || null,
       kol, kol_id: base.kol_id || null, payee, account_handle: (payee && payee.account_handle) || (kol ? mainHandle(state, kol.kol_id) : (l && l.account_handle) || ''),
-      campaign_id: deal ? deal.campaign_id : (l && l.campaign_id) || null, project_label: l && l.project_label ? l.project_label : deal ? R.campaignName(state, deal.campaign_id) : '',
+      campaign_id: deal ? deal.campaign_id : (l && l.campaign_id) || null, project_label: l && l.project_label ? l.project_label : deal ? R.campaignName(state, deal.campaign_id) : base.project_label || '',
       pic: picOfLine(state, base, deal), agreed: base.agreed_amount, price_basis: base.price_basis || (payee && payee.price_basis) || 'gross', tax, band: bandOf(tax.gross, paySettings(state.lookups)),
       due_date: base.due_date || null, status, missing: status === 'missing_docs' || status === 'not_due' || status === 'in_run' ? docsRequired(state, base, payee) : [],
       term_not_set: !!deal && !termOf(deal), overdue: !!deal && status !== 'paid' && R.paymentState(deal, today) === 'overdue', run_id: (l && l.run_id) || null,
@@ -232,6 +242,9 @@ Object.assign(KT.rules, (function (R, C) {
     const lines = state.payment_lines || [], taken = new Set(lines.filter(l => l.deal_id).map(l => `${l.deal_id}:${l.milestone}`));
     const items = [], checks = [];
     lines.forEach(l => { if (l.status !== 'paid' && l.status !== 'cancelled') items.push(payItem(state, today, { line: l })); });
+    /* CR-20 §4.8 — a package is one row (its full price) until it is paid · archived ones without a line are left out */
+    const pkgTaken = new Set(lines.filter(l => l.package_id).map(l => l.package_id));
+    (state.kol_packages || []).forEach(p => { if (!p.archived && !pkgTaken.has(p.package_id) && Number(p.price_total) > 0) items.push(payItem(state, today, { pkg: p })); });
     state.deals.forEach(d => {
       dueLines(state, d, today).forEach(inst => { if (!inst.paid && !taken.has(`${d.deal_id}:${inst.milestone}`)) items.push(payItem(state, today, { deal: d, inst })); });
       if (d.status !== 'Cancel' && termOf(d) !== 'free' && totalCost(d) <= 0 && !d.paid_full && zeroOwed(state, d)) checks.push({ kind: 'zero', deal: d });
@@ -260,7 +273,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* a worked-out instalment becomes a stored line (open) — Add to run · Hold · Paid outside app (CR-11 §4.9: no Request step) with the amount, basis and WHT confirmed · o: {lineId, agreed_amount, price_basis, wht_rate, pay_to, reimburse_user, note, user, now} */
   function newLine(state, item, o) {
     const payee = item.payee, tax = taxOf(state, { agreed_amount: o.agreed_amount, price_basis: o.price_basis, wht_rate: o.wht_rate }, payee), miss = docsRequired(state, Object.assign({}, item, { pay_to: o.pay_to }), payee);
-    return { line_id: o.lineId, source: item.source || 'deal', deal_id: item.deal_id, payee_id: payee ? payee.payee_id : null, payee_version_at_submit: null, milestone: item.milestone,
+    return { line_id: o.lineId, source: item.source || 'deal', deal_id: item.deal_id, package_id: item.package_id || null, payee_id: payee ? payee.payee_id : null, payee_version_at_submit: null, milestone: item.milestone,
       kol_id: item.kol_id, account_handle: item.account_handle, campaign_id: item.campaign_id, project_label: item.project_label, payee_type: payee ? payee.payee_type : 'individual',
       pay_to: o.pay_to === 'reimburse' ? 'reimburse' : 'payee', reimburse_user: o.pay_to === 'reimburse' ? o.reimburse_user || null : null, price_basis: o.price_basis || 'gross',
       agreed_amount: round2(o.agreed_amount), gross: tax.gross, vat: tax.vat, wht_rate: tax.wht_rate, wht: tax.wht, net: tax.net, due_date: item.due_date || null,
@@ -387,9 +400,9 @@ Object.assign(KT.rules, (function (R, C) {
     const mine = lines.filter(l => l.deal_id === deal.deal_id && l.status !== 'cancelled');
     const latest = ms => mine.filter(l => l.status === 'paid' && ms.includes(l.milestone)).sort((a, b) => String(b.paid_date).localeCompare(String(a.paid_date)))[0] || null;
     const has = ms => mine.some(l => ms.includes(l.milestone));
-    const dep = latest(['deposit']), fin = latest(['final', 'full']), out = {};
+    const dep = latest(['deposit']), fin = latest(['final', 'full', 'extras']), out = {};
     if (fin) Object.assign(out, { paid_full: true, paid_full_date: fin.paid_date });
-    else if (has(['final', 'full'])) Object.assign(out, { paid_full: false, paid_full_date: null });
+    else if (has(['final', 'full', 'extras'])) Object.assign(out, { paid_full: false, paid_full_date: null });
     if (dep) Object.assign(out, { paid_50: true, paid_50_date: dep.paid_date });
     else if (fin && termOf(deal) === 'split_50') Object.assign(out, { paid_50: true, paid_50_date: deal.paid_50_date || fin.paid_date });
     else if (has(['deposit'])) Object.assign(out, { paid_50: false, paid_50_date: null });
@@ -462,16 +475,9 @@ Object.assign(KT.rules, (function (R, C) {
     return Object.assign(l, { source: o.source, payee_id: p ? p.payee_id : null, kol_id: kol ? kol.kol_id : null });
   }
   /* Mark paid outside the app (clearing old work already paid): a line per instalment, source legacy, no run · the deals follow */
+  /* CR-17 §4.4 — the same Mark paid as the Simple mode (rules-ops.js markItemsPaid), the lines it makes marked legacy */
   function markPaidOutside(state, items, date, note, ctx) {
-    const events = [];
-    items.forEach(x => {
-      let l = x.line;
-      if (!l) { l = newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, user: ctx.user, now: ctx.now }); state.payment_lines.push(l); }
-      events.push(payEvent(l, l.status, 'paid', ctx, note));
-      Object.assign(l, { source: x.line ? l.source : 'legacy', status: 'paid', paid_date: date, note: [l.note, trim(note)].filter(Boolean).join(' · ') || null });
-    });
-    syncDeals(state, items.map(x => x.deal_id));
-    return events;
+    return R.markItemsPaid(state, items, { date, note, legacy: true }, ctx).events;
   }
   /* Cancel line (a reason): a worked-out instalment gets a cancelled line, so it does not come back */
   function cancelLines(state, items, reason, ctx) {
@@ -536,6 +542,7 @@ Object.assign(KT.rules, (function (R, C) {
   function resetVault(state) {
     let n = 0;
     (state.payee_profiles || []).forEach(p => { if (p.secure) { p.secure = null; n++; } p.needs_verification = false; if (p.secure_ship || p.shipping_on_file) { p.secure_ship = null; p.shipping_on_file = false; } });
+    (state.shipping_addresses || []).forEach(a => { if (a.secure) { a.secure = null; n++; } });   // CR-16 §4.3: the addresses are encrypted the same way
     state.lookups.payee_vault = null;
     return n;
   }

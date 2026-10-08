@@ -33,7 +33,7 @@
       assert.equal(st.schema_version, S.SCHEMA_VERSION); assert.ok(S.SCHEMA_VERSION >= 12);
       assert.deepEqual(st.lookups.go_live, { date: TD, completed_at: null, completed_by: null });
       const pill = st.phases.map(p => `${camp2(st, p.campaign_id)}:${p.label || ''}=${p.default_pillar}`);
-      assert.deepEqual(pill.filter(x => !x.endsWith('=null')), ['Ki:Launch & Awareness=Awareness', 'Ki:Conversion=Conversion']);
+      assert.deepEqual(pill.filter(x => !x.endsWith('=null')), ['Ki:Launch & Awareness=Awareness', 'Ki:Conversion=Conversion', 'Pe:Awareness & Consideration=Awareness & Consideration']);   // + CR-19 §4.6 (v18)
       assert.ok(st.sample_shipments.every(sh => sh.purpose === 'review' && sh.campaign_id === st.deals.find(d => d.deal_id === sh.deal_id).campaign_id && sh.pick_list_id === null));
       assert.ok(st.campaigns.every(c => c.default_payment_term === null));
       assert.deepEqual([st.lookups.metrics_checkpoints, st.pick_lists], [[7], []]);
@@ -288,7 +288,7 @@
     test('TC-41: KS Phase 1 Awareness · Phase 2 Conversion (from the migration) · the others none', () => {
       const st = fresh(), ks = R.sortPhases(st.phases.filter(p => p.campaign_id === camp(st, 'Kiss').campaign_id));
       assert.deepEqual(ks.map(p => R.phaseDefaultPillar(st, p.phase_id)), ['Awareness', 'Conversion']);
-      assert.ok(st.phases.filter(p => p.campaign_id !== camp(st, 'Kiss').campaign_id).every(p => R.phaseDefaultPillar(st, p.phase_id) === null));
+      assert.ok(st.phases.filter(p => p.campaign_id !== camp(st, 'Kiss').campaign_id && p.phase_id !== 'PH-P1').every(p => R.phaseDefaultPillar(st, p.phase_id) === null));   // (CR-19: PH Phase 1 → Awareness & Consideration)
     });
     test('TC-42: New deal in KS Phase 1 → Pillar Awareness (From phase) · Auto by post date finds the Phase · no Phase default → nothing', () => {
       const st = fresh(), c = camp(st, 'Kiss'), [p1, p2] = R.sortPhases(st.phases.filter(p => p.campaign_id === c.campaign_id));
@@ -325,14 +325,14 @@
       assert.equal(R.dataHealth(st, {}, TD).items.find(i => i.key === 'termNotSet').n, 41);
       assert.equal(r.events[0].type, 'payment_term');
     });
-    test('TC-45: New deal term — the KOL default wins · a KOL without one takes the Campaign default (From campaign) · neither → none · Bulk shortlist the same', () => {
+    test('TC-45: New deal term — the KOL default wins · (CR-18 §4.1: a Campaign no longer fills it) · neither → none · Bulk shortlist the same', () => {
       const st = fresh(), ac = camp(st, 'Ac'), k0 = st.kol_master.find(k => !R.isTerm(k.default_payment_term)), k1 = Object.assign({}, k0, { default_payment_term: 'prepaid' });
       assert.deepEqual(R.termPrefill(st, k0, ac.campaign_id), { term: '', source: null });
       ac.default_payment_term = 'postpaid';
       assert.deepEqual([R.termPrefill(st, k0, ac.campaign_id), R.termPrefill(st, k1, ac.campaign_id), R.termPrefill(st, null, ac.campaign_id)],
-        [{ term: 'postpaid', source: 'campaign' }, { term: 'prepaid', source: 'kol' }, { term: 'postpaid', source: 'campaign' }]);
+        [{ term: '', source: null }, { term: 'prepaid', source: 'kol' }, { term: '', source: null }]);
       const free = st.kol_master.find(k => !R.isTerm(k.default_payment_term) && !st.deals.some(d => d.kol_id === k.kol_id && d.campaign_id === ac.campaign_id) && k.kol_status !== 'Blacklist');
-      assert.equal(R.bulkShortlistPlan(st, [free.kol_id], ac.campaign_id, { pic: 'me', me: 'Pizza' }).create[0].term, 'postpaid');
+      assert.equal(R.bulkShortlistPlan(st, [free.kol_id], ac.campaign_id, { pic: 'me', me: 'Pizza' }).create[0].term, null);
     });
     test('TC-46: a Campaign with one product → picked for you (Only product in campaign) · two → none', () => {
       const st = fresh(), c = st.campaigns[0];
@@ -351,10 +351,10 @@
   });
   describe('CR-11 R6 · UI polish (§4.13)', () => {
     const TD = '2026-10-06';
-    test('TC-52: core steps — Contacted · Confirm QT · Brief · Approve Draft 1 · Post · Cancel are locked · the others are not', () => {
+    test('TC-52: core steps — Contacted · Confirm QT · Brief · Script · Draft 1 · Approve · Post · Cancel are locked (CR-15 §4.5) · the others are not', () => {
       const st = fresh(), steps = R.stepsOf(st.lookups);
-      assert.deepEqual(steps.filter(R.isCoreStep).map(x => x.sub_status), ['Contacted', 'Confirm QT', 'Brief', 'Approve Draft 1', 'Post', 'Cancel']);
-      assert.deepEqual(steps.filter(x => !R.isCoreStep(x)).map(x => x.sub_status), ['Shortlist', 'Approve Script', 'Approve Draft 2', 'Approve Draft 3']);
+      assert.deepEqual(steps.filter(R.isCoreStep).map(x => x.sub_status), ['Contacted', 'Confirm QT', 'Brief', 'Script', 'Draft 1', 'Approve', 'Post', 'Cancel']);
+      assert.deepEqual(steps.filter(x => !R.isCoreStep(x)).map(x => x.sub_status), ['Shortlist', 'Draft 2', 'Draft 3']);
     });
     test('TC-54: duplicate post links — gunnogun twice in Kiss Signal → both flagged (the first counts) · filter · Views of the Campaign count it once', () => {
       const st = fresh(), groups = R.duplicatePostGroups(st);

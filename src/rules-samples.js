@@ -36,7 +36,7 @@ Object.assign(KT.rules, (function (R, C) {
   function newShipment(o) {
     return { shipment_id: o.id, deal_id: o.deal.deal_id, kol_id: o.deal.kol_id, items: o.items || [], ship_by: o.shipBy || null, status: o.status || 'to_ship', ship_by_overridden: false,
       shipped_date: null, carrier: null, tracking_no: null, delivered_date: o.deliveredDate || null, problem_reason: null, not_required_reason: null, source: o.source || 'manual',
-      note: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };
+      note: null, address_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };   // CR-16: address_id null = the default at Mark shipped
   }
 
   /* §3 — schema 10 → 11 (store.js): delivered deals get a Delivered shipment (legacy · the date when there was one) · open deals from Confirm QT
@@ -96,6 +96,7 @@ Object.assign(KT.rules, (function (R, C) {
     else if (change.kind === 'not_required') Object.assign(sh, { status: 'not_required', not_required_reason: trim(change.reason) });
     else if (change.kind === 'ship_by') Object.assign(sh, change.date ? { ship_by: change.date, ship_by_overridden: true } : { ship_by_overridden: false });
     else if (change.kind === 'edit') ['carrier', 'tracking_no', 'shipped_date', 'delivered_date', 'items', 'note'].forEach(k => { if (k in change) sh[k] = change[k]; });
+    if ((change.kind === 'shipped' || change.kind === 'edit') && change.address_id !== undefined) sh.address_id = change.address_id || null;   // CR-16 §4.3: Ship to
     Object.assign(sh, { updated_at: ctx.now, updated_by: ctx.user || null });
     return { event_id: ctx.eventId, deal_id: sh.deal_id, shipment_id: sh.shipment_id, type: 'sample', from, to: sh.status, changed_at: ctx.now, changed_by: ctx.user || null, note: trim(change.reason) || null };
   }

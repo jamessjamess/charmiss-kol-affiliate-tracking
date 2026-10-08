@@ -5,20 +5,30 @@
    one Status column with "Missing n" (a list of what is missing, each opens where to fix it) — CR-09 §4.14.
    CR-11 §4.9: no Request step (owed + documents = Ready) · ⋯ Hold (a reason) / Release · header Ready · Missing docs · On hold · each tab has its own
    filters (To pay: PIC · Campaign · Source · Status · Search — Payment runs: Run status · Pay date · Search — Accounting: View · Pay date · Search) ·
-   the Accounting tab only for Admin · Accounting · KOL Manager (read only). → KT.screens.payments */
+   the Accounting tab only for Admin · Accounting · KOL Manager (read only).
+   CR-17 §4.2 — Simple mode (Settings › Operations mode): tabs To pay · Sent · Paid · Mark paid on the row (the KOL team records it) · Export for accounting →
+   Sent · Mark unpaid · documents never block · the same lines and runs as Full mode. → KT.screens.payments */
 KT.screens.payments = (function () {
   'use strict';
   const U = KT.ui;
   const { C, R, $, esc, today, state, pref, commit, toast, can, openDialog, closeDialog, checksHTML, optionsHTML, downloadCSV, store, userId, takeParams, ICON } = U;
   const PM = C.pay, PY = C.payee;
   const TABS = ['topay', 'runs', 'accounting'];   // CR-09 §4.15: To pay · Payment runs · Accounting (History lives in Accounting › Paid)
+  const TABS_SIMPLE = ['topay', 'sent', 'paid'];   // CR-17 §4.2: Simple mode
+  const simple = () => R.isSimple(state(), 'payments');
+  const tabsNow = () => (simple() ? TABS_SIMPLE : TABS);
+  /* a tab (or an old link) of the other mode → the nearest one of this mode */
+  const mapTab = t => (simple() ? ({ runs: 'topay', accounting: 'sent', history: 'paid' }[t] || (TABS_SIMPLE.includes(t) ? t : 'topay'))
+    : ({ sent: 'runs', paid: 'accounting', history: 'accounting' }[t] || (TABS.includes(t) ? t : 'topay')));
+  const SCOPED_TABS = ['topay', 'sent', 'paid'];   // the To pay filters (PIC · Campaign · Source · Search) serve Sent and Paid too
   const GROUPS = ['readiness', 'amount', 'pic', 'campaign'];
   const DUE = ['ready', 'missing_docs', 'on_hold', 'in_run', 'submitted'];
   const QUEUES = ['ready', 'missing', 'hold', 'upcoming', 'check'];
+  const QUEUES_SIMPLE = ['due', 'hold', 'upcoming', 'check'];   // CR-17: documents do not block — Ready and Missing docs are one Due
   const ACC_VIEWS = ['transfer', 'wht', 'paid'];
   /* CR-11 §4.9 — the Accounting tab: Admin · Accounting · KOL Manager (read only) */
   const accOk = () => ['admin', 'accounting', 'kol_manager'].includes((U.actor() || {}).role);
-  const pv = { tab: (v => (v === 'history' ? 'accounting' : TABS.includes(v) ? v : 'topay'))(pref.get('paytab', 'topay')), runFilter: '', wsel: new Set(), f: { campaign: '', source: '', q: '' }, pic: null, picUser: null,
+  const pv = { tab: (v => (v === 'history' ? 'accounting' : TABS.includes(v) || TABS_SIMPLE.includes(v) ? v : 'topay'))(pref.get('paytab', 'topay')), runFilter: '', wsel: new Set(), f: { campaign: '', source: '', q: '' }, pic: null, picUser: null,
     queue: null, groupBy: (v => (v === 'band' ? 'amount' : GROUPS.includes(v) ? v : 'readiness'))(pref.get('paygroup', 'readiness')), selected: new Set(), items: [], run: null,
     hist: { preset: 'this_month', from: '', to: '', run: '', wht: false },
     rf: { from: '', to: '', q: '' },   // Payment runs: pay date range · search
@@ -48,7 +58,9 @@ KT.screens.payments = (function () {
       if (p.run !== undefined) { pv.run = p.run; if (!p.tab) pv.tab = 'runs'; }
     }
     if (id === 'history') id = 'accounting';   // an old link #payments/history
-    if (id && TABS.includes(id)) pv.tab = id;
+    if (id && (TABS.includes(id) || TABS_SIMPLE.includes(id))) pv.tab = id;
+    if (simple()) { if (p && p.run) { pv.f.q = p.run; pv.tab = 'sent'; $('pm_tools').dataset.built = ''; } pv.run = null; }   // CR-17: a run → Sent, searched
+    pv.tab = mapTab(pv.tab);
     if (pv.tab === 'accounting' && !accOk()) pv.tab = 'topay';
     if (pv.tab !== was && !(p && p.run !== undefined)) { pv.run = null; pv.selected.clear(); }   // another tab (a link · Switch user) starts on its list
     pref.set('paytab', pv.tab);
@@ -57,12 +69,12 @@ KT.screens.payments = (function () {
   }
   function build(sec) {
     sec.innerHTML = `<div class="pagehead"><h1 class="page">${esc(PM.title)}</h1><span class="spacer"></span><span class="pm-sum" id="pm_sum"></span></div><div id="pm_golive"></div>
-      <div class="stabs dtabs" id="pm_tabs" role="tablist">${TABS.map(t => `<span class="ptab-w"><button type="button" role="tab" data-ptab="${t}" title="${esc(PM.tabTip[t])}">${esc(PM.tabs[t])}</button></span>`).join('')}</div>
+      <div class="stabs dtabs" id="pm_tabs" role="tablist"></div>
       <div class="toolbar" id="pm_tools"></div><div class="fchips hidden" id="pm_chips"></div><div id="pm_body"></div>`;
     $('pm_tabs').addEventListener('click', e => { const b = e.target.closest('[data-ptab]'); if (b) { pv.tab = b.dataset.ptab; pv.queue = null; pv.run = null; pv.selected.clear(); pv.wsel.clear(); render(); } });
     KT.vault.onChange(() => { if (U.currentTab() === 'payments' && pv.tab === 'accounting') draw(); });
     $('pm_tools').addEventListener('change', onToolsChange);
-    let qT; $('pm_tools').addEventListener('input', e => { if (e.target.id !== 'pm_q') return; clearTimeout(qT); qT = setTimeout(() => { (pv.tab === 'topay' ? pv.f : pv.tab === 'runs' ? pv.rf : pv.af).q = e.target.value; draw(); }, 150); });
+    let qT; $('pm_tools').addEventListener('input', e => { if (e.target.id !== 'pm_q') return; clearTimeout(qT); qT = setTimeout(() => { (SCOPED_TABS.includes(pv.tab) ? pv.f : pv.tab === 'runs' ? pv.rf : pv.af).q = e.target.value; draw(); }, 150); });
     $('pm_chips').addEventListener('click', e => {
       if (e.target.closest('[data-clearfilters]')) { clearAll(); return; }
       const b = e.target.closest('[data-unset]'); if (!b) return;
@@ -77,7 +89,11 @@ KT.screens.payments = (function () {
   function draw() {
     if ($('pm_golive')) $('pm_golive').innerHTML = KT.golive ? KT.golive.bannerHTML() : '';   // CR-11 §4.7
     const s = state(), td = today();
+    pv.tab = mapTab(pv.tab);
     if (pv.tab === 'accounting' && !accOk()) pv.tab = 'topay';
+    /* the tabs of the mode (Settings › Operations mode may have changed it) */
+    const mode = simple() ? 'simple' : 'full';
+    if ($('pm_tabs').dataset.mode !== mode) { $('pm_tabs').innerHTML = tabsNow().map(t => `<span class="ptab-w"><button type="button" role="tab" data-ptab="${t}" title="${esc(PM.tabTip[t])}">${esc(PM.tabs[t])}</button></span>`).join(''); $('pm_tabs').dataset.mode = mode; $('pm_tools').dataset.built = ''; }
     document.querySelectorAll('#pm_tabs [data-ptab]').forEach(b => { const on = b.dataset.ptab === pv.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
       b.closest('.ptab-w').classList.toggle('hidden', b.dataset.ptab === 'accounting' && !accOk()); });
     const q = R.payQueue(s, td);
@@ -86,11 +102,26 @@ KT.screens.payments = (function () {
     drawTools(s);
     if (pv.tab === 'topay') drawToPay(s, q, td);
     else if (pv.tab === 'runs') drawRuns(s, td);
+    else if (pv.tab === 'sent') drawSent(s, q, td);   // CR-17
+    else if (pv.tab === 'paid') drawPaid(s, td);
     else drawAccounting(s, td);
   }
   /* To pay: Ready · Missing docs · On hold (gross, in the filters of the tab · a click filters) — the other tabs: In runs · Paid this month */
   function drawSummary(s, q, td) {
+    drawSummary0(s, q, td);
+    /* CR-20 §4.8 — what was paid for packages and is not used yet (in no Campaign) */
+    if ((s.kol_packages || []).length) $('pm_sum').insertAdjacentHTML('beforeend', `<span class="sep">·</span><span class="pm-pkgbal" title="${esc(C.pkg.balanceTip)}">${esc(C.pkg.balance)} <b>${esc(R.baht(R.packageBalance(s)))}</b></span>`);
+  }
+  function drawSummary0(s, q, td) {
     const sum = list => R.round2(list.reduce((a, x) => a + x.tax.gross, 0)), month = td.slice(0, 7);
+    /* CR-17 §4.2 — Simple: Due now · Sent, not yet paid · Paid this month (a click = that tab) */
+    if (simple()) {
+      const scoped = q.items.filter(x => inScope(s, x)), paid = (s.payment_lines || []).filter(l => l.status === 'paid' && String(l.paid_date || '').slice(0, 7) === month).map(l => R.payItem(s, td, { line: l })).filter(x => inScope(s, x));
+      const b = (t, label, v) => `<button type="button" class="pm-sumb${pv.tab === t ? ' on' : ''}" data-ptabgo="${t}">${esc(label)} <b>฿${money(v)}</b></button>`;
+      $('pm_sum').innerHTML = b('topay', PS.sumDue, sum(scoped.filter(x => ['ready', 'missing_docs', 'in_run'].includes(x.status)))) + `<span class="sep">·</span>` +
+        b('sent', PS.sumSent, sum(scoped.filter(x => x.status === 'submitted'))) + `<span class="sep">·</span>` + b('paid', PS.sumPaid, sum(paid));
+      return;
+    }
     if (pv.tab === 'topay') {
       const scoped = q.items.filter(x => inScope(s, x)), b = (k, label, st) => `<button type="button" class="pm-sumb${pv.queue === k ? ' on' : ''}" data-pqueue="${k}">${esc(label)} <b>฿${money(sum(scoped.filter(x => x.status === st)))}</b></button>`;
       $('pm_sum').innerHTML = b('ready', PM.sumReady, 'ready') + `<span class="sep">·</span>` + b('missing', PM.sumMissing, 'missing_docs') + `<span class="sep">·</span>` + b('hold', PM.sumHold, 'on_hold');
@@ -104,14 +135,14 @@ KT.screens.payments = (function () {
     const tools = $('pm_tools'), focused = document.activeElement && document.activeElement.id === 'pm_q', tab = pv.tab;
     const range = (from, to) => `<label class="tlab">${esc(PM.payDateRange)} ${U.rangeHTML('id="pm_prange"', from, to, { label: PM.payDateRange, clearable: true })}</label>`;
     if (!tools.dataset.built || tools.dataset.tab !== tab || !focused) {
-      if (tab === 'topay') {
+      if (SCOPED_TABS.includes(tab)) {
         const me = myPic(), names = R.picNames(s, true), v = picSel();
         const picOpts = (me ? `<option value="me">${esc(C.deal.picMe(me))}</option>` : '') + `<option value="all">${esc(C.deal.allPics)}</option>` +
           names.filter(n => n !== me).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') + `<option value="__none">${esc(C.deal.unassigned)}</option>`;
         tools.innerHTML = `<label class="tlab">${esc(PM.pic)} <select id="pm_pic">${picOpts}</select></label>` +
           `<select id="pm_camp" aria-label="${esc(PM.campaign)}" data-combo="campaign">${U.campaignOptionsHTML(pv.f.campaign, PM.allCampaigns)}</select>` +
-          `<label class="tlab">${esc(PM.source)} <select id="pm_src">${optionsHTML(['deal', 'affiliate', 'other'].map(k => ({ value: k, label: PM.sources[k] })), pv.f.source, PM.allSources)}</select></label>` +
-          `<label class="tlab">${esc(PM.statusL)} <select id="pm_status">${optionsHTML(QUEUES.map(k => ({ value: k, label: PM.filterStatus[k] })), pv.queue || '', PM.statusAll)}</select></label>` +
+          `<label class="tlab">${esc(PM.source)} <select id="pm_src">${optionsHTML(['deal', 'package', 'affiliate', 'other'].map(k => ({ value: k, label: PM.sources[k] })), pv.f.source, PM.allSources)}</select></label>` +
+          (tab === 'topay' ? `<label class="tlab">${esc(PM.statusL)} <select id="pm_status">${optionsHTML((simple() ? QUEUES_SIMPLE : QUEUES).map(k => ({ value: k, label: (simple() ? PS.filterStatus : PM.filterStatus)[k] })), pv.queue || '', PM.statusAll)}</select></label>` : '') +
           `<input type="search" class="search" id="pm_q" placeholder="${esc(PM.search)}" value="${esc(pv.f.q)}" autocomplete="off">`;
         $('pm_pic').value = v;
       } else if (tab === 'runs') {
@@ -126,12 +157,12 @@ KT.screens.payments = (function () {
     }
     const chips = [], dr = (a, z) => (a && z ? `${PM.payDateRange}: ${R.dmy(a)} – ${R.dmy(z)}` : '');
     let n = 0;
-    if (tab === 'topay') {
+    if (SCOPED_TABS.includes(tab)) {
       const v = picSel(), me = myPic();
       if (pv.f.campaign) chips.push(['campaign', `${PM.campaign}: ${R.campaignName(s, pv.f.campaign)}`]);
       if (v !== 'all') chips.push(['pic', `${PM.pic}: ${v === 'me' ? C.deal.picMe(me) : v === '__none' ? C.deal.unassigned : v}`]);
       if (pv.f.source) chips.push(['source', `${PM.source}: ${PM.sources[pv.f.source]}`]);
-      if (pv.queue) chips.push(['queue', `${PM.statusL}: ${PM.filterStatus[pv.queue]}`]);
+      if (pv.queue && tab === 'topay') chips.push(['queue', `${PM.statusL}: ${(simple() ? PS.filterStatus : PM.filterStatus)[pv.queue] || pv.queue}`]);
       n = chips.length + (R.trim(pv.f.q) ? 1 : 0);
       pv.used = chips.map(c => c[1]).concat(R.trim(pv.f.q) ? [`"${R.trim(pv.f.q)}"`] : []);
     } else if (tab === 'runs') {
@@ -147,7 +178,7 @@ KT.screens.payments = (function () {
     U.filterChips($('pm_chips'), chips, n);
   }
   function clearAll() {
-    if (pv.tab === 'topay') { pv.f = { campaign: '', source: '', q: '' }; choosePic('all'); pv.queue = null; }
+    if (SCOPED_TABS.includes(pv.tab)) { pv.f = { campaign: '', source: '', q: '' }; choosePic('all'); pv.queue = null; }
     else if (pv.tab === 'runs') { pv.runFilter = ''; pv.rf = { from: '', to: '', q: '' }; }
     else pv.af = Object.assign(pv.af, { from: '', to: '', q: '' });
     const q = $('pm_q'); if (q) q.value = ''; $('pm_tools').dataset.built = ''; draw();
@@ -179,6 +210,7 @@ KT.screens.payments = (function () {
   function drawToPay(s, q, td) {
     const scoped = q.items.filter(x => inScope(s, x)), checks = q.checks.filter(c => inScope(s, { pic: c.deal.pic, campaign_id: c.deal.campaign_id, source: 'deal', deal_id: c.deal.deal_id, kol: R.kolById(s, c.deal.kol_id) }));
     const cards = R.payCards(scoped, checks, td), end = R.addDays(td, 14);
+    if (simple()) { drawToPaySimple(s, q, td, scoped, checks, cards, end); return; }
     const list = pv.queue === 'ready' ? scoped.filter(x => x.status === 'ready') : pv.queue === 'missing' ? scoped.filter(x => x.status === 'missing_docs')
       : pv.queue === 'hold' ? scoped.filter(x => x.status === 'on_hold') : pv.queue === 'upcoming' ? scoped.filter(x => x.status === 'not_due' && x.due_date && x.due_date >= td && x.due_date <= end) : scoped.filter(x => DUE.includes(x.status));
     pv.items = list;
@@ -194,9 +226,33 @@ KT.screens.payments = (function () {
     if (pv.queue === 'check') { drawChecks(s, checks); return; }
     drawTable(s, list, td);
   }
+  /* CR-17 §4.2 — To pay in Simple mode: Due · On hold · Upcoming · Needs check · the row's Mark paid · bulk Export for accounting / Mark paid */
+  function drawToPaySimple(s, q, td, scoped, checks, cards, end) {
+    const due = scoped.filter(x => ['ready', 'missing_docs', 'in_run'].includes(x.status)), sumOf = l => ({ n: l.length, gross: R.round2(l.reduce((a, x) => a + x.tax.gross, 0)) });
+    const list = pv.queue === 'due' ? due : pv.queue === 'hold' ? scoped.filter(x => x.status === 'on_hold') : pv.queue === 'upcoming' ? scoped.filter(x => x.status === 'not_due' && x.due_date && x.due_date >= td && x.due_date <= end)
+      : scoped.filter(x => SIMPLE_DUE.includes(x.status));
+    list.forEach(x => { x.docs = R.docsTally(s, x); });
+    pv.items = list;
+    [...pv.selected].forEach(k => { if (!list.some(x => x.key === k)) pv.selected.delete(k); });
+    const cs = { due: sumOf(due), hold: cards.hold, upcoming: cards.upcoming, check: cards.check };
+    const card = (k, c) => `<button type="button" class="qcard${pv.queue === k ? ' on' : ''}" data-pqueue="${k}" aria-pressed="${pv.queue === k}"><span class="n">${R.fmtNum(c.n)}</span><span class="t">${esc(PS.cards[k])}${c.gross != null ? ` · ${esc(R.baht(c.gross))}` : ''}</span></button>`;
+    pv.emptyNote = !q.items.some(x => SIMPLE_DUE.includes(x.status)) ? PM.emptyTopay : null;
+    $('pm_body').innerHTML = `<div class="qcards">${QUEUES_SIMPLE.map(k => card(k, cs[k])).join('')}</div>
+      <div class="toolbar pm-row2"><label class="tlab">${esc(C.deal.groupBy)} <select id="pm_group">${GROUPS.map(g => `<option value="${g}"${g === pv.groupBy ? ' selected' : ''}>${esc(PM.groupBy[g])}</option>`).join('')}</select></label>` +
+        `<button type="button" class="btn small ghost" data-pact="expandall">${esc(PM.expandAll)}</button><button type="button" class="btn small ghost" data-pact="collapseall">${esc(PM.collapseAll)}</button>
+        <span class="spacer"></span>${bulkHTML()}${!pv.selected.size && can('payment.manual') ? `<button type="button" class="btn small" data-pact="manual">${esc(PM.addManual)}</button>` : ''}<button type="button" class="btn small ghost" data-pact="csv" title="${esc(PM.csvTip)}">${esc(PM.csv)}</button></div>
+      <div id="pm_table"></div>`;
+    if (pv.queue === 'check') { drawChecks(s, checks); return; }
+    drawTable(s, list, td);
+  }
   /* bulk actions on the ticked rows (Admin / KOL Manager) — the runs and the "outside the app" actions come with the runs (R3 / R4) */
   function bulkHTML() {
     const n = pv.selected.size; if (!n) return '';
+    if (simple()) {   // CR-17: Export for accounting · Mark paid (the rows the person may pay)
+      const s0 = state(), mine = pv.items.filter(x => pv.selected.has(x.key) && canPayX(s0, x));
+      return `<b class="pm-seln">${esc(C.deal.selected(n))}</b>` + (mine.length ? `<button type="button" class="btn small" data-pact="sexport">${esc(PS.exportAcc)}</button><button type="button" class="btn small primary" data-pact="spaid">${esc(PS.markPaid)}</button>` : '') +
+        `<button type="button" class="btn small ghost" data-pact="clearsel">${esc(C.deal.clear)}</button>`;
+    }
     const s = state(), drafts = (s.payment_runs || []).filter(r => r.status === 'draft').sort((a, b) => b.run_id.localeCompare(a.run_id));
     /* CR-09 §4.15.1: Create payment run (a pay date · who prepares it) · or Add to run ▾ (a Draft that is there) */
     const create = can('payment.run') ? `<button type="button" class="btn small primary" data-pact="createrun">${esc(PM.createRun)}</button>` : '';
@@ -224,48 +280,54 @@ KT.screens.payments = (function () {
     if (pv.groupBy === 'pic') return x.pic || '';
     if (pv.groupBy === 'campaign') return x.campaign_id || '';
     if (pv.groupBy === 'amount') return String(x.band);
-    return x.status;
+    return simple() ? SIMPLE_ST[x.status] || x.status : x.status;   // CR-17: Simple — Due (documents or not) · On hold · In a run · Not due
   }
   function groupLabel(s, k) {
     if (pv.groupBy === 'pic') return k || C.deal.unassigned;
     if (pv.groupBy === 'campaign') return k ? R.campaignName(s, k) : PM.noCampaign;
     if (pv.groupBy === 'amount') return R.amountLabels(R.paySettings(s.lookups))[+k];
-    return PM.status[k];
+    return simple() ? PS.status[k] || k : PM.status[k];
   }
-  const GROUP_ORDER = { readiness: ['missing_docs', 'ready', 'on_hold', 'in_run', 'submitted', 'not_due'], amount: ['0', '1', '2'] };
+  const GROUP_ORDER_FULL = { readiness: ['missing_docs', 'ready', 'on_hold', 'in_run', 'submitted', 'not_due'], amount: ['0', '1', '2'] };
+  const GROUP_ORDER_SIMPLE = { readiness: ['due', 'on_hold', 'in_run', 'not_due', 'sent'], amount: ['0', '1', '2'] };
+  const groupOrder = () => (simple() ? GROUP_ORDER_SIMPLE : GROUP_ORDER_FULL)[pv.groupBy];
   /* folded groups: remembered per person and per Group by */
   const foldKey = () => `payfold_${userId() || ''}_${pv.groupBy}`;
   const folded = () => { try { return new Set(JSON.parse(pref.get(foldKey(), '[]'))); } catch (e) { return new Set(); } };
   const setFolded = set => pref.set(foldKey(), JSON.stringify([...set]));
   const missingLabelOf = k => missingLabel(k);
   function drawTable(s, list, td) {
-    const ctx = R.dealContext(s), actor = U.actor(), sel = pv.selected, canBulk = can('payment.run') || can('payment.paid'), fold = folded(), S = R.paySettings(s.lookups);
+    const ctx = R.dealContext(s), actor = U.actor(), sel = pv.selected, simp = simple(), canBulk = simp ? list.some(x => canPayX(s, x)) : can('payment.run') || can('payment.paid'), fold = folded(), S = R.paySettings(s.lookups);
     if (!list.length) { $('pm_table').innerHTML = pv.used && pv.used.length ? U.noMatchHTML(PM.empty, pv.used) : `<div class="card empty"><b>${esc(pv.emptyNote || PM.empty)}</b></div>`; return; }
     const groups = new Map(); list.forEach(x => { const k = groupKeyOf(s, x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
-    const order = GROUP_ORDER[pv.groupBy] ? GROUP_ORDER[pv.groupBy].filter(k => groups.has(k)) : [...groups.keys()].sort((a, b) => groupLabel(s, a).localeCompare(groupLabel(s, b), 'th'));
+    const order = groupOrder() ? groupOrder().filter(k => groups.has(k)) : [...groups.keys()].sort((a, b) => groupLabel(s, a).localeCompare(groupLabel(s, b), 'th'));
     /* CR-09 §4.14: a column nobody can use is not drawn (no empty ☐ column) · CR-11 §4.9: Hold / Release for the deal's PIC · Admin · KOL Manager */
-    const mayHold = x => (x.deal ? R.canHold(s, actor, x.deal) : can('payment.run'));
+    const mayHold = x => (simp ? canPayX(s, x) : x.deal ? R.canHold(s, actor, x.deal) : can('payment.run'));   // CR-17: Simple — whoever may pay it
     const canHoldX = x => !x.run_id && ['ready', 'missing_docs', 'not_due'].includes(x.status) && mayHold(x), canRelease = x => x.status === 'on_hold' && mayHold(x);
+    /* CR-16 §4.2 — ⋯ Change payee: before it is in a run, when the KOL has another payee · a deal's change goes on the deal (Pay to) */
+    const canPayee = x => !x.run_id && !R.linePayeeLocked(x.line) && !!x.kol_id && R.payeesOfKol(s, x.kol_id).length > 1 && (x.deal ? can('deal.edit') && R.canRequest(s, actor, x.deal) : can('payment.manual'));
     const showPic = picFilter() === '', span = (canBulk ? 1 : 0) + 8 + (showPic ? 1 : 0) + 1;
     const row = x => {
       const name = x.kol ? x.kol.display_name : x.account_handle || (x.payee && x.payee.account_handle) || '';
       const camp = x.deal ? R.campaignName(s, x.deal.campaign_id) : (x.project_label || ''), ph = x.deal ? ctx.phases.get(R.primaryPhase(ctx.phaseIdx, x.deal_id)) : null;
       const miss = x.missing.length ? `<button type="button" class="pm-miss" data-pmiss="${esc(x.key)}" title="${esc(x.missing.map(missingLabelOf).join(' · '))}" aria-haspopup="true">${esc(PM.missingN(x.missing.length))}</button>` : '';
       const menu = `<details class="menu pm-menu"><summary class="icon-btn" aria-label="${esc(PM.rowMenu)}" title="${esc(PM.rowMenu)}">⋯</summary><div class="menu-list right">` +
-        (canHoldX(x) ? `<button type="button" class="mi" data-phold="${esc(x.key)}">${esc(PM.hold)}</button>` : '') + (canRelease(x) ? `<button type="button" class="mi" data-prelease="${esc(x.key)}">${esc(PM.release)}</button>` : '') +
-        x.missing.map(k => (k === 'post_evidence' ? `<button type="button" class="mi" data-pposts="${esc(x.deal_id)}">${esc(missingLabelOf(k))} ↗</button>`
-          : `<button type="button" class="mi" data-ppayee="${esc(x.kol_id || '')}" data-ppayeeid="${esc(x.payee ? x.payee.payee_id : '')}">${esc(missingLabelOf(k))} ↗</button>`)).join('') +   // CR-11 §4.13 #9: what is missing, in ⋯ too
+        (canHoldX(x) ? `<button type="button" class="mi" data-phold="${esc(x.key)}">${esc(PM.hold)}</button>` : '') +
+        (canPayee(x) ? `<button type="button" class="mi" data-ppayto="${esc(x.key)}">${esc(PM.changePayee)}</button>` : '') + (canRelease(x) ? `<button type="button" class="mi" data-prelease="${esc(x.key)}">${esc(PM.release)}</button>` : '') +
+        (simp ? '' : x.missing.map(k => (k === 'post_evidence' ? `<button type="button" class="mi" data-pposts="${esc(x.deal_id)}">${esc(missingLabelOf(k))} ↗</button>`
+          : `<button type="button" class="mi" data-ppayee="${esc(x.kol_id || '')}" data-ppayeeid="${esc(x.payee ? x.payee.payee_id : '')}">${esc(missingLabelOf(k))} ↗</button>`)).join('')) +   // CR-11 §4.13 #9: what is missing, in ⋯ too
         (x.deal ? `<button type="button" class="mi" data-pdeal="${esc(x.deal_id)}">${esc(PM.openDeal)}</button>` : '') +
         `<button type="button" class="mi" data-ppayee="${esc(x.kol_id || '')}" data-ppayeeid="${esc(x.payee ? x.payee.payee_id : '')}">${esc(PM.payeeDetails)}</button></div></details>`;
       const held = x.status === 'on_hold';
-      return `<tr data-pkey="${esc(x.key)}"${held ? ' class="pm-held"' : ''}>${canBulk ? `<td class="cb"><input type="checkbox" data-psel="${esc(x.key)}"${sel.has(x.key) && !held ? ' checked' : ''}${held ? ` disabled title="${esc(PM.holdNoRun)}"` : ''} aria-label="${esc(name)}"></td>` : ''}` +
-        `<td class="pm-kol stk${canBulk ? '' : ' at0'}"><span class="kname"><b>${U.nameHTML(name)}</b></span>${x.source !== 'deal' ? ` <span class="chip">${esc(PM.sources[x.source] || x.source)}</span>` : ''}</td>` +
+      return `<tr data-pkey="${esc(x.key)}"${held ? ' class="pm-held"' : ''}>${canBulk ? (simp && !canPayX(s, x) ? '<td class="cb"></td>' : `<td class="cb"><input type="checkbox" data-psel="${esc(x.key)}"${sel.has(x.key) && !held ? ' checked' : ''}${held ? ` disabled title="${esc(PM.holdNoRun)}"` : ''} aria-label="${esc(name)}"></td>`) : ''}` +
+        `<td class="pm-kol stk${canBulk ? '' : ' at0'}"><span class="kname"><b>${U.nameHTML(name)}</b></span>${x.source !== 'deal' ? ` <span class="chip">${esc(PM.sources[x.source] || x.source)}</span>` : ''}` +
+          `${R.payeeTag(s, x.payee) ? ` <span class="chip pm-ptag" title="${esc(PM.payToTip)}">→ ${esc(R.payeeTag(s, x.payee))}</span>` : ''}</td>` +
         `<td class="cph2"><span class="c1">${esc(camp)}</span>${ph ? `<span class="c2">${esc(R.phaseName(s, ph.phase_id))}</span>` : ''}</td>` +
         `<td class="nowrap">${esc(C.pay.milestone[x.milestone] || x.milestone)}${x.term_not_set ? ` <span class="tns" title="${esc(PM.termNotSetTip)}" aria-label="${esc(PM.termNotSet)}">!</span>` : ''}` +
           `<span class="due${x.overdue ? ' late' : ''}">${x.due_date ? esc(R.dmy(x.due_date).slice(0, 5)) : '—'}</span></td>` +
         `<td class="num">${money(x.tax.gross)}</td><td class="num">${x.tax.wht ? money(x.tax.wht) : '<span class="muted">0.00</span>'}</td><td class="num"><b>${money(x.tax.net)}</b></td>` +
-        `<td class="pm-stc">${statusChip(x.status)}${miss}${held && x.line && x.line.hold_reason ? `<span class="pm-holdr" title="${esc(PM.heldBy(R.changedByName(s, x.line.hold_by), R.dmy(String(x.line.hold_at || '').slice(0, 10))))}">${esc(x.line.hold_reason)}</span>` : ''}</td>${showPic ? `<td class="nowrap">${esc(x.pic || '')}</td>` : ''}` +
-        `<td class="pm-act">${menu}</td></tr>`;
+        `<td class="pm-stc">${simp ? simpleChip(x.status) + docsChip(x) : statusChip(x.status) + miss}${held && x.line && x.line.hold_reason ? `<span class="pm-holdr" title="${esc(PM.heldBy(R.changedByName(s, x.line.hold_by), R.dmy(String(x.line.hold_at || '').slice(0, 10))))}">${esc(x.line.hold_reason)}</span>` : ''}</td>${showPic ? `<td class="nowrap">${esc(x.pic || '')}</td>` : ''}` +
+        `<td class="pm-act">${simp ? payBtn(s, x) : ''}${menu}</td></tr>`;
     };
     const tot = rows => ['gross', 'wht', 'net'].map(k => R.round2(rows.reduce((a, x) => a + x.tax[k], 0)));
     const body = order.map(k => { const rows = groups.get(k), t = tot(rows), shut = fold.has(k), note = pv.groupBy === 'amount' ? PM.amountNote[+k] : '';
@@ -277,12 +339,31 @@ KT.screens.payments = (function () {
       `<th>${esc(PM.col.status)}</th>${showPic ? `<th>${esc(PM.col.pic)}</th>` : ''}<th></th></tr></thead><tbody>${body}` +
       `<tr class="total"><td colspan="${(canBulk ? 1 : 0) + 3}">${esc(PM.totalLine(list.length))}</td><td class="num">${money(all[0])}</td><td class="num">${money(all[1])}</td><td class="num">${money(all[2])}</td><td colspan="${2 + (showPic ? 1 : 0)}"></td></tr></tbody></table></div>`;
   }
+  /* CR-16 §4.2 — ⋯ Change payee (S): the KOL's payees, the default first · a deal: its Pay to (lines not in a run follow, deal_events payee) · a manual line: its own */
+  function changePayeeDialog(key, opener) {
+    const s = state(), x = pv.items.find(i => i.key === key); if (!x || !x.kol_id) return;
+    const opts = R.payToOptions(s, x.kol_id), cur = x.payee ? x.payee.payee_id : '';
+    const line = p => [PY.types[p.payee_type], p.secure ? PY.bankLine(p.bank_name, p.account_last4) : PY.missing(PY.missingBank), R.payeeDocsMissing(p).length ? PY.missing(R.payeeDocsMissing(p).map(k => (k === 'bank_details' ? PY.missingBank : PY.docs[k])).join(' · ')) : PY.docsOnFile].join(' · ');
+    U.createModal({ size: 'S', title: PM.changePayeeTitle(x.kol ? x.kol.display_name : x.account_handle), opener, sub: x.deal ? PM.changePayeeSub(x.deal_id) : '',
+      foot: ['', U.cmButtons(C.common.save, 'cp_ok')],
+      body: `<div class="cp-list" role="radiogroup" aria-label="${esc(PM.changePayee)}">` + opts.map(o => `<label class="tick block cp-opt"><input type="radio" name="cp_p" value="${esc(o.value)}"${o.value === cur ? ' checked' : ''}> <span><b>${esc(o.label)}</b><span class="muted small">${esc(line(o.payee))}</span></span></label>`).join('') + `</div>` });
+    $('cp_ok').addEventListener('click', () => {
+      const v = (document.querySelector('#cm_root input[name="cp_p"]:checked') || {}).value; if (!v) return;
+      const s2 = state(), it = pv.items.find(i => i.key === key) || x;
+      if (it.deal) {
+        const d = s2.deals.find(dd => dd.deal_id === it.deal_id); if (!d || !U.guard('deal.edit')) return;
+        const def = R.defaultPayee(s2, d.kol_id), r = R.setDealPayee(s2, d, def && v === def.payee_id ? null : v, { eventId: store.newEventId(), now: new Date(), user: userId() });
+        if (r) s2.deal_events.push(r.event);
+      } else if (it.line) { if (!U.guard('payment.manual') || !R.setLinePayee(s2, it.line, v)) { U.closeModal(); return; } }
+      const p = R.payeeById(s2, v); U.closeModal(); commit(PM.payeeChanged(p ? p.label || PY.primary : '')); draw();
+    });
+  }
   /* "Missing n" → what is missing, each opening where it is fixed (the Payee dialog · the deal's posts) */
   function missingPop(btn) {
     const old = $('pm_misspop'); if (old) { old.remove(); if (old.dataset.for === btn.dataset.pmiss) return; }
     const x = pv.items.find(i => i.key === btn.dataset.pmiss); if (!x) return;
     const m = document.createElement('div'); m.className = 'menu-list floating pm-misspop'; m.id = 'pm_misspop'; m.dataset.for = x.key; m.setAttribute('role', 'menu');
-    m.innerHTML = `<div class="mh">${esc(PM.missingTitle)}</div>` + x.missing.map(k => k === 'post_evidence'
+    m.innerHTML = `<div class="mh">${esc(PM.missingTitle)}</div>` + ((x.docs && x.docs.missing) || x.missing).map(k => k === 'post_evidence'
       ? `<button type="button" class="mi" data-pposts="${esc(x.deal_id)}">${esc(missingLabelOf(k))} ↗</button>`
       : `<button type="button" class="mi" data-ppayee="${esc(x.kol_id || '')}" data-ppayeeid="${esc(x.payee ? x.payee.payee_id : '')}">${esc(missingLabelOf(k))} ↗</button>`).join('');
     document.body.appendChild(m);
@@ -313,14 +394,14 @@ KT.screens.payments = (function () {
       $('hd_checks').innerHTML = checksHTML(res, ''); $('hd_reason').classList.toggle('invalid', res.errs.length > 0);
       if (res.errs.length) return;
       const s = state(), it = R.payQueue(s, today()).items.find(i => i.key === key) || x;
-      if (it.deal ? !R.canHold(s, U.actor(), it.deal) : !can('payment.run')) { toast(PM.holdOnlyPic); return; }
+      if (simple() ? !canPayX(s, it) : it.deal ? !R.canHold(s, U.actor(), it.deal) : !can('payment.run')) { toast(PM.holdOnlyPic); return; }
       const h = R.holdItem(s, it, reason, ctxOf()); if (!h) return;
       s.deal_events.push(h.event); U.closeModal(); commit(PM.heldDone(name)); draw();
     });
   }
   function releaseItem(key) {
     const s = state(), x = pv.items.find(i => i.key === key); if (!x || !x.line) return;
-    if (x.deal ? !R.canHold(s, U.actor(), x.deal) : !can('payment.run')) { toast(PM.holdOnlyPic); return; }
+    if (simple() ? !canPayX(s, x) : x.deal ? !R.canHold(s, U.actor(), x.deal) : !can('payment.run')) { toast(PM.holdOnlyPic); return; }
     const ev = R.releaseLine(s, x.line, today(), ctxOf()); if (!ev) return;
     s.deal_events.push(ev); commit(PM.releasedDone(x.kol ? x.kol.display_name : x.account_handle)); draw();
   }
@@ -494,6 +575,11 @@ KT.screens.payments = (function () {
       if ($('ex_unlock')) $('ex_unlock').addEventListener('click', () => { closeDialog(); KT.payee.unlockDialog(() => exportPr(true, id)); });
       return;
     }
+    await writePr(run, withDetails);
+  }
+  /* the PR file of a run: unlocked → the payee columns filled in memory and dropped right after the download */
+  async function writePr(run, withDetails) {
+    const s = state(), vault = s.lookups.payee_vault, V = KT.vault;
     let details = null;
     if (withDetails !== false && vault && V.isUnlocked(vault) && can('payee.unlock')) {
       details = new Map();
@@ -675,6 +761,166 @@ KT.screens.payments = (function () {
     askReason(PM.cancelTitle(items.length), PM.cancelLine, why => { const s = state(), evs = R.cancelLines(s, items, why, ctxOf()); s.deal_events.push(...evs); pv.selected.clear(); commit(PM.cancelledN(items.length)); draw(); });
   }
 
+  /* ===================== CR-17 §4.2 — Simple mode: To pay · Sent · Paid ===================== */
+  const PS = C.pay.simple;
+  const SIMPLE_DUE = ['ready', 'missing_docs', 'on_hold', 'in_run'];
+  const canPayX = (s, x) => R.canPaySimple(s, U.actor(), x);
+  /* rows by key, worked out again from the data as it is now (a row may have changed since the table was drawn) */
+  const itemsNow = keys => { const set = new Set(keys); return R.payQueue(state(), today()).items.filter(x => set.has(x.key)); };
+  const rowName = x => (x.kol ? x.kol.display_name : x.account_handle || (x.payee && x.payee.account_handle) || '');
+  /* Mark paid: a small form (Paid date · Ref) → Paid · Undo for 10 seconds */
+  function markPaidPop(anchor, keys, after) {
+    const s = state(), items = itemsNow(keys).filter(x => canPayX(s, x) && x.status !== 'paid' && x.status !== 'on_hold');
+    if (!items.length) { toast(PS.noneToPay); return; }
+    const one = items.length === 1 ? items[0] : null;
+    U.popForm(anchor, { title: one ? PS.markPaidOne(rowName(one), C.pay.milestone[one.milestone] || one.milestone) : PS.markPaidN(items.length), ok: PS.confirm, focus: '#mpp_ref',
+      body: `<div class="field"><label for="mpp_date">${esc(PM.paidOnDate)}</label>${U.dateHTML('id="mpp_date"', today(), { label: PM.paidOnDate })}</div>` +
+        `<div class="field"><label for="mpp_ref">${esc(PS.ref)} <span class="muted small">${esc(PS.optional)}</span></label><input id="mpp_ref" autocomplete="off" placeholder="${esc(PS.refPh)}"></div>` +
+        (items.length > 1 ? `<div class="hint">${esc(PS.sameForAll)}</div>` : ''),
+      onOk: m => {
+        const date = m.querySelector('#mpp_date').value, ref = R.trim(m.querySelector('#mpp_ref').value);
+        if (!R.isISODate(date)) { U.popFormError(m, C.msg.dateInvalid(PM.paidOnDate)); return false; }
+        if (R.looksSensitive(ref)) { U.popFormError(m, C.msg.sensitive); return false; }
+        const s2 = state(), now = itemsNow(items.map(x => x.key)).filter(x => canPayX(s2, x));
+        const r = R.markItemsPaid(s2, now, { date, ref }, ctxOf()); s2.deal_events.push(...r.events);
+        pv.selected.clear(); commit(); if (after) after();
+        U.toastAction(PS.paidDone(r.n), C.deal.undo, () => { const s3 = state(); s3.deal_events.push(...R.undoMarkPaid(s3, r.undo, ctxOf())); commit(PS.undone); if (after) after(); }, 10000);
+        return true;
+      } });
+  }
+  /* Mark unpaid (Admin · KOL Manager · Accounting) — a reason */
+  function markUnpaidAsk(lineId, after) {
+    if (!R.canUnpay(U.actor())) { toast(PS.onlyManagers); return; }
+    const l = state().payment_lines.find(x => x.line_id === lineId); if (!l || l.status !== 'paid') return;
+    askReason(PS.unpaidTitle(l.account_handle || ''), PS.markUnpaid, why => {
+      const s = state(), l2 = s.payment_lines.find(x => x.line_id === lineId); if (!l2 || !R.canUnpay(U.actor())) return;
+      const evs = R.markUnpaid(s, l2, why, ctxOf()); if (!evs) return;
+      s.deal_events.push(...evs); commit(PS.unpaidDone); if (after) after();
+    });
+  }
+  /* the PR file of a run: locked vault → Unlock and export · Export without payee details · Cancel (a promise: true · false · null) */
+  function askDetails(run) {
+    const s = state(), vault = s.lookups.payee_vault, V = KT.vault;
+    const needs = R.runLines(s, run.run_id).some(l => { const p = R.payeeOfLine(s, l); return p && p.secure; });
+    if (!needs || !vault || V.isUnlocked(vault)) return Promise.resolve(true);
+    return new Promise(resolve => {
+      openDialog(`<div class="dlg-h">${esc(PM.exportTitle(run.label || run.run_id))}</div><div class="dlg-b"><p style="margin-top:0">${esc(PM.exportLocked)}</p></div>
+        <div class="dlg-f"><button type="button" class="btn" id="ex_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn" id="ex_without">${esc(PM.exportWithout)}</button>` +
+        (can('payee.unlock') ? `<button type="button" class="btn primary" id="ex_unlock">${esc(PM.unlockExport)}</button>` : '') + `</div>`);
+      /* a close event left over from the dialog before (it fires late) is not this one's */
+      let done = false; const onClose = () => { if (!U.dlg.open) end(null); }, end = v => { if (done) return; done = true; U.dlg.removeEventListener('close', onClose); resolve(v); };
+      U.dlg.addEventListener('close', onClose);
+      $('ex_cancel').addEventListener('click', () => { closeDialog(); end(null); });
+      $('ex_without').addEventListener('click', () => { end(false); closeDialog(); });
+      if ($('ex_unlock')) $('ex_unlock').addEventListener('click', () => { U.dlg.removeEventListener('close', onClose); done = true; closeDialog(); KT.payee.unlockDialog(() => resolve(true)); });
+    });
+  }
+  /* Export for accounting (To pay): ⚠ missing documents (export anyway) → the PR file of the rows → "Mark n lines as sent to accounting?" (Yes = Sent · No = nothing changes) */
+  async function exportForAccounting(keys) {
+    const s = state(), items = itemsNow(keys).filter(x => canPayX(s, x) && !['paid', 'on_hold', 'submitted'].includes(x.status));
+    if (!items.length) { toast(PS.noneToSend); return; }
+    const missing = items.filter(x => { const t = R.docsTally(s, x); return t && t.have < t.need; }).length;
+    if (missing && !(await U.confirmDialog(PS.missingTitle(missing), PS.missingBody, PS.exportAnyway))) return;
+    const ctx = ctxOf(), r = R.sendToAccounting(s, items, { date: today() }, ctx); if (!r) return;
+    const withDetails = await askDetails(r.run);
+    if (withDetails === null) { R.undoSend(state(), r.undo); draw(); return; }
+    await writePr(r.run, withDetails);
+    const yes = await new Promise(resolve => {
+      openDialog(`<div class="dlg-h">${esc(PS.sentAsk(r.lines.length))}</div><div class="dlg-b"><p style="margin-top:0">${esc(PS.sentAskBody)}</p></div>
+        <div class="dlg-f"><button type="button" class="btn" data-r="0">${esc(PS.sentNo)}</button><button type="button" class="btn primary" data-r="1">${esc(PS.sentYes)}</button></div>`);
+      let done = false; const onClose = () => { if (!U.dlg.open) end(false); }, end = v => { if (done) return; done = true; U.dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); };
+      U.dlg.addEventListener('close', onClose);   // a late close event of the dialog before is not an answer
+      U.dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => end(b.dataset.r === '1')));
+      U.dlg.querySelector('[data-r="1"]').focus();   // Yes is the default
+    });
+    const s2 = state();
+    if (!yes) { R.undoSend(s2, r.undo); draw(); return; }
+    s2.deal_events.push(...r.events); pv.selected.clear(); commit(PS.sentDone(r.lines.length, r.run.label)); draw();
+  }
+  /* Sent › Export again: the PR of each run the ticked rows are in */
+  async function exportAgain(keys) {
+    const s = state(), runs = [...new Set(itemsNow(keys).map(x => x.run_id).filter(Boolean))].map(id => s.payment_runs.find(r => r.run_id === id)).filter(Boolean);
+    for (const run of runs) { const d = await askDetails(run); if (d === null) return; await writePr(run, d); }
+  }
+  /* Sent › ⋯ Move back to To pay */
+  function moveBack(key) {
+    const s = state(), x = itemsNow([key])[0]; if (!x || !x.line || !canPayX(s, x)) return;
+    const evs = R.moveBackToPay(s, x.line, ctxOf()); if (!evs) return;
+    s.deal_events.push(...evs); commit(PS.movedBack); draw();
+  }
+  /* the status of a row in Simple mode: Due · Not due · On hold · In a run (a Draft from Full mode) */
+  const SIMPLE_ST = { ready: 'due', missing_docs: 'due', not_due: 'not_due', on_hold: 'on_hold', in_run: 'in_run', submitted: 'sent', paid: 'paid' };
+  const simpleChip = st => { const k = SIMPLE_ST[st] || st; return `<span class="st ${{ due: 'warn', not_due: 'muted', on_hold: 'holdc', in_run: 'progress', sent: 'subm', paid: 'done' }[k] || ''}">${esc(PS.status[k] || k)}</span>`; };
+  /* Docs 2/4 — grey · a click lists what is missing (each opens where it is fixed) · never blocks */
+  const docsChip = x => { const t = x.docs; if (!t) return '';
+    return t.have < t.need ? `<button type="button" class="pm-docs-n" data-pmiss="${esc(x.key)}" title="${esc(t.missing.map(missingLabelOf).join(' · '))}" aria-haspopup="true">${esc(PS.docsN(t.have, t.need))}</button>`
+      : `<span class="pm-docs-n ok" title="${esc(PY.docsOnFile)}">${esc(PS.docsN(t.have, t.need))} ✓</span>`; };
+  const payBtn = (s, x) => (canPayX(s, x) ? (x.status === 'on_hold' ? `<button type="button" class="btn small" disabled title="${esc(PS.heldTip)}">${esc(PS.markPaid)}</button>`
+    : `<button type="button" class="btn small primary pm-paybtn" data-ppaid="${esc(x.key)}">${esc(PS.markPaid)}</button>`) : '');
+  /* Sent: what went to Accounting and waits to be paid (more than 7 days = yellow) */
+  function drawSent(s, q, td) {
+    const list = q.items.filter(x => x.status === 'submitted' && inScope(s, x)).sort((a, b) => String(R.sentAt(s, a.line)).localeCompare(String(R.sentAt(s, b.line))));
+    pv.items = list; [...pv.selected].forEach(k => { if (!list.some(x => x.key === k)) pv.selected.delete(k); });
+    const sel = [...pv.selected], canBulk = list.some(x => canPayX(s, x));
+    const bulk = sel.length ? `<b class="pm-seln">${esc(C.deal.selected(sel.length))}</b><button type="button" class="btn small primary" data-pact="spaid">${esc(PS.markPaid)}</button>` +
+      `<button type="button" class="btn small" data-pact="sagain">${esc(PS.exportAgain)}</button><button type="button" class="btn small ghost" data-pact="clearsel">${esc(C.deal.clear)}</button>` : '';
+    const ctx = R.dealContext(s);
+    const rows = list.map(x => { const days = R.sentDays(s, x.line, td), late = days != null && days > R.SENT_LATE_DAYS, run = s.payment_runs.find(r => r.run_id === x.run_id) || {};
+      const ph = x.deal ? ctx.phases.get(R.primaryPhase(ctx.phaseIdx, x.deal_id)) : null;
+      const menu = canPayX(s, x) || x.deal ? `<details class="menu pm-menu"><summary class="icon-btn" aria-label="${esc(PM.rowMenu)}" title="${esc(PM.rowMenu)}">⋯</summary><div class="menu-list right">` +
+        (canPayX(s, x) ? `<button type="button" class="mi" data-pback="${esc(x.key)}">${esc(PS.moveBack)}</button>` : '') + (x.deal ? `<button type="button" class="mi" data-pdeal="${esc(x.deal_id)}">${esc(PM.openDeal)}</button>` : '') + `</div></details>` : '';
+      return `<tr data-pkey="${esc(x.key)}">${canBulk ? `<td class="cb">${canPayX(s, x) ? `<input type="checkbox" data-psel="${esc(x.key)}"${pv.selected.has(x.key) ? ' checked' : ''} aria-label="${esc(rowName(x))}">` : ''}</td>` : ''}` +
+        `<td class="pm-kol stk${canBulk ? '' : ' at0'}"><span class="kname"><b>${U.nameHTML(rowName(x))}</b></span>${R.payeeTag(s, x.payee) ? ` <span class="chip pm-ptag">→ ${esc(R.payeeTag(s, x.payee))}</span>` : ''}</td>` +
+        `<td class="cph2"><span class="c1">${esc(x.deal ? R.campaignName(s, x.deal.campaign_id) : x.project_label || '')}</span>${ph ? `<span class="c2">${esc(R.phaseName(s, ph.phase_id))}</span>` : ''}</td>` +
+        `<td class="nowrap">${esc(C.pay.milestone[x.milestone] || x.milestone)}</td><td class="num">${money(x.tax.gross)}</td><td class="num">${x.tax.wht ? money(x.tax.wht) : '<span class="muted">0.00</span>'}</td><td class="num"><b>${money(x.tax.net)}</b></td>` +
+        `<td class="nowrap"><span class="${late ? 'pm-late' : ''}">${esc(R.dmy(R.dateOfTimestamp(R.sentAt(s, x.line))).slice(0, 5))}</span> <span class="muted small${late ? ' pm-late' : ''}">${esc(PS.waitingDays(days || 0))}</span></td>` +
+        `<td class="muted small">${esc(run.label || run.run_id || '')}</td><td class="nowrap">${esc(x.pic || '')}</td><td class="pm-act">${payBtn(s, x)}${menu}</td></tr>`; }).join('');
+    const t = ['gross', 'wht', 'net'].map(k => R.round2(list.reduce((a, x) => a + x.tax[k], 0)));
+    $('pm_body').innerHTML = `<div class="toolbar pm-row2"><span class="hint">${esc(PS.sentHint)}</span><span class="spacer"></span>${bulk}</div>` +
+      (!list.length ? `<div class="card empty"><b>${esc(PS.noSent)}</b></div>` : `<div class="tablewrap pm-wrap"><table class="tbl pm-tbl pm-simple"><thead><tr>${canBulk ? `<th class="cb"><input type="checkbox" id="pm_all" aria-label="${esc(C.deal.selectAll)}"${list.filter(x => canPayX(s, x)).every(x => pv.selected.has(x.key)) ? ' checked' : ''}></th>` : ''}` +
+        `<th class="stk${canBulk ? '' : ' at0'}">${esc(PM.col.kol)}</th><th>${esc(PM.col.campaign)}</th><th>${esc(PM.col.milestone)}</th><th class="num">${esc(PM.col.gross)}</th><th class="num">${esc(PM.col.wht)}</th><th class="num">${esc(PM.col.net)}</th>` +
+        `<th>${esc(PS.colSent)}</th><th>${esc(PM.run)}</th><th>${esc(PM.col.pic)}</th><th></th></tr></thead><tbody>${rows}` +
+        `<tr class="total"><td colspan="${(canBulk ? 1 : 0) + 3}">${esc(PM.totalLine(list.length))}</td><td class="num">${money(t[0])}</td><td class="num">${money(t[1])}</td><td class="num">${money(t[2])}</td><td colspan="4"></td></tr></tbody></table></div>`);
+  }
+  /* Paid: paid date · paid by · ref · WHT certificate ticked on the row · ⋯ Mark unpaid (managers) */
+  function drawPaid(s, td) {
+    const h = pv.hist, [from, to] = histRange(td), actor = U.actor();
+    const list = R.paidLines(s).filter(l => l.paid_date >= from && l.paid_date <= to).map(l => R.payItem(s, td, { line: l })).filter(x => inScope(s, x));
+    pv.items = list; [...pv.selected].forEach(k => { if (!list.some(x => x.key === k)) pv.selected.delete(k); });
+    const canW = x => canPayX(s, x) && x.line.wht > 0, canBulk = list.some(canW);
+    const presets = R.PRESETS.concat(['custom']).map(k => `<button type="button" class="${h.preset === k ? 'on' : ''}" data-hpreset="${k}">${esc(C.overview.presets[k])}</button>`).join('');
+    const sel = [...pv.selected];
+    const bulk = sel.length ? `<b class="pm-seln">${esc(C.deal.selected(sel.length))}</b><button type="button" class="btn small primary" data-pact="swht">${esc(PS.markWht)}</button><button type="button" class="btn small ghost" data-pact="clearsel">${esc(C.deal.clear)}</button>` : '';
+    const rows = list.map(x => { const l = x.line;
+      const menu = R.canUnpay(actor) || x.deal ? `<details class="menu pm-menu"><summary class="icon-btn" aria-label="${esc(PM.rowMenu)}" title="${esc(PM.rowMenu)}">⋯</summary><div class="menu-list right">` +
+        (R.canUnpay(actor) ? `<button type="button" class="mi danger" data-punpaid="${esc(l.line_id)}">${esc(PS.markUnpaid)}</button>` : '') + (x.deal ? `<button type="button" class="mi" data-pdeal="${esc(x.deal_id)}">${esc(PM.openDeal)}</button>` : '') + `</div></details>` : '';
+      const wht = l.wht > 0 ? `<label class="tick pm-whtt"${l.wht_cert_sent_date ? ` title="${esc(PS.whtSentOn(R.dmy(l.wht_cert_sent_date)))}"` : ''}><input type="checkbox" data-pwht="${esc(l.line_id)}"${l.wht_cert_sent_date ? ' checked' : ''}${canW(x) ? '' : ' disabled'} aria-label="${esc(PM.whtCert)}">${l.wht_cert_sent_date ? ` <span class="muted small">${esc(R.dmy(l.wht_cert_sent_date).slice(0, 5))}</span>` : ''}</label>` : '<span class="muted">—</span>';
+      return `<tr data-pkey="${esc(x.key)}">${canBulk ? `<td class="cb">${canW(x) ? `<input type="checkbox" data-psel="${esc(x.key)}"${pv.selected.has(x.key) ? ' checked' : ''} aria-label="${esc(rowName(x))}">` : ''}</td>` : ''}` +
+        `<td class="nowrap">${esc(R.dmy(l.paid_date))}</td><td class="pm-kol"><b>${U.nameHTML(rowName(x))}</b></td><td class="muted cph">${esc(x.project_label || '')}</td><td>${esc(C.pay.milestone[x.milestone] || x.milestone)}</td>` +
+        `<td class="num">${money(l.gross)}</td><td class="num">${money(l.wht)} <span class="muted small">${l.wht_rate}%</span></td><td class="num"><b>${money(l.net)}</b></td>` +
+        `<td class="nowrap">${esc(l.paid_by ? R.changedByName(s, l.paid_by) : l.run_id ? PS.byAccounting : PM.sources[l.source] || '—')}</td><td class="small">${l.paid_ref ? esc(l.paid_ref) : '<span class="muted">—</span>'}</td>` +
+        `<td>${wht}</td><td class="nowrap">${esc(x.pic || '')}</td><td class="pm-act">${menu}</td></tr>`; }).join('');
+    const t = ['gross', 'wht', 'net'].map(k => R.round2(list.reduce((a, x) => a + x.tax[k], 0)));
+    $('pm_body').innerHTML = `<div class="toolbar pm-row2"><div class="seg" role="group" aria-label="${esc(PM.paidDate)}">${presets}</div>` +
+      (h.preset === 'custom' ? '' : `<span class="muted small">${esc(R.dmy(from))} – ${esc(R.dmy(to))}</span>`) +
+      `<span class="${h.preset === 'custom' ? 'pm-custom' : 'hidden'}">${U.rangeHTML('id="ph_range"', from, to, { label: C.overview.presets.custom })}</span><span class="spacer"></span>${bulk}` +
+      (!sel.length && can('payment.paid') ? `<button type="button" class="btn small" data-pact="outsidepick">${esc(PM.paidOutside)}</button>` : '') +
+      `<button type="button" class="btn small ghost" data-pact="csv">${esc(PS.export)}</button>${!sel.length && R.canUnpay(actor) ? `<button type="button" class="btn small ghost" data-pact="whtcsv">${esc(PM.whtSummary)}</button>` : ''}</div>` +
+      (!list.length ? (pv.used && pv.used.length ? U.noMatchHTML(PM.noHistoryMatch, pv.used) : `<div class="hint">${esc(PM.noHistory)}</div>`) : `<div class="tablewrap pm-wrap"><table class="tbl pm-tbl pm-simple"><thead><tr>` +
+        `${canBulk ? `<th class="cb"><input type="checkbox" id="pm_all" aria-label="${esc(C.deal.selectAll)}"${list.filter(canW).every(x => pv.selected.has(x.key)) ? ' checked' : ''}></th>` : ''}<th>${esc(PM.paidDate)}</th><th>${esc(PM.col.kol)}</th><th>${esc(PM.col.campaign)}</th><th>${esc(PM.col.milestone)}</th>` +
+        `<th class="num">${esc(PM.col.gross)}</th><th class="num">${esc(PM.col.wht)}</th><th class="num">${esc(PM.col.net)}</th><th>${esc(PS.colPaidBy)}</th><th>${esc(PS.ref)}</th><th>${esc(PM.whtCert)}</th><th>${esc(PM.col.pic)}</th><th></th></tr></thead><tbody>${rows}` +
+        `<tr class="total"><td colspan="${(canBulk ? 1 : 0) + 4}">${esc(PM.totalLine(list.length))}</td><td class="num">${money(t[0])}</td><td class="num">${money(t[1])}</td><td class="num">${money(t[2])}</td><td colspan="5"></td></tr></tbody></table></div>`);
+    if ($('ph_range')) $('ph_range').addEventListener('change', e => { const x = e.target.dataset; if (R.isISODate(x.from) && R.isISODate(x.to)) { Object.assign(h, { preset: 'custom', from: x.from, to: x.to }); draw(); } });
+  }
+  /* Paid › Mark WHT cert sent (the ticked rows · today) · a row's ☐ ticks / unticks it */
+  function whtSimple(lineIds, on) {
+    const s = state(), lines = lineIds.map(id => s.payment_lines.find(l => l.line_id === id)).filter(Boolean)
+      .filter(l => canPayX(s, R.payItem(s, today(), { line: l })) && l.wht > 0);
+    if (!lines.length) return;
+    lines.forEach(l => R.setWhtSent(l, on ? today() : null)); pv.selected.clear();
+    commit(on ? PM.whtSentDone(lines.length) : PS.whtCleared); draw();
+  }
+
   /* ===================== events ===================== */
   function onBodyClick(e) {
     if (e.target.closest('[data-clearfilters]')) { clearAll(); return; }
@@ -684,16 +930,24 @@ KT.screens.payments = (function () {
       Object.assign(pv.hist, { preset: hp.dataset.hpreset }); draw(); return;
     }
     const mp = e.target.closest('[data-pmiss]'); if (mp) { missingPop(mp); return; }
+    /* CR-17 §4.2 — Simple mode */
+    const tg = e.target.closest('[data-ptabgo]'); if (tg) { pv.tab = tg.dataset.ptabgo; pv.queue = null; pv.selected.clear(); render(); return; }
+    const pp = e.target.closest('[data-ppaid]'); if (pp) { markPaidPop(pp, [pp.dataset.ppaid], draw); return; }
+    const pb = e.target.closest('[data-pback]'); if (pb) { const m = pb.closest('details'); if (m) m.open = false; moveBack(pb.dataset.pback); return; }
+    const pu = e.target.closest('[data-punpaid]'); if (pu) { const m = pu.closest('details'); if (m) m.open = false; markUnpaidAsk(pu.dataset.punpaid, draw); return; }
+    const pw = e.target.closest('[data-pwht]'); if (pw) { whtSimple([pw.dataset.pwht], pw.checked); return; }
     const pf = e.target.closest('[data-pfold]'); if (pf) { const f = folded(), k = pf.dataset.pfold; f.has(k) ? f.delete(k) : f.add(k); setFolded(f); draw(); return; }
     const qc = e.target.closest('[data-pqueue]'); if (qc) { pv.queue = pv.queue === qc.dataset.pqueue ? null : qc.dataset.pqueue; pv.selected.clear(); $('pm_tools').dataset.built = ''; draw(); return; }
     const hd = e.target.closest('[data-phold]'); if (hd) { const m = hd.closest('details'); if (m) m.open = false; holdDialog(hd.dataset.phold, m ? m.querySelector('summary') : hd); return; }
     const rl = e.target.closest('[data-prelease]'); if (rl) { const m = rl.closest('details'); if (m) m.open = false; releaseItem(rl.dataset.prelease); return; }
     const av = e.target.closest('[data-paccview]'); if (av) { pv.af.view = av.dataset.paccview; pref.set('payaccview', pv.af.view); $('pm_tools').dataset.built = ''; draw(); return; }
+    /* CR-16 §4.1 — Missing: Bank details / Payee details → the KOL's profile at Payee & shipping (a payee outside KOL Master → its dialog) */
     const py = e.target.closest('[data-ppayee]');
-    if (py) { if (py.dataset.ppayee) KT.payee.openDialog({ kolId: py.dataset.ppayee, onSaved: draw }); else if (py.dataset.ppayeeid) KT.payee.openDialog({ payeeId: py.dataset.ppayeeid, onSaved: draw }); return; }
+    if (py) { const m = py.closest('details'); if (m) m.open = false; if (py.dataset.ppayee) KT.profile.open(py.dataset.ppayee, { tab: 'payee', opener: py }); else if (py.dataset.ppayeeid) KT.payee.openDialog({ payeeId: py.dataset.ppayeeid, onSaved: draw }); return; }
+    const pt = e.target.closest('[data-ppayto]'); if (pt) { const m = pt.closest('details'); if (m) m.open = false; changePayeeDialog(pt.dataset.ppayto, m ? m.querySelector('summary') : pt); return; }
     const po = e.target.closest('[data-pposts]'); if (po) { U.go('deals', { deal: po.dataset.pposts }); return; }
     const pd = e.target.closest('[data-pdeal]'); if (pd) { U.go('deals', { deal: pd.dataset.pdeal }); return; }
-    if (e.target.id === 'pm_all') { const on = e.target.checked; pv.items.filter(x => x.status !== 'on_hold').forEach(x => (on ? pv.selected.add(x.key) : pv.selected.delete(x.key))); draw(); return; }
+    if (e.target.id === 'pm_all') { const on = e.target.checked, s0 = state(); pv.items.filter(x => x.status !== 'on_hold' && (!simple() || (canPayX(s0, x) && (pv.tab !== 'paid' || x.line.wht > 0)))).forEach(x => (on ? pv.selected.add(x.key) : pv.selected.delete(x.key))); draw(); return; }
     const cb = e.target.closest('[data-psel]'); if (cb) { cb.checked ? pv.selected.add(cb.dataset.psel) : pv.selected.delete(cb.dataset.psel); draw(); return; }
     const rn = e.target.closest('[data-prun]'); if (rn) { pv.run = rn.dataset.prun; pv.selected.clear(); draw(); window.scrollTo(0, 0); return; }
     /* Accounting › Runs to pay */
@@ -753,6 +1007,11 @@ KT.screens.payments = (function () {
     cancellines: () => cancelLinesDialog(),
     whtsent: () => whtSentDialog(),
     whtcsv: () => exportWht(),
+    /* CR-17 §4.2 — Simple mode */
+    spaid: b => markPaidPop(b, [...pv.selected], draw),
+    sexport: () => exportForAccounting([...pv.selected]),
+    sagain: () => exportAgain([...pv.selected]),
+    swht: () => whtSimple(pv.items.filter(x => pv.selected.has(x.key)).map(x => x.line.line_id), true),
   };
   /* Payments CSV — no personal data */
   function exportCsv() {
@@ -762,5 +1021,6 @@ KT.screens.payments = (function () {
   }
   function reset() { Object.assign(pv, { f: { campaign: '', source: '', q: '' }, picUser: null, queue: null, run: null, rf: { from: '', to: '', q: '' } }); pv.af.from = ''; pv.af.to = ''; pv.af.q = ''; pv.selected.clear(); }
 
-  return { render, reset, payItemsOfDeal: (s, d) => R.dealPayItems(s, d, today()), _pv: pv, _draw: () => draw(), money, statusChip, paymentEvent, taxBox };
+  return { render, reset, payItemsOfDeal: (s, d) => R.dealPayItems(s, d, today()), _pv: pv, _draw: () => draw(), money, statusChip, paymentEvent, taxBox,
+    markPaid: markPaidPop, markUnpaid: markUnpaidAsk, simpleChip: st => simpleChip(st) };
 })();

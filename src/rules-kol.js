@@ -114,6 +114,10 @@ Object.assign(KT.rules, (function (R, C) {
     return totalCost(deal) === 0 && termOf(deal) !== 'free';
   }
 
-  return { KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
+  /* ===================== CR-14 §4.5 — the contact ID of a KOL (the checks are in rules.js) ===================== */
+  /* schema 13 — every KOL has contact_id (null · nothing is read from the notes) */
+  function migrateV13(obj) { (obj.kol_master || []).forEach(k => { if (k.contact_id === undefined) k.contact_id = null; }); obj.schema_version = 13; return obj; }
+
+  return { migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
     kolTypeKeyFor, validateKolType, splitAliases, costReference, costRefRows, hasCosts, costNotSet, zeroCostMove };
 })(KT.rules, KT.content));

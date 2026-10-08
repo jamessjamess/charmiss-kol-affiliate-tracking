@@ -65,7 +65,7 @@ KT.perf = (function () {
       case 'pic': return `<td>${r.pic ? esc(r.pic) : DASH}</td>`;
       case 'phase': return `<td>${r.phase ? esc(groupLabel(s, 'phase', r.phase)) : DASH}</td>`;
       case 'gencode': return `<td>${p.gencode_code ? `<span title="${esc(P.gencodeTip(R.dmy(R.gencodeEndDate(r.deal))))}">${esc(P.gencodeYes)}</span>` : DASH}</td>`;
-      case 'pillar': return `<td>${r.deal.pillar ? esc(r.deal.pillar) : DASH}</td>`;
+      case 'pillar': return `<td>${r.deal.pillar ? KT.ui.pillarChipHTML(r.deal.pillar, true) : DASH}</td>`;
       case 'ontime': return `<td class="nowrap">${r.lateDays == null ? DASH : r.lateDays ? `<span class="pf-late">${esc(P.late(r.lateDays))}</span>` : esc(P.onTime)}</td>`;
       default: return '<td></td>';
     }
@@ -116,9 +116,10 @@ KT.perf = (function () {
       card('cpv', esc(thbText(m.cpv, 3)), m.withViews ? esc(P.costOn(R.baht(m.costViews))) : '') + `</div>` +
       /* CR-11 §4.6: the posts nobody collects (before go-live − 30 days, no numbers) — a small line, the formulas do not change */
       (ntN ? `<div class="pf-nt muted small">${esc(P.notTrackedLine(R.dmy(R.addDays(R.goLiveDate(s.lookups), -30)), R.fmtNum(ntN)))}</div>` : '');
-    const colMenu = `<details class="menu pf-colmenu"><summary class="btn small">${esc(P.columns)}</summary><div class="menu-list right pf-cols">` +
-      COLS.filter(k => k !== 'kol').map(k => `<label class="tick"><input type="checkbox" data-pfcol="${k}"${cols.includes(k) ? ' checked' : ''}> ${esc(P.col[k])}</label>`).join('') +
-      `<button type="button" class="mi" data-pfcolreset>${esc(P.defaultCols)}</button></div></details>`;
+    /* CR-14 §4.2 — Columns: the one multi-select (KOL always shows · Reset = the default columns · one column at least) */
+    const colMenu = `<span class="pf-colmenu">${U.multiSelect({ id: 'pf_cols', options: COLS.filter(k => k !== 'kol').map(k => ({ value: k, label: P.col[k] })), value: cols.filter(k => k !== 'kol'),
+      label: P.columns, aria: P.columns, searchable: false, defaultValue: DEFAULT_COLS.filter(k => k !== 'kol'), min: 1, minTip: P.minCol,
+      onChange: v => { setCols(['kol'].concat(v)); pv.o.rerender(); } })}</span>`;
     const dlMenu = `<details class="menu"><summary class="btn small">${ICON.download}<span>${esc(P.export)}</span></summary><div class="menu-list right">` +
       `<button type="button" class="mi" data-pfdl="xlsx">${esc(C.overview.dlXlsx)}</button><button type="button" class="mi" data-pfdl="csv">${esc(C.overview.dlCsv)}</button></div></details>`;
     const groups = R.groupPerfRows(s, sorted, by), shut = folded();
@@ -146,12 +147,11 @@ KT.perf = (function () {
     const ed = e.target.closest('[data-mcell][data-edit]'); if (ed) { startEdit(ed); return true; }
     if (e.target.closest('[data-pfpaste]')) { openPaste(e.target.closest('[data-pfpaste]')); return true; }
     if (e.target.closest('a') || e.target.closest('[data-copyname]') || e.target.closest('.info')) return true;
-    if (e.target.closest('details.menu > summary') || e.target.closest('.pf-cols label')) return true;
+    if (e.target.closest('details.menu > summary') || e.target.closest('[data-ms]')) return true;   // the Columns multi-select looks after itself
     const k = e.target.closest('[data-pfkpi]'); if (k) { o.setFilter('mstatus', k.dataset.pfkpi); return true; }
     const so = e.target.closest('[data-pfsort]'); if (so) { const key = so.dataset.pfsort; pv.sort = { key, dir: pv.sort.key === key ? (pv.sort.dir === 'asc' ? 'desc' : 'asc') : (NUM.has(key) || key === 'updated' || key === 'post_date' ? 'desc' : 'asc') }; o.rerender(); return true; }
     const f = e.target.closest('[data-pffold]'); if (f) { const set = folded(), g = f.dataset.pffold; set.has(g) ? set.delete(g) : set.add(g); setFolded(set); o.rerender(); return true; }
     const a = e.target.closest('[data-pfall]'); if (a) { setFolded(a.dataset.pfall === 'collapse' ? new Set(R.groupPerfRows(o.s, pv.sorted, groupBy()).map(g => String(g.key))) : new Set()); o.rerender(); return true; }
-    if (e.target.closest('[data-pfcolreset]')) { setCols(DEFAULT_COLS); o.rerender(); return true; }
     const d = e.target.closest('[data-pfdl]'); if (d) { const m = d.closest('details'); if (m) m.open = false; exportRows(d.dataset.pfdl); return true; }
     const row = e.target.closest('[data-perfrow]'); if (row) { o.openPost(row.dataset.deal, row.dataset.perfrow); return true; }
     return false;
@@ -159,8 +159,6 @@ KT.perf = (function () {
   function change(e) {
     const o = pv.o; if (!o) return;
     if (e.target.id === 'pf_group') { pref.set('perfgroup_' + me(), e.target.value); o.rerender(); return; }
-    const c = e.target.closest('[data-pfcol]');
-    if (c) { const on = new Set(colsOn()); c.checked ? on.add(c.dataset.pfcol) : on.delete(c.dataset.pfcol); setCols(COLS.filter(k => on.has(k))); o.rerender(); const m = document.querySelector('#dl_body .pf-colmenu'); if (m) m.open = true; }
   }
   function keydown(e) {
     if (e.target.classList && e.target.classList.contains('pf-in')) {

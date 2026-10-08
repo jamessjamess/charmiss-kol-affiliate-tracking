@@ -1,20 +1,40 @@
-/* screen-payee.js — CR-08 §4.4: the Payee of a KOL (Tax & terms · Bank details, encrypted · Documents) — the section in the KOL drawer and
-   the one dialog used from the KOL drawer and from Payments · Unlock / Lock of the Payee vault · Set up / Change passphrase.
-   Bank details go straight from the form into KT.vault.encrypt and are forgotten; only "bank ···last4" is kept readable. → KT.payee */
+/* screen-payee.js — CR-08 §4.4: payees (Tax & terms · Bank details, encrypted · Documents) · CR-16 §4.2 · §4.3: the Payee & shipping tab of the
+   KOL profile — more than one payee and shipping address for a KOL, each with one default (★) · Edit · Set as default · Archive (a payee a payment
+   line used is never deleted) — and the dialogs used from there and from Payments · Unlock / Lock of the Payee vault · Set up / Change passphrase.
+   Bank details and addresses go straight from the form into KT.vault.encrypt and are forgotten; only "bank ···last4" and the labels stay readable. → KT.payee */
 KT.payee = (function () {
   'use strict';
   const U = KT.ui, V = KT.vault;
   const { C, R, $, esc, state, commit, toast, openDialog, closeDialog, dateHTML, optionsHTML, can, store, userId, ICON } = U;
-  const PY = C.payee, VT = C.vault;
+  const PY = C.payee, VT = C.vault, SM = C.samples;
   const vaultOf = () => state().lookups.payee_vault || null;
   const userName = id => R.changedByName(state(), id);
   const nowISO = () => new Date().toISOString();
+  const showArch = { payees: false, addresses: false };
+  const canAddr = kol => R.canEditPayee(state(), U.actor(), null, kol);
+  const unlockedView = () => V.isUnlocked(vaultOf()) && can('payee.unlock');
+  const menuHTML = items => (items.filter(Boolean).length ? `<details class="menu"><summary class="icon-btn" aria-label="${esc(C.app.more)}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">${items.join('')}</div></details>` : '');
+  const mi = (attr, id, act, label, o = {}) => `<span class="mi-wrap"${o.tip ? ` title="${esc(o.tip)}"` : ''}><button type="button" class="mi${o.danger ? ' danger' : ''}" ${attr}="${esc(act)}" data-id="${esc(id)}"${o.off ? ' disabled' : ''}>${esc(label)}</button></span>`;
 
-  /* ===================== the section in the KOL drawer ===================== */
-  function bodyHTML(kol) {
-    const s = state(), p = R.payeeOfKol(s, kol.kol_id), vault = vaultOf(), canEdit = R.canEditPayee(s, U.actor(), p, kol);
-    if (!p) return `<div class="hint">${esc(PY.none)}</div>` + (canEdit ? `<button type="button" class="btn small" data-payee-edit style="margin-top:8px">${esc(PY.add)}</button>` : '') + shippingRow(kol, null);
-    const S = R.paySettings(s.lookups), miss = R.payeeDocsMissing(p);
+  /* ===================== CR-16 — the Payee & shipping tab ===================== */
+  function tabHTML(kol) {
+    const s = state(), vault = vaultOf(), all = R.payeesOfKol(s, kol.kol_id, true), addrs = R.addressesOfKol(s, kol.kol_id, true);
+    const liveP = all.filter(p => !p.archived), archP = all.filter(p => p.archived), liveA = addrs.filter(a => !a.archived), archA = addrs.filter(a => a.archived);
+    const anySecure = all.some(p => p.secure) || addrs.some(a => a.secure);
+    const unlock = anySecure && vault && V.available() && can('payee.unlock') && !V.isUnlocked(vault) ? `<div class="py-unlock"><span class="muted small">🔒 ${esc(PY.lockedNote)}</span><button type="button" class="btn small" data-payee-unlock>${ICON.lock || ''}${esc(PY.unlockToView)}</button></div>` : '';
+    const archToggle = (key, n) => (n ? `<button type="button" class="link small" data-show-arch="${key}">${esc(showArch[key] ? PY.hideArchived(n) : PY.showArchived(n))}</button>` : '');
+    const payees = (liveP.length ? liveP.map(p => payeeCardHTML(s, kol, p)).join('') : `<div class="hint">${esc(PY.none)}</div>`) +
+      (showArch.payees ? archP.map(p => payeeCardHTML(s, kol, p)).join('') : '') + archToggle('payees', archP.length);
+    const addresses = (liveA.length ? liveA.map(a => addressCardHTML(s, kol, a)).join('') : `<div class="hint">${esc(PY.noAddresses)}</div>`) +
+      (showArch.addresses ? archA.map(a => addressCardHTML(s, kol, a)).join('') : '') + archToggle('addresses', archA.length);
+    const addP = R.canEditPayee(s, U.actor(), null, kol) ? `<button type="button" class="btn small" data-payee-add>${esc(PY.addPayeeBtn)}</button>` : '';
+    const addA = canAddr(kol) ? `<button type="button" class="btn small" data-addr-add>${esc(PY.addAddressBtn)}</button>` : '';
+    return unlock + `<div class="kpm-2"><div class="kpm-col"><section class="sec"><div class="sec-h"><span>${esc(PY.payeesN(liveP.length))}</span>${addP}</div><div class="pcards">${payees}</div></section></div>` +
+      `<div class="kpm-col"><section class="sec"><div class="sec-h"><span>${esc(PY.addressesN(liveA.length))}</span>${addA}</div><p class="hint" style="margin-top:0">${esc(PY.addressHint)}</p><div class="pcards">${addresses}</div></section></div></div>`;
+  }
+  const defChip = () => `<span class="chip def-chip" title="${esc(PY.defaultTip)}">★ ${esc(PY.default)}</span>`;
+  function payeeCardHTML(s, kol, p) {
+    const S = R.paySettings(s.lookups), miss = R.payeeDocsMissing(p), a = R.payeeActions(s, p), ok = R.canEditPayee(s, U.actor(), p, kol), use = R.payeeUse(s, p.payee_id);
     const terms = [PY.types[p.payee_type], p.vat_registered ? PY.vatShort : PY.noVat, PY.whtShort(p.default_wht_rate != null ? p.default_wht_rate : S.default_wht_individual), PY.basisShort[p.price_basis]].join(' · ');
     const bank = p.secure ? `<b>${esc(PY.bankLine(p.bank_name, p.account_last4))}</b>${p.details_updated_at ? ` <span class="muted small">${esc(PY.updatedBy(R.dmy(p.details_updated_at.slice(0, 10)), userName(p.details_updated_by)))}</span>` : ''}`
       : `<span class="chip warn-chip">${esc(PY.missing(PY.missingBank))}</span>`;
@@ -24,58 +44,170 @@ KT.payee = (function () {
     const need = p.payee_type === 'company' ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book'];
     const docs = need.map(k => { const d = (p.docs || {})[k]; return `<span class="chip${d ? ' ok-chip' : ''}" title="${esc(d ? PY.received(R.dmy(d)) : '')}">${d ? '✓ ' : ''}${esc(PY.docs[k])}${d ? ` ${esc(R.dmy(d).slice(0, 5))}` : ''}</span>`; }).join('');
     const sum = !miss.length ? `<span class="chip ok-chip">✓ ${esc(PY.docsOnFile)}</span>` : `<span class="chip warn-chip">${esc(PY.missing(miss.map(k => (k === 'bank_details' ? PY.missingBank : PY.docs[k])).join(' · ')))}</span>`;
-    const unlockBtn = p.secure && vault && V.available() && can('payee.unlock') && !V.isUnlocked(vault) ? `<button type="button" class="btn small" data-payee-unlock>${ICON.lock || ''}${esc(PY.unlockToView)}</button>` : '';
-    return `<div class="kv"><span>${esc(PY.groupTax)}</span><b>${esc(terms)}</b></div>` +
-      `<div class="py-bank">${bank}</div>${verify}` +
-      (p.secure && V.isUnlocked(vault) ? `<div class="py-secure" data-payee-secure="${esc(p.payee_id)}"><span class="muted small">…</span></div>` : '') +
-      `<div class="py-docs">${sum}${docs}</div>` +
-      (p.docs_link ? `<div class="small" style="margin-top:6px"><a href="${esc(p.docs_link)}" target="_blank" rel="noopener">${esc(PY.openFolder)}</a></div>` : '') +
-      (unlockBtn ? `<div style="margin-top:8px">${unlockBtn}</div>` : '') + shippingRow(kol, p);
+    const menu = ok ? menuHTML([
+      a.canSetDefault ? mi('data-payee-act', p.payee_id, 'default', PY.setDefault) : '',
+      !p.archived ? mi('data-payee-act', p.payee_id, 'archive', PY.archive, { off: !a.canArchive, tip: p.is_default ? PY.cannotArchiveDefault : '' }) : '',
+      a.canRestore ? mi('data-payee-act', p.payee_id, 'restore', PY.restore) : '',
+      mi('data-payee-act', p.payee_id, 'delete', PY.del, { danger: true, off: !a.canDelete, tip: a.canDelete ? '' : use.lines || use.deals ? PY.cannotDeleteUsed(use.lines, use.deals) : PY.cannotDeleteDefault }),
+    ]) : '';
+    return `<div class="pcard${p.archived ? ' arch' : ''}" data-pcard="${esc(p.payee_id)}"><div class="pc-h"><b class="pc-l">${esc(p.label || PY.primary)}</b>${p.is_default ? defChip() : ''}${p.archived ? `<span class="chip">${esc(PY.archived)}</span>` : ''}` +
+      `<span class="spacer"></span>${ok && !p.archived ? `<button type="button" class="btn small" data-payee-edit="${esc(p.payee_id)}">${esc(PY.editBtn)}</button>` : ''}${menu}</div>` +
+      `<div class="pc-m">${esc(terms)}</div><div class="py-bank">${bank}</div>${verify}` +
+      (p.secure && unlockedView() ? `<div class="py-secure" data-payee-secure="${esc(p.payee_id)}"><span class="muted small">…</span></div>` : '') +
+      `<div class="py-docs">${sum}${docs}</div>` + (p.docs_link ? `<div class="small" style="margin-top:6px"><a href="${esc(p.docs_link)}" target="_blank" rel="noopener">${esc(PY.openFolder)}</a></div>` : '') + `</div>`;
   }
-  /* CR-10 §4.14 — Payee & shipping: the shipping details on file (encrypted · shown in full while unlocked) */
-  function shippingRow(kol, p) {
-    const SM = C.samples, on = !!(p && p.shipping_on_file && p.secure_ship), ok = R.canEditPayee(state(), U.actor(), p, kol);
-    return `<div class="kv py-ship"><span>${esc(SM.shippingDetails)}</span><b>${on ? `<span class="chip ok-chip">${esc(SM.addressOnFile)}</span>` : `<span class="chip">${esc(SM.noAddress)}</span>`}` +
-      (ok ? ` <button type="button" class="btn small" data-smship="${esc(kol.kol_id)}">${esc(SM.shippingDetails)}</button>` : '') + `</b></div>` +
-      (on && V.isUnlocked(vaultOf()) && can('payee.unlock') ? `<div class="sm-shipsecure" data-smsecure="${esc(kol.kol_id)}"><span class="muted small">…</span></div>` : '');
+  function addressCardHTML(s, kol, a) {
+    const act = R.addressActions(s, a), ok = canAddr(kol), n = R.addressUse(s, a.address_id);
+    const menu = ok ? menuHTML([
+      act.canSetDefault ? mi('data-addr-act', a.address_id, 'default', PY.setDefault) : '',
+      !a.archived ? mi('data-addr-act', a.address_id, 'archive', PY.archive, { off: !act.canArchive, tip: a.is_default ? PY.cannotArchiveDefaultAddr : '' }) : '',
+      act.canRestore ? mi('data-addr-act', a.address_id, 'restore', PY.restore) : '',
+      mi('data-addr-act', a.address_id, 'delete', PY.del, { danger: true, off: !act.canDelete, tip: act.canDelete ? '' : n ? PY.cannotDeleteAddr(n) : PY.cannotDeleteDefault }),
+    ]) : '';
+    return `<div class="pcard${a.archived ? ' arch' : ''}" data-acard="${esc(a.address_id)}"><div class="pc-h"><b class="pc-l">${esc(a.label)}</b>${a.is_default ? defChip() : ''}${a.archived ? `<span class="chip">${esc(PY.archived)}</span>` : ''}` +
+      `<span class="spacer"></span>${ok && !a.archived ? `<button type="button" class="btn small" data-addr-edit="${esc(a.address_id)}">${esc(PY.editBtn)}</button>` : ''}${menu}</div>` +
+      `<div class="py-bank">${a.secure ? `<span class="chip ok-chip">🔒 ${esc(SM.addressOnFile)}</span>` : `<span class="chip warn-chip">${esc(SM.noAddress)}</span>`}` +
+      (a.details_updated_at ? ` <span class="muted small">${esc(PY.updatedBy(R.dmy(a.details_updated_at.slice(0, 10)), userName(a.details_updated_by)))}</span>` : '') + `</div>` +
+      (a.secure && unlockedView() ? `<div class="sm-shipsecure" data-addrsecure="${esc(a.address_id)}"><span class="muted small">…</span></div>` : '') +
+      (n ? `<div class="muted small">${esc(PY.addrUsed(n))}</div>` : '') + `</div>`;
   }
-  const editBtn = kol => (R.canEditPayee(state(), U.actor(), R.payeeOfKol(state(), kol.kol_id), kol) ? `<button type="button" class="icon-btn edit-sec" data-payee-edit title="${esc(PY.edit)}" aria-label="${esc(PY.edit)}">${PENCIL}</button>` : '');
-  const PENCIL = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.6l2.8 2.8L6 12.8H3.2V10z"/></svg>';
-  /* after the drawer is drawn: decrypt the open payee into the page (memory only) */
+  /* after the tab is drawn: the payees / addresses decrypted into the page (memory only, while unlocked) */
   async function fillSecure(root) {
     KT.samples.fillSecure(root);
-    const box = root && root.querySelector('[data-payee-secure]'); if (!box) return;
-    const p = R.payeeById(state(), box.dataset.payeeSecure), rec = p ? await V.decrypt(p.secure) : null;
-    if (!rec || !box.isConnected) { box.innerHTML = ''; return; }
-    const row = (k, v, o = {}) => (!v ? '' : `<div class="py-row"><span class="l">${esc(PY.bank[k])}</span><span class="v">${o.mask ? `<span class="py-val" data-full="${esc(v)}">${esc(mask(v))}</span>` : `<span>${esc(v)}</span>`}` +
-      (o.mask ? `<button type="button" class="icon-btn sm" data-payee-reveal aria-label="${esc(PY.show)}" title="${esc(PY.show)}">👁</button>` : '') +
-      (o.copy ? `<button type="button" class="copybtn" data-payee-copy="${esc(v)}" data-label="${esc(PY.bank[k])}" title="${esc(PY.copyField(PY.bank[k]))}" aria-label="${esc(PY.copyField(PY.bank[k]))}">${COPY}</button>` : '') + `</span></div>`);
-    box.innerHTML = row('account_name', rec.account_name, { copy: 1 }) + row('bank_name', rec.bank_name) + row('account_no', rec.account_no, { mask: 1, copy: 1 }) + row('full_name', rec.full_name, { copy: 1 }) +
-      row('id_address', rec.id_address) + row('phone', rec.phone) + row('wht_contact', rec.wht_contact) + row('tax_id', rec.tax_id);
+    if (!root) return;
+    for (const box of [...root.querySelectorAll('[data-payee-secure]')]) {
+      const p = R.payeeById(state(), box.dataset.payeeSecure), rec = p && p.secure ? await V.decrypt(p.secure) : null;
+      if (!rec || !box.isConnected) { box.innerHTML = ''; continue; }
+      const row = (k, v, o = {}) => (!v ? '' : `<div class="py-row"><span class="l">${esc(PY.bank[k])}</span><span class="v">${o.mask ? `<span class="py-val" data-full="${esc(v)}">${esc(mask(v))}</span>` : `<span>${esc(v)}</span>`}` +
+        (o.mask ? `<button type="button" class="icon-btn sm" data-payee-reveal aria-label="${esc(PY.show)}" title="${esc(PY.show)}">👁</button>` : '') +
+        (o.copy ? `<button type="button" class="copybtn" data-payee-copy="${esc(v)}" data-label="${esc(PY.bank[k])}" title="${esc(PY.copyField(PY.bank[k]))}" aria-label="${esc(PY.copyField(PY.bank[k]))}">${COPY}</button>` : '') + `</span></div>`);
+      box.innerHTML = row('account_name', rec.account_name, { copy: 1 }) + row('bank_name', rec.bank_name) + row('account_no', rec.account_no, { mask: 1, copy: 1 }) + row('full_name', rec.full_name, { copy: 1 }) +
+        row('id_address', rec.id_address) + row('phone', rec.phone) + row('wht_contact', rec.wht_contact) + row('tax_id', rec.tax_id);
+    }
   }
   const COPY = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>';
   const mask = v => { const d = String(v).replace(/\D/g, ''); return '•••••' + d.slice(-4); };
-  /* clicks inside the section · → true when handled */
+  /* clicks inside the tab · → true when handled */
   function onClick(e, kol, rerender) {
-    if (e.target.closest('[data-smship]')) { KT.samples.shippingDialog(kol.kol_id, rerender); return true; }
-    if (e.target.closest('[data-payee-edit]')) { openDialog_({ kolId: kol.kol_id, onSaved: rerender, opener: e.target.closest('[data-payee-edit]') }); return true; }
-    if (e.target.closest('[data-payee-unlock]')) { unlockDialog(rerender); return true; }
-    const vf = e.target.closest('[data-payee-verify]');
+    const el = sel => e.target.closest(sel);
+    if (el('[data-payee-add]')) { openDialog_({ kolId: kol.kol_id, newPayee: true, onSaved: rerender, opener: el('[data-payee-add]') }); return true; }
+    const pe = el('[data-payee-edit]'); if (pe) { openDialog_(pe.dataset.payeeEdit ? { payeeId: pe.dataset.payeeEdit, onSaved: rerender, opener: pe } : { kolId: kol.kol_id, onSaved: rerender, opener: pe }); return true; }
+    const pa = el('[data-payee-act]'); if (pa) { const m = pa.closest('details'); if (m) m.open = false; if (!pa.disabled) payeeAction(pa.dataset.payeeAct, pa.dataset.id, kol, rerender); return true; }
+    if (el('[data-addr-add]')) { addressDialog({ kolId: kol.kol_id, onSaved: rerender, opener: el('[data-addr-add]') }); return true; }
+    const ae = el('[data-addr-edit]'); if (ae) { addressDialog({ addressId: ae.dataset.addrEdit, onSaved: rerender, opener: ae }); return true; }
+    const aa = el('[data-addr-act]'); if (aa) { const m = aa.closest('details'); if (m) m.open = false; if (!aa.disabled) addressAction(aa.dataset.addrAct, aa.dataset.id, kol, rerender); return true; }
+    const sa = el('[data-show-arch]'); if (sa) { showArch[sa.dataset.showArch] = !showArch[sa.dataset.showArch]; rerender(); return true; }
+    if (el('[data-smship]')) { KT.samples.shippingDialog(kol.kol_id, rerender); return true; }
+    if (el('[data-payee-unlock]')) { unlockDialog(rerender); return true; }
+    const vf = el('[data-payee-verify]');
     if (vf) { if (!U.guard('payee.verify')) return true; const p = R.payeeById(state(), vf.dataset.payeeVerify); if (p) { Object.assign(p, { needs_verification: false, verified_at: nowISO(), verified_by: userId() }); commit(PY.verified); rerender(); } return true; }
-    const rv = e.target.closest('[data-payee-reveal]');
+    const rv = el('[data-payee-reveal]');
     if (rv) { const v = rv.parentElement.querySelector('.py-val'), open = v.dataset.open === '1'; v.textContent = open ? mask(v.dataset.full) : v.dataset.full; v.dataset.open = open ? '' : '1'; rv.title = open ? PY.show : PY.hide; V.touch(); return true; }
-    const cp = e.target.closest('[data-payee-copy]');
+    const cp = el('[data-payee-copy]');
     if (cp) { U.copyText(cp.dataset.payeeCopy).then(ok => toast(ok ? PY.copiedField(cp.dataset.label) : C.copy.failed)); V.touch(); return true; }
     return false;
   }
+  /* ★ Set as default · Archive (never the default) · Restore · Delete (never used by a payment line or a deal) */
+  async function payeeAction(act, id, kol, rerender) {
+    const s = state(), p = R.payeeById(s, id); if (!p || !R.canEditPayee(s, U.actor(), p, kol)) { toast(PY.noPermission); return; }
+    const a = R.payeeActions(s, p), label = p.label || PY.primary;
+    if (act === 'default' && a.canSetDefault) { R.withDefault(s.payee_profiles, 'payee_id', id); commit(PY.defaultSet(label)); }
+    else if (act === 'archive' && a.canArchive) { p.archived = true; commit(PY.archivedToast(label)); }
+    else if (act === 'restore' && a.canRestore) { p.archived = false; if (!R.payeesOfKol(s, p.kol_id).some(x => x.is_default && x.payee_id !== id)) R.withDefault(s.payee_profiles, 'payee_id', id); commit(PY.restoredToast(label)); }
+    else if (act === 'delete' && a.canDelete) {
+      if (!(await U.confirmDialog(PY.deleteTitle(label), PY.deleteBody, PY.del, true))) return;
+      s.payee_profiles = s.payee_profiles.filter(x => x.payee_id !== id);
+      const next = R.payeesOfKol(s, p.kol_id)[0]; if (next && !next.is_default) R.withDefault(s.payee_profiles, 'payee_id', next.payee_id);
+      commit(PY.deletedToast(label));
+    } else return;
+    rerender();
+  }
+  async function addressAction(act, id, kol, rerender) {
+    const s = state(), a0 = R.addressById(s, id); if (!a0 || !canAddr(kol)) { toast(SM.onlyPic); return; }
+    const a = R.addressActions(s, a0), label = a0.label;
+    if (act === 'default' && a.canSetDefault) { R.withDefault(s.shipping_addresses, 'address_id', id); commit(PY.defaultSet(label)); }
+    else if (act === 'archive' && a.canArchive) { a0.archived = true; commit(PY.archivedToast(label)); }
+    else if (act === 'restore' && a.canRestore) { a0.archived = false; if (!R.addressesOfKol(s, a0.kol_id).some(x => x.is_default && x.address_id !== id)) R.withDefault(s.shipping_addresses, 'address_id', id); commit(PY.restoredToast(label)); }
+    else if (act === 'delete' && a.canDelete) {
+      if (!(await U.confirmDialog(PY.deleteTitle(label), PY.deleteAddrBody, PY.del, true))) return;
+      s.shipping_addresses = s.shipping_addresses.filter(x => x.address_id !== id);
+      const next = R.addressesOfKol(s, a0.kol_id)[0]; if (next && !next.is_default) R.withDefault(s.shipping_addresses, 'address_id', next.address_id);
+      commit(PY.deletedToast(label));
+    } else return;
+    rerender();
+  }
 
-  /* ===================== the Payee dialog (KOL drawer ✎ · Payments chips) ===================== */
-  /* o: {kolId | payeeId | newPayee, onSaved, opener} · CR-11 §4.3: a modal (M) — Add payee for a new one, Save for one that exists */
+  /* ===================== §4.3 — + Add address / Edit (modal M): Label · Recipient · Phone · Address (encrypted at once) · default ===================== */
+  /* o: {kolId | addressId, onSaved(rec), opener} */
+  function addressDialog(o) {
+    const s = state(), stored = o.addressId ? R.addressById(s, o.addressId) : null, kolId = stored ? stored.kol_id : o.kolId, kol = R.kolById(s, kolId), vault = vaultOf();
+    if (!kol || !canAddr(kol)) { toast(SM.onlyPic); return; }
+    if (!vault) { toast(SM.needVault); return; }
+    if (!V.available()) { toast(PY.noCrypto); return; }
+    const others = R.addressesOfKol(s, kolId).filter(a => !stored || a.address_id !== stored.address_id), first = !others.length;
+    /* a saved address while locked: kept unless Replace is chosen · unlocked: shown to change */
+    let mode = stored && stored.secure && !V.isUnlocked(vault) ? 'saved' : 'edit', original = null, typed = false;
+    const inputs = () => `<div class="field wide"><label for="ad_recipient">${esc(PY.recipient)} <span class="req">*</span></label><input id="ad_recipient" data-ship="recipient" autocomplete="off" spellcheck="false"></div>` +
+      `<div class="field"><label for="ad_phone">${esc(SM.shipPhone)}</label><input id="ad_phone" data-ship="phone" inputmode="tel" autocomplete="off"></div>` +
+      `<div class="field wide"><label for="ad_address">${esc(SM.shipAddress)} <span class="req">*</span></label><textarea id="ad_address" data-ship="address" autocomplete="off"></textarea></div>`;
+    const shipHTML = () => (mode === 'saved' ? `<div class="py-saved"><b>🔒 ${esc(SM.addressOnFile)}</b><span class="spacer"></span>` +
+      (can('payee.unlock') ? `<button type="button" class="btn small" data-ad-unlock>${esc(PY.unlockToEdit)}</button>` : '') + `<button type="button" class="btn small" data-ad-replace>${esc(PY.replaceAddress)}</button></div>`
+      : (mode === 'replace' ? `<div class="hint" style="margin-bottom:8px">${esc(PY.replaceAddressHint)} <button type="button" class="link" data-ad-keep>${esc(PY.keepSaved)}</button></div>` : '') + `<div class="fields">${inputs()}</div>`);
+    U.createModal({ size: 'M', title: stored ? PY.editAddressTitle(stored.label) : PY.addAddressTitle(kol.display_name), opener: o.opener, isDirty: () => typed, onClose: () => wipe(),
+      foot: [`<div class="checks" id="ad_checks"></div>`, U.cmButtons(stored ? C.common.save : PY.addAddressOk, 'ad_ok')], body: `<div class="py-dlg">
+      <div class="fields"><div class="field"><label for="ad_label">${esc(PY.label)} <span class="req">*</span></label><input id="ad_label" maxlength="${R.PAYEE_LABEL_MAX}" value="${esc(stored ? stored.label : first ? PY.primary : '')}" placeholder="${esc(PY.addrLabelPh)}" autocomplete="off"></div>
+        <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" id="ad_default"${stored ? (stored.is_default ? ' checked disabled' : '') : first ? ' checked disabled' : ''}> ${esc(PY.makeDefault)}</label></div></div>
+      <div class="sec-h" style="margin-top:14px"><span>${esc(SM.shippingDetails)}</span></div><p class="hint" style="margin-top:0">${esc(SM.shippingHint)}</p>
+      <div id="ad_ship">${shipHTML()}</div></div>` });
+    const root = $('cm_root');
+    root.addEventListener('input', () => { typed = true; }); root.addEventListener('change', () => { typed = true; });
+    const fillOriginal = async () => {
+      if (mode !== 'edit' || !stored || !stored.secure) return;
+      original = R.readShip(await V.decrypt(stored.secure));
+      if (original) ['recipient', 'phone', 'address'].forEach(k => { const el2 = root.querySelector(`[data-ship="${k}"]`); if (el2) el2.value = original[k] || ''; });
+    };
+    const redraw = () => { $('ad_ship').innerHTML = shipHTML(); fillOriginal(); };
+    fillOriginal();
+    $('ad_ship').addEventListener('click', e => {
+      if (e.target.closest('[data-ad-replace]')) { mode = 'replace'; redraw(); const f = $('ad_recipient'); if (f) f.focus(); return; }
+      if (e.target.closest('[data-ad-keep]')) { mode = 'saved'; redraw(); return; }
+      if (e.target.closest('[data-ad-unlock]')) { U.closeModal(); unlockDialog(() => addressDialog(o)); }
+    });
+    function wipe() { root.querySelectorAll('[data-ship]').forEach(el2 => { el2.value = ''; }); original = null; }
+    $('ad_ok').addEventListener('click', async () => {
+      const s2 = state(), label = R.trim($('ad_label').value), ship = mode === 'saved' ? null : Object.fromEntries(['recipient', 'phone', 'address'].map(k => [k, ($(`ad_${k}`) || {}).value || '']));
+      const errs = R.validateAddressLabel(s2, kolId, label, stored ? stored.address_id : null).concat(ship ? R.validateShip(ship) : []);
+      if (ship && R.looksSensitive(label)) errs.push({ field: 'label', msg: C.msg.sensitive });
+      root.querySelectorAll('#ad_label,[data-ship]').forEach(el2 => el2.classList.toggle('invalid', errs.some(x => x.field === (el2.dataset.ship || 'label'))));
+      $('ad_checks').innerHTML = U.checksHTML({ errs, warns: [], infos: [] }, '');
+      if (errs.length) return;
+      const changed = !!ship && (!original || ['recipient', 'phone', 'address'].some(k => R.trim(ship[k]) !== R.trim(original[k] || '')));
+      $('ad_ok').disabled = true; $('ad_ok').textContent = PY.encrypting;
+      let secure = null;
+      if (changed) { try { secure = await V.encrypt(vaultOf(), R.shipRecord(ship)); } catch (e) { $('ad_ok').disabled = false; $('ad_ok').textContent = C.common.save; toast(PY.noCrypto); return; } }
+      wipe();
+      const s3 = state(), now = nowISO(), uid = userId(), makeDefault = $('ad_default').checked;
+      let rec = stored ? R.addressById(s3, stored.address_id) : null;
+      if (!rec) { rec = R.newAddress({ address_id: store.newId('address'), kol_id: kolId, label, is_default: false, secure, now, user: uid }); s3.shipping_addresses.push(rec); }
+      else { rec.label = label; if (changed) rec.secure = secure; }
+      if (changed) Object.assign(rec, { details_updated_at: now, details_updated_by: uid });
+      if (makeDefault || !R.addressesOfKol(s3, kolId).some(a => a.is_default && a.address_id !== rec.address_id)) R.withDefault(s3.shipping_addresses, 'address_id', rec.address_id);
+      U.closeModal(); commit(SM.shippingSaved);
+      if (o.onSaved) o.onSaved(rec);
+    });
+  }
+
+  /* ===================== the Payee dialog (the profile · Payments chips) ===================== */
+  /* o: {kolId (its default payee, made when there is none) | kolId + newPayee (+ Add payee) | payeeId | newPayee (a payee outside KOL Master), onSaved, opener} ·
+     CR-11 §4.3: a modal (M) — Add payee for a new one, Save for one that exists · CR-16 §4.2: Label · Set as default */
   function openDialog_(o) {
-    const s = state(), kol = o.kolId ? R.kolById(s, o.kolId) : null, stored = kol ? R.payeeOfKol(s, kol.kol_id) : o.newPayee ? null : R.payeeById(s, o.payeeId);
+    const s = state(), byId = o.payeeId ? R.payeeById(s, o.payeeId) : null, kol = byId ? (byId.kol_id ? R.kolById(s, byId.kol_id) : null) : o.kolId ? R.kolById(s, o.kolId) : null;
+    const stored = byId || (kol && !o.newPayee ? R.payeeOfKol(s, kol.kol_id) : null);
     if (!R.canEditPayee(s, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
     const S = R.paySettings(s.lookups), vault = vaultOf();
-    const p = stored ? JSON.parse(JSON.stringify(stored)) : R.blankPayee(s, { kol_id: kol ? kol.kol_id : null, user: userId(), now: nowISO() });
+    const others = kol ? R.payeesOfKol(s, kol.kol_id).filter(p => !stored || p.payee_id !== stored.payee_id) : [], first = !!kol && !others.length;
+    const p = stored ? JSON.parse(JSON.stringify(stored)) : R.blankPayee(s, { kol_id: kol ? kol.kol_id : null, user: userId(), now: nowISO(), label: first ? PY.primary : '' });
+    if (!stored && kol && !first) p.label = '';
     const name = kol ? kol.display_name : p.account_handle || PY.newPayeeTitle;
     /* how the bank part works now: none (no vault / no crypto) · saved (locked, details saved) · edit (empty or unlocked) · replace */
     let mode = !V.available() ? 'nocrypto' : !vault ? 'novault' : p.secure && !V.isUnlocked(vault) ? 'saved' : 'edit';
@@ -94,7 +226,9 @@ KT.payee = (function () {
     let typed = false;
     U.createModal({ size: 'M', title: PY.title(name), opener: o.opener, isDirty: () => typed, onClose: () => wipe(),
       foot: [`<div class="checks" id="py_checks"></div>`, U.cmButtons(stored ? C.common.save : PY.addOk, 'py_ok')], body: `<div class="py-dlg">
-      <div class="sec-h"><span>${esc(PY.groupTax)}</span></div>
+      ${kol ? `<div class="fields"><div class="field"><label for="py_label">${esc(PY.label)} <span class="req">*</span></label><input id="py_label" maxlength="${R.PAYEE_LABEL_MAX}" value="${esc(p.label || '')}" placeholder="${esc(PY.labelPh)}" autocomplete="off"><div class="hint">${esc(PY.labelHint)}</div></div>
+        <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" id="py_default"${stored ? (stored.is_default ? ' checked disabled' : '') : first ? ' checked disabled' : ''}> ${esc(PY.makeDefault)}</label></div></div>` : ''}
+      <div class="sec-h"${kol ? ' style="margin-top:14px"' : ''}><span>${esc(PY.groupTax)}</span></div>
       <div class="fields">
         ${kol ? '' : `<div class="field wide"><label for="py_handle">${esc(PY.handle)} <span class="req">*</span></label><input id="py_handle" value="${esc(p.account_handle || '')}" autocomplete="off" placeholder="${esc(PY.handlePh)}"></div>`}
         <div class="field"><label for="py_type">${esc(PY.type)}</label><select id="py_type">${optionsHTML(R.PAYEE_TYPES.map(t => ({ value: t, label: PY.types[t] })), p.payee_type)}</select></div>
@@ -128,7 +262,7 @@ KT.payee = (function () {
     const read = () => {
       const docs = Object.fromEntries(R.PAYEE_DOCS.map(k => [k, $('py_d_' + k).value || null]));
       return Object.assign({ payee_type: $('py_type').value, default_wht_rate: Number($('py_wht').value), price_basis: $('py_basis').value, vat_registered: $('py_vat').checked, docs, docs_link: R.trim($('py_link').value) || null },
-        kol ? {} : { account_handle: R.trim($('py_handle').value).replace(/^@+/, '') });
+        kol ? { label: R.trim($('py_label').value) } : { account_handle: R.trim($('py_handle').value).replace(/^@+/, '') });
     };
     const readBank = () => (mode === 'edit' || mode === 'replace' ? Object.fromEntries(R.BANK_FIELDS.map(k => [k, ($('py_b_' + k) || {}).value || ''])) : null);
     $('py_ok').addEventListener('click', async () => {
@@ -139,27 +273,32 @@ KT.payee = (function () {
       if (mode === 'replace' && !typed) res.errs.push({ field: 'b_account_name', msg: C.msg.payeeRequired(PY.bank.account_name) });
       if (!kol && !plain.account_handle) res.errs.push({ field: 'handle', msg: C.msg.payeeRequired(PY.handle) });
       if (!kol && R.looksSensitive(plain.account_handle)) res.errs.push({ field: 'handle', msg: C.msg.sensitive });
+      if (kol) R.validatePayeeLabel(s2, kol.kol_id, plain.label, stored ? stored.payee_id : null).forEach(x => res.errs.push(x));   // CR-16 §4.2
+      if ($('py_label')) $('py_label').classList.toggle('invalid', res.errs.some(x => x.field === 'label'));
       if (changed) R.validateBankDetails(bank).errs.forEach(x => res.errs.push(x));
       dlg.querySelectorAll('[data-bank]').forEach(el => el.classList.toggle('invalid', res.errs.some(x => x.field === 'b_' + el.dataset.bank)));
       $('py_checks').innerHTML = U.checksHTML(res, '');
       if (res.errs.length) return;
       if (!R.canEditPayee(s2, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
-      const plainChanged = !stored || ['payee_type', 'default_wht_rate', 'price_basis', 'vat_registered', 'docs_link', 'account_handle'].some(k => k in plain && plain[k] !== stored[k]) || R.PAYEE_DOCS.some(k => (plain.docs[k] || null) !== ((stored.docs || {})[k] || null));
+      const makeDefault = !!($('py_default') && $('py_default').checked && !$('py_default').disabled);
+      const plainChanged = !stored || makeDefault || ['payee_type', 'default_wht_rate', 'price_basis', 'vat_registered', 'docs_link', 'account_handle', 'label'].some(k => k in plain && plain[k] !== stored[k]) || R.PAYEE_DOCS.some(k => (plain.docs[k] || null) !== ((stored.docs || {})[k] || null));
       if (!changed && !plainChanged) { wipe(); U.closeModal(); toast(PY.nothingChanged); return; }
       $('py_ok').disabled = true; $('py_ok').textContent = PY.encrypting;
       let secure = null;
       if (changed) { try { secure = await V.encrypt(vaultOf(), R.bankRecord(bank)); } catch (e) { $('py_ok').disabled = false; $('py_ok').textContent = C.common.save; toast(PY.noCrypto); return; } }
       const s3 = state(), now = nowISO(), uid = userId();
-      let rec = kol ? R.payeeOfKol(s3, kol.kol_id) : R.payeeById(s3, p.payee_id);
-      if (!rec) { rec = Object.assign(p, { payee_id: store.newId('payee') }); s3.payee_profiles.push(rec); }
+      let rec = stored ? R.payeeById(s3, stored.payee_id) : null;
+      if (!rec) { rec = Object.assign(p, { payee_id: store.newId('payee'), is_default: false }); s3.payee_profiles.push(rec); }
       Object.assign(rec, plain, { updated_at: now, updated_by: uid });
+      /* CR-16 §4.2 — one default a KOL: the first payee is it · ticked = it takes over */
+      if (kol && (makeDefault || !R.payeesOfKol(s3, kol.kol_id).some(x => x.is_default && x.payee_id !== rec.payee_id))) R.withDefault(s3.payee_profiles, 'payee_id', rec.payee_id);
       if (changed) {
         Object.assign(rec, { secure, bank_name: R.trim(bank.bank_name) || null, account_last4: R.last4(bank.account_no), details_version: (rec.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid });
         /* §4.4 — bank details changed after a payment was made to them → verify with the KOL before the next submit */
         if (R.payeeHasPaid(s3, rec.payee_id)) Object.assign(rec, { needs_verification: true, verified_at: null, verified_by: null });
         s3.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: rec.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
       }
-      wipe(); U.closeModal(); commit(PY.savedToast(name));
+      wipe(); U.closeModal(); commit(PY.savedToast(kol && rec.label ? `${name} · ${rec.label}` : name));
       if (o.onSaved) o.onSaved(rec);
     });
   }
@@ -234,5 +373,5 @@ KT.payee = (function () {
     });
   }
 
-  return { bodyHTML, editBtn, fillSecure, onClick, openDialog: openDialog_, unlockDialog, setupDialog, changeDialog, resetDialog };
+  return { tabHTML, fillSecure, onClick, openDialog: openDialog_, addressDialog, unlockDialog, setupDialog, changeDialog, resetDialog };
 })();

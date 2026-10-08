@@ -84,7 +84,7 @@
       assert.ok(R.validateKol(s, k).errs.some(e => e.field === 'note' && e.msg === C.msg.sensitive));
       const d = Object.assign({}, s.deals.find(x => x.deal_id === 'D000044'), { remark: 'เลขบัตร 1234567890123' });
       assert.ok(R.validateDeal(s, d, R.postsOf(s, 'D000044'), TD).errs.some(e => e.field === 'remark' && e.msg === C.msg.sensitive));
-      assert.ok(R.checkMove(s, s.deals.find(x => x.deal_id === 'D000044'), 'Approve Draft 1', { date: TD, note: '1234567890' }).errs.some(e => e.field === 'note'));
+      assert.ok(R.checkMove(s, s.deals.find(x => x.deal_id === 'D000044'), 'Draft 1', { date: TD, note: '1234567890' }).errs.some(e => e.field === 'note'));
       const st = fresh(); st.kol_master[0].note = '1234567890'; st.deals[0].remark = 'acc 123-4-56789-0'; st.deals[1].remark = 'ok';
       assert.equal(R.scrubSensitive(st), 2); assert.deepEqual([st.kol_master[0].note, st.deals[0].remark, st.deals[1].remark], [null, null, 'ok']);
       assert.equal(R.scrubSensitive(fresh()), 0, 'the seed has none');

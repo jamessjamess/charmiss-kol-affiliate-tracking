@@ -1,7 +1,7 @@
 /* export.js — CR-09 §4.5: the rows behind each Dashboard widget. The table view, the download (.xlsx / CSV) and the whole-tab Export all
    read them, so a file says what the screen says. Numbers stay numbers (no ฿, no commas) · % as a decimal (0.65) · dates dd/mm/yyyy ·
    a Total row where the widget has one. Nothing comes from the Payee vault. No DOM — the screen downloads. → KT.export
-   x (All campaigns) = { state, from, to, today, inclCancel, measure ('posts' | 'spend'), sort {key, dir} }
+   x (All campaigns) = { state, from, to, today, statuses (CR-14: the Status picked · the old inclCancel still answers), measure ('posts' | 'spend'), sort {key, dir} }
    x (By campaign)   = { state, campaignId, phaseId, today, gran ('day' | 'week'), measure, colorBy ('pillar' | 'tier') }
    x (Operations)    = { state, f {pic ('' = all), campaign, tier}, picLabel, today, queue }
    x (Performance, CR-10 §4.7) = { state, rows (R.perfRows as on screen: scope · filters · sort), cols (the columns that are on) } */
@@ -15,6 +15,7 @@ KT.export = (function (R, C) {
   const daysText = d => (d.kind === 'left' ? O.daysLeft.left(d.n) : d.kind === 'starts' ? O.daysLeft.starts(d.n) : O.daysLeft[d.kind]);
   /* in a file: the number of days for an On going Campaign (0 on its last day), the words otherwise */
   const daysCell = d => (d.kind === 'left' ? d.n : d.kind === 'last' ? 0 : d.kind === 'none' ? '' : daysText(d));
+  const stOf = x => (x.statuses != null ? x.statuses : x.inclCancel);   // CR-14 §4.1
   const followers = x => (!x.range ? O.noFollowers : O.followers(R.fmtNum(x.range.min), x.range.max == null ? null : R.fmtNum(x.range.max - 1)));
 
   /* ===================== All campaigns ===================== */
@@ -26,7 +27,7 @@ KT.export = (function (R, C) {
   };
   const cmp = (a, b) => (Array.isArray(a) ? (a[0] - b[0]) || (a[1] - b[1]) : typeof a === 'string' ? a.localeCompare(b, 'th') : a - b);
   function portfolioModel(x) {
-    const p = R.portfolio(x.state, x.from, x.to, x.today, x.inclCancel);
+    const p = R.portfolio(x.state, x.from, x.to, x.today, stOf(x));
     const rows = p.rows.map(r => Object.assign({}, r, { days: R.daysLeft({ status: r.status, from: r.from, to: r.to }, x.today) }));
     if (x.sort && SORTS[x.sort.key]) { const f = SORTS[x.sort.key], k = x.sort.dir === 'desc' ? -1 : 1; rows.sort((a, b) => k * cmp(f(a), f(b))); }
     return { rows, total: p.total };
@@ -40,23 +41,44 @@ KT.export = (function (R, C) {
   }
   /* KOL tier mix (§4.1 Row 2): every tier with a committed deal — spend and deals with their shares */
   function tiermix(x) {
-    const m = R.tierMix(x.state, x.from, x.to, x.today, x.inclCancel);
+    const m = R.tierMix(x.state, x.from, x.to, x.today, stOf(x));
     return { key: 'tiermix', name: O.sheet.tiermix,
       header: [O.tierLabel, O.colFollowers, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`],
       rows: m.rows.filter(t => t.deals).map(t => [t.tier, followers(t), r2(t.spend), dec(t.spendPct), t.deals, dec(t.dealsPct)]),
       total: [O.colTotal, '', r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0] };
   }
-  /* CR-13 §4.2 — Pillar mix: the rows of the card (Not set last) · % of total · Target and the gap of the share within the deals with a pillar (Spend) */
+  /* CR-13 §4.2 — Pillar mix: the rows of the card (Not set last) · % of total (CR-19 §4.7: no Target / Δ) */
   function pillarmix(x) {
-    const m = R.pillarMix(x.state, x.from, x.to, x.today, x.inclCancel), lab = k => (k === R.NOT_SET ? O.notSet : k);
+    const m = R.pillarMix(x.state, x.from, x.to, x.today, stOf(x)), lab = k => (k === R.NOT_SET ? O.notSet : k);
     return { key: 'pillarmix', name: O.sheet.pillarmix,
-      header: [O.pillarLabel, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`, `${O.target} %`, `${O.delta} (pp)`],
-      rows: m.rows.map(p => [lab(p.pillar), r2(p.spend), dec(p.spendPct), p.deals, dec(p.dealsPct), p.target == null ? '' : dec(p.target), p.gap.spend == null ? '' : Math.round(p.gap.spend * 10) / 10]),
-      total: [O.colTotal, r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0, '', ''] };
+      header: [O.pillarLabel, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`],
+      rows: m.rows.map(p => [lab(p.pillar), r2(p.spend), dec(p.spendPct), p.deals, dec(p.dealsPct)]),
+      total: [O.colTotal, r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0] };
   }
-  /* Activity by campaign (§4.2): a row per bar (week or day), a column per Campaign */
+  /* CR-19 §4.5 — Campaign timeline: a row per Campaign per bar (week from Monday, or day — the bars on screen) · Posted · Planned (posts) · Spend */
+  function timeline(x) {
+    const p = R.campaignTimeline(x.state, x.from, x.to, 'posts', x.today, stOf(x)), sp = R.campaignTimeline(x.state, x.from, x.to, 'spend', x.today, stOf(x));
+    const spendOf = new Map(sp.rows.map(r => [r.campaign.campaign_id, r]));
+    const rows = [];
+    p.rows.forEach(r => { const s = spendOf.get(r.campaign.campaign_id);
+      r.bins.forEach((b, i) => rows.push([r.campaign.campaign_name, statusLabel(r.status), dmy(r.start), dmy(r.end), dmy(b.key), b.posted, b.planned, r2(s ? s.bins[i].total : 0)])); });
+    const sum = (list, f) => list.reduce((a, r) => a + f(r), 0);
+    return { key: 'timeline', name: O.sheet.timeline, gran: p.gran,
+      header: [O.colCampaign, O.colStatus, O.colStart, O.colEnd, p.gran === 'week' ? O.colWeekMon : O.colDayL, O.colPosted, O.planned, O.colSpendL],
+      rows, total: [O.colTotal, '', '', '', '', sum(p.rows, r => r.posted), sum(p.rows, r => r.planned), r2(sum(sp.rows, r => r.posted + r.planned))] };
+  }
+  /* the table view of the card: one row a Campaign — Campaign · Status · Start · End · Posts posted · Posts planned · Spend · First post · Last post */
+  function timelineTable(x) {
+    const p = R.campaignTimeline(x.state, x.from, x.to, 'posts', x.today, stOf(x)), sp = R.campaignTimeline(x.state, x.from, x.to, 'spend', x.today, stOf(x));
+    const spendOf = new Map(sp.rows.map(r => [r.campaign.campaign_id, r])), sum = (list, f) => list.reduce((a, r) => a + f(r), 0);
+    return { key: 'timelinetable', name: O.sheet.timeline,
+      header: [O.colCampaign, O.colStatus, O.colStart, O.colEnd, O.colPostsPosted, O.colPostsPlanned, O.colSpendL, O.colFirstPost, O.colLastPost],
+      rows: p.rows.map(r => { const s = spendOf.get(r.campaign.campaign_id); return [r.campaign.campaign_name, statusLabel(r.status), dmy(r.start), dmy(r.end), r.posted, r.planned, r2(s ? s.posted + s.planned : 0), dmy(r.first), dmy(r.last)]; }),
+      total: [O.colTotal, '', '', '', sum(p.rows, r => r.posted), sum(p.rows, r => r.planned), r2(sum(sp.rows, r => r.posted + r.planned)), '', ''] };
+  }
+  /* Activity by campaign (§4.2): a row per bar (week or day), a column per Campaign — (CR-19: replaced on screen by the Campaign timeline; kept for old links) */
   function activity(x) {
-    const ax = R.timeAxis(x.from, x.to), m = R.swimlanes(x.state, x.from, x.to, ax.gran, x.measure, x.today, x.inclCancel);
+    const ax = R.timeAxis(x.from, x.to), m = R.swimlanes(x.state, x.from, x.to, ax.gran, x.measure, x.today, stOf(x));
     const v = n => (x.measure === 'spend' ? r2(n) : n);
     return { key: 'activity', name: O.sheet.activity, gran: ax.gran,
       header: [ax.gran === 'week' ? O.colWeekStart : O.colDay].concat(m.lanes.map(l => l.campaign.campaign_name), [O.colTotal]),
@@ -65,7 +87,7 @@ KT.export = (function (R, C) {
   }
   /* the 5 KPI cards as Card · Metric · Value */
   function summary(x) {
-    const k = R.portfolioKpis(x.state, x.from, x.to, x.today, x.inclCancel), rows = [];
+    const k = R.portfolioKpis(x.state, x.from, x.to, x.today, stOf(x)), rows = [];
     const add = (card, metric, value) => rows.push([card, metric, value]);
     add(O.kCampaigns, O.kCampaigns, k.campaigns.n);
     ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].forEach(st => { if (k.campaigns.by[st]) add(O.kCampaigns, statusLabel(st), k.campaigns.by[st]); });
@@ -115,9 +137,10 @@ KT.export = (function (R, C) {
     const a = R.pillarAllocation(x.state, x.campaignId), keys = R.PILLARS.concat([R.NOT_SET]), lab = k => (k === R.NOT_SET ? O.pillarNotSet : k);
     const row = (label, pct, money, total) => [label].concat(keys.map(k => dec(pct[k] || 0)), keys.map(k => (money ? r2(money[k] || 0) : null)), [total == null ? null : r2(total)]);
     const camp = R.campaignOf(x.state, x.campaignId) || {};
+    /* CR-19 §4.7 — Pillar allocation: the Campaign and each Phase, what is (no Target row) */
     return { key: 'allocation', name: O.sheet.allocation,
       header: [O.colRow].concat(keys.map(k => `${lab(k)} %`), keys.map(k => lab(k)), [O.colTotal]),
-      rows: [row(O.target, Object.assign({ [R.NOT_SET]: 0 }, a.target.pct), null, null), row(O.actualOf(camp.campaign_name || ''), a.actual.pct, a.actual.money, a.actual.total)]
+      rows: [row(camp.campaign_name || '', a.actual.pct, a.actual.money, a.actual.total)]
         .concat(a.phases.map(p => row(R.phaseName(x.state, p.phase.phase_id), p.pct, p.money, p.total))), total: null };
   }
   function workload(x) {
@@ -189,18 +212,33 @@ KT.export = (function (R, C) {
     return { key: 'performance', name: P.sheet, header, rows, total: cols.flatMap(k => (k === 'kol' ? [P.total, P.postsN(x.rows.length)] : [tot(k)])).concat(['', '']) };
   }
 
-  const WIDGETS = { performance, summary, activity, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
+  /* ===================== CR-20 §4.8 · §4.13 — Packages · Draft notes (counts only — no images, no personal data) ===================== */
+  function packages(x) {
+    const s = x.state, PK = C.pkg;
+    const rows = (s.kol_packages || []).slice().sort((a, b) => String(a.package_id).localeCompare(String(b.package_id))).map(p => [((R.kolById(s, p.kol_id) || {}).display_name) || p.kol_id, R.packageLabel(p), p.units_total,
+      r2(p.price_total), r2(R.unitPrice(p)), R.packageUsed(s, p.package_id), Math.max(0, R.packageRemaining(s, p)), PK.status[R.packageStatus(s, p, x.today)], PK.pay[R.packagePayStatus(s, p)]]);
+    return { key: 'packages', name: PK.sheet, header: PK.exportCols, rows, total: null };
+  }
+  function draftnotes(x) {
+    const s = x.state, NT = C.notes;
+    const rows = (s.step_notes || []).slice().sort((a, b) => (a.deal_id + a.step_key).localeCompare(b.deal_id + b.step_key)).map(n => [n.deal_id, `Draft ${String(n.step_key).replace(/\D/g, '')}`, (n.links || []).length, (n.image_ids || []).length, dmy(String(n.updated_at || '').slice(0, 10))]);
+    return { key: 'draftnotes', name: NT.sheet, header: NT.exportCols, rows, total: null };
+  }
+
+  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
     summary_ops: summaryOps, queue, pipeline, due };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
   /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
-  const TABS = { all: ['summary', 'portfolio', 'activity', 'pillarmix', 'tiermix'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'allocation', 'workload'], ops: ['summary_ops', 'queue', 'pipeline', 'due'] };
+  /* CR-19 §4.5: Campaign timeline in place of Activity */
+  /* CR-20: + Packages · Draft notes (counts) at the end */
+  const TABS = { all: ['summary', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'allocation', 'workload'], ops: ['summary_ops', 'queue', 'pipeline', 'due'] };
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */
   /* meta = {tab, scope, at, by}: the lines on top of the Summary sheet */
   function sheetOf(t, meta) {
-    const top = meta ? [[O.meta.tab, meta.tab], [O.meta.scope, meta.scope], [O.meta.exported, meta.at], [O.meta.by, meta.by], []] : [];
+    const top = meta ? [[O.meta.tab, meta.tab], [O.meta.scope, meta.scope]].concat(meta.status ? [[O.meta.status, meta.status]] : [], [[O.meta.exported, meta.at], [O.meta.by, meta.by], []]) : [];
     const bold = r => r.map(v => (v == null || v === '' ? '' : { v, bold: true }));
     const rows = top.map(r => (r.length ? [{ v: r[0], bold: true }, r[1]] : r)).concat([bold(t.header)], t.rows.map(r => r.map(v => (v == null ? '' : v))), t.total ? [bold(t.total)] : []);
     return { name: t.name, rows, widths: t.header.map((h, i) => (i ? Math.max(12, Math.min(28, String(h).length + 4)) : 30)), freeze: top.length + 1 };
