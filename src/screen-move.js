@@ -3,7 +3,9 @@
    Steps completed by this move · Brief / Script link · Next expected · Draft n notes · Post), keeps the errors until Move is pressed (Move is
    never faded), and writes everything in one go (R.applyMove) with one Undo for all of it.
    Also §4.13 Draft notes outside a move: the small panel a Draft step of the Journey opens (Note · Links · images · Edit · delete an image).
-   → KT.move */
+   CR-22 — the Rate card starts empty (the deal's own, if it has one) with "Last rate card ฿x · Campaign · date" to click in (no Avg) · CTA * from
+   Contacted · Sample shipment at Confirm QT (Method * · Products * with Qty · Ship to · Purchase amount for KOL buys own · Note) — a deal that has a
+   shipment shows it in one line. → KT.move */
 KT.move = (function () {
   'use strict';
   const U = KT.ui;
@@ -40,10 +42,11 @@ KT.move = (function () {
   }
   const isOpen = () => !!mv;
   function initForm(s, d, to) {
-    const ref = R.costReference(s, d.kol_id, d.deal_id), latest = ref.latest ? ref.latest.values.rate_card : null;
+    const prods = R.dealProductList(s, d.deal_id).map(x => ({ tr_code: x.tr_code, qty: '1' }));
     const f = { date: today(), note: '', cancelReason: '', addRound: false, nextRound: false,
       pillar: d.pillar || '', paymentTerm: R.termOf(d) || R.kolTerm(s, d.kol_id) || '', packageId: d.package_id || '', packageUnits: str(d.package_units || 1),
-      rateCard: !R.isBlank(d.rate_card) ? str(d.rate_card) : latest != null ? str(latest) : '',
+      rateCard: !R.isBlank(d.rate_card) ? str(d.rate_card) : '',   // CR-22 §3.1: never filled in for you
+      cta: d.cta || '', ship: { method: '', items: prods, address_id: '', purchase_amount: '', note: '' },
       costs: { gencode_expense: str(d.gencode_expense), gencode_period: str(d.gencode_period), gencode_start_date: d.gencode_start_date || '', asset_fee: str(d.asset_fee), expediting_fee: str(d.expediting_fee) },
       postDue: d.expected_post_date || '', linkBrief: d.link_brief || '', scriptLink: d.script_link || '', expected: {}, steps: {}, alsoContacted: false, contactedDate: '',
       drafts: {}, approveDate: '', posts: null, markDelivered: false };
@@ -55,6 +58,9 @@ KT.move = (function () {
     const F = req.fields, f = mv.f, out = { date: f.date, today: today(), note: f.note, cancelReason: f.cancelReason, addRound: f.addRound, nextRound: f.nextRound };
     if (req.kind !== 'forward') return out;
     if (F.pillar) out.pillar = f.pillar;
+    if (F.cta) out.cta = f.cta;
+    if (F.ship_method) out.ship = { method: f.ship.method, items: f.ship.items.filter(x => x.tr_code).map(x => ({ tr_code: x.tr_code, qty: x.qty })), address_id: f.ship.address_id || null,
+      purchase_amount: f.ship.method === 'self_purchase' ? money(f.ship.purchase_amount) : '', note: f.ship.note };
     if (F.payment_term) out.paymentTerm = f.paymentTerm;
     if (F.package_id) { out.packageId = f.packageId; out.packageUnits = f.packageUnits; }
     if (F.rate_card && F.rate_card !== 'auto') out.rateCard = money(f.rateCard);
@@ -98,7 +104,8 @@ KT.move = (function () {
     const parts = [head];
     if (req.kind === 'forward') {
       parts.push(stepsHTML(s, d, req));
-      if (F.payment_term || F.rate_card) parts.push(qtHTML(s, d, req));
+      if (F.payment_term || F.rate_card || F.cta) parts.push(qtHTML(s, d, req));
+      if (req.ship || req.shipSummary) parts.push(shipHTML(s, d, req));
       if (F.link_brief || F.script_link) parts.push(sec(MV.secLinks, `<div class="fields">${F.link_brief ? fld('link_brief', MV.briefLink, `<input type="url" data-mv="linkBrief" data-key="link_brief" value="${esc(f.linkBrief)}" placeholder="${esc(MV.linkPh)}" autocomplete="off">`, { wide: 1 }) : ''}` +
         `${F.script_link ? fld('script_link', MV.scriptLink, `<input type="url" data-mv="scriptLink" data-key="script_link" value="${esc(f.scriptLink)}" placeholder="${esc(MV.linkPh)}" autocomplete="off">`, { wide: 1 }) : ''}</div>`));
       if (req.next.length) parts.push(nextHTML(s, d, req));
@@ -134,7 +141,7 @@ KT.move = (function () {
   /* §4.7 · §4.11 — Confirm QT details (Contacted: Rate + Payment term, optional) */
   function qtHTML(s, d, req) {
     const F = req.fields, f = mv.f, v = req.v, term = R.termOf(v), qt = req.qt;
-    const ref = R.costReference(s, d.kol_id, d.deal_id), lat = ref.latest ? ref.latest.total : null, avg = ref.average ? ref.average.total : null;   // the Price reference words (CR-07): Latest · Average
+    const last = R.lastRateCard(s, d.kol_id, d.deal_id);   // CR-22 §3.1: the last rate card (never an average)
     const terms = R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] }));
     const pk = R.packageById(s, v.package_id), units = Number(f.packageUnits);
     const pkgOpts = R.packageChoices(s, d.kol_id, today(), d).map(x => ({ value: x.pkg.package_id, label: MV.pkgOption(R.packageLabel(x.pkg), Math.max(0, x.left)) }));
@@ -144,9 +151,10 @@ KT.move = (function () {
         hint: pk ? esc(MV.willUse(Number.isInteger(units) && units > 0 ? units : 1, Math.max(0, R.packageRemaining(s, pk, d.deal_id) - (Number.isInteger(units) && units > 0 ? units : 1)))) : '' });
     const pillarF = F.pillar ? fld('pillar', MV.pillar, `<select data-mv="pillar" data-key="pillar">${optionsHTML(activeList('pillar_list', f.pillar), f.pillar, MV.choosePillar)}</select>`, { req: F.pillar === 'req' }) : '';
     const termF = fld('payment_term', MV.term, `<select data-mvsel="paymentTerm" data-key="payment_term">${optionsHTML(terms, f.paymentTerm, MV.chooseTerm)}</select>`, { req: F.payment_term === 'req' });
-    const rateHint = F.rate_card === 'auto' ? `<span class="srctag">${esc(MV.fromPackage)}</span>` : [lat != null || avg != null ? esc(MV.latestAvg(lat != null ? R.baht(lat) : '—', avg != null ? R.baht(avg) : '—')) : '', esc(MV.zeroHint)].filter(Boolean).join(' · ');
+    const rateHint = F.rate_card === 'auto' ? `<span class="srctag">${esc(MV.fromPackage)}</span>` : [lastRateHTML(s, last, 'data-mvact="useLast"'), esc(MV.zeroHint)].join(' · ');
+    const ctaF = F.cta ? fld('cta', MV.cta, `<select data-mvsel="cta" data-key="cta">${optionsHTML(activeList('cta_list', f.cta), f.cta, MV.chooseCta)}</select>`, { req: F.cta === 'req' }) : '';
     const rateF = fld('rate_card', MV.rateCard, moneyIn('rateCard', 'rate_card', F.rate_card === 'auto' ? v.rate_card : f.rateCard, { disabled: F.rate_card === 'auto' }), { req: F.rate_card === 'req', hint: rateHint + '<span class="mv-ratetotal" id="mv_ratetotal"></span>' });
-    if (!qt) return sec(MV.secQt, `<div class="fields">${rateF}${termF}${pkgHTML}</div>`);
+    if (!qt) return sec(MV.secQt, `<div class="fields">${ctaF}${F.rate_card ? rateF : ''}${F.payment_term ? termF : ''}${pkgHTML}</div>`);
     const gen = Number(money(f.costs.gencode_expense)) > 0;
     const costs = `<div class="fields mv-costs">${rateF}` +
       fld('gencode_expense', MV.gencodeCost, moneyIn('costs.gencode_expense', 'gencode_expense', f.costs.gencode_expense, { ph: '0' })) +
@@ -157,7 +165,32 @@ KT.move = (function () {
       `<div class="field wide mv-total"><div class="kv total"><span>${esc(MV.totalCost)}</span><b id="mv_total"></b></div>${!R.isBlank(d.basket_fee) && Number(d.basket_fee) > 0 ? `<div class="hint">${esc(MV.includesBasket(R.baht(d.basket_fee)))}</div>` : ''}</div></div>`;
     const postDue = F.expected_post_date && !req.next.some(x => x.field === 'expected_post_date')
       ? `<div class="fields">${fld('expected_post_date', MV.postDue, dateHTML('data-mv="postDue" data-key="expected_post_date"', f.postDue, { label: MV.postDue }), { hint: '<span class="mv-phase" data-phasefor="postDue"></span>' })}</div>` : '';
-    return sec(MV.secQt, `<div class="fields">${pillarF}${termF}${pkgHTML}</div>`) + sec(MV.secCosts, costs + postDue + `<div id="mv_budget" class="mv-budget"></div>`);
+    return sec(MV.secQt, `<div class="fields">${ctaF}${pillarF}${termF}${pkgHTML}</div>`) + sec(MV.secCosts, costs + postDue + `<div id="mv_budget" class="mv-budget"></div>`);
+  }
+  /* CR-22 §3.1 — "Last rate card ฿100,000 · Campaign · dd/mm/yyyy" (the amount is a button: it puts the rate in the box) · "No rate on file" */
+  function lastRateHTML(s, last, attr) {
+    if (!last) return `<span class="lastrate muted">${esc(MV.noRate)}</span>`;
+    const c = (s.campaigns.find(x => x.campaign_id === last.campaign_id) || {}).campaign_name || '';
+    const t = MV.lastRate('§', c, last.date ? R.dmy(last.date) : ''), [a, z] = t.split('§');
+    return `<span class="lastrate">${esc(a)}<button type="button" class="link" ${attr} data-amount="${esc(String(last.amount))}" title="${esc(MV.useLastTip)}">${esc(R.baht(last.amount))}</button>${esc(z)}</span>`;
+  }
+  /* CR-22 §3.3 — Sample shipment: Method * (NPD · Warehouse · KOL buys own) · Products * (the Campaign's) with Qty · Ship to (NPD / Warehouse) ·
+     Purchase amount (KOL buys own) · Note — a deal with a shipment: it in one line + Edit */
+  function shipHTML(s, d, req) {
+    if (!req.ship) return sec(MV.secShip, `<p class="mv-shipline">${esc(KT.samples.summaryText(req.shipSummary))} · <button type="button" class="link" data-mvact="editShip">${esc(MV.editShip)}</button></p>`);
+    const f = mv.f, sh = f.ship, prods = R.campaignProducts(s, d.campaign_id).filter(p => p.active !== false), picked = new Map(sh.items.map(x => [x.tr_code, x]));
+    const methods = R.SHIP_METHODS.map(k => `<label class="tick mv-radio"><input type="radio" name="mv_method" data-mvship="method" value="${k}"${sh.method === k ? ' checked' : ''}> ${esc(R.shipMethodLabel(s.lookups, k))}</label>`).join('');
+    const items = prods.length ? `<div class="mv-items">${prods.map(p => { const x = picked.get(p.tr_code);
+      return `<div class="mv-item"><label class="tick"><input type="checkbox" data-mvitem="${esc(p.tr_code)}"${x ? ' checked' : ''}> ${esc(R.productShort(p))}</label>` +
+        (x ? `<input type="number" min="1" step="1" inputmode="numeric" class="mv-qty" data-mvqty="${esc(p.tr_code)}" value="${esc(x.qty)}" aria-label="${esc(`${MV.qty} · ${R.productShort(p)}`)}">` : '') + `</div>`; }).join('')}</div>`
+      : `<div class="hint">${esc(MV.noCampaignProducts)}</div>`;
+    const own = sh.method === 'self_purchase', addrs = R.shipToOptions(s, d.kol_id);
+    return sec(MV.secShip, `<div class="fields">` +
+      fld('ship_method', MV.method, `<div class="mv-methods" role="radiogroup" data-key="ship_method">${methods}</div>`, { req: 1, wide: 1 }) +
+      fld('ship_items', MV.products, items, { req: 1, wide: 1 }) +
+      (own ? fld('purchase_amount', MV.purchaseAmount, moneyIn('ship.purchase_amount', 'purchase_amount', sh.purchase_amount, { ph: '0' }), { hint: esc(MV.purchaseHint) })
+        : fld('ship_to', MV.shipTo, `<select data-mvsel="ship.address_id" data-key="ship_to">${optionsHTML(addrs, sh.address_id, MV.chooseLater)}</select>`)) +
+      fld('ship_note', MV.shipNote, `<input data-mv="ship.note" data-key="ship_note" value="${esc(sh.note)}" autocomplete="off">`, { wide: !own }) + `</div>`);
   }
   /* §4.15 — Next expected (+3d · +5d · +7d · + Add Draft k round / Remove) */
   function nextHTML(s, d, req) {
@@ -200,7 +233,7 @@ KT.move = (function () {
     const s = state(), d = dealById(mv.id); if (!d) return;
     const req = R.stageRequirements(s, d, mv.to, mv.f), form = formFor(s, d, req), res = R.checkMove(s, d, mv.to, form), v = req.v; mv.req = req; mv.res = res;
     /* totals · the budget line · the phase of the Post due */
-    const total = R.COST_KEYS.reduce((a, k) => a + (R.isBlank(v[k]) || isNaN(v[k]) ? 0 : Number(v[k])), 0);
+    const total = R.COST_KEYS.concat(['product_purchase_fee']).reduce((a, k) => a + (R.isBlank(v[k]) || isNaN(v[k]) ? 0 : Number(v[k])), 0);
     if ($('mv_total')) $('mv_total').textContent = R.baht(total);
     if ($('mv_ratetotal')) $('mv_ratetotal').textContent = total !== (Number(v.rate_card) || 0) ? ` · ${MV.totalLine(R.baht(total))}` : '';
     const b = R.moveBudget(s, d, mv.to, form);
@@ -244,6 +277,10 @@ KT.move = (function () {
     });
     root.addEventListener('change', e => {
       if (!mv) return;
+      /* CR-22 §3.3 — the method (a redraw: Ship to ↔ Purchase amount) · a product ticked (its Qty appears) · a Qty */
+      const ms = e.target.closest('[data-mvship]'); if (ms) { mv.f.ship.method = ms.value; mv.dirty = true; draw(true); return; }
+      const it = e.target.closest('[data-mvitem]'); if (it) { const code = it.dataset.mvitem; mv.f.ship.items = it.checked ? mv.f.ship.items.concat([{ tr_code: code, qty: '1' }]) : mv.f.ship.items.filter(x => x.tr_code !== code); mv.dirty = true; draw(true); return; }
+      const q = e.target.closest('[data-mvqty]'); if (q) { const x = mv.f.ship.items.find(y => y.tr_code === q.dataset.mvqty); if (x) x.qty = q.value; mv.dirty = true; live(); return; }
       const sel = e.target.closest('[data-mvsel]');
       if (sel) { const p = sel.dataset.mvsel; mv.dirty = true;
         if (p === 'to') { mv.to = sel.value; mv.f.addRound = false; mv.f.nextRound = false; mv.f.posts = null; }
@@ -277,6 +314,9 @@ KT.move = (function () {
       if (act === 'addPost') { const used = new Set(mv.f.posts.map(r => r.account_id)), acc = R.accountsOfKol(s, d.kol_id).find(x => !used.has(x.account_id)) || R.accountsOfKol(s, d.kol_id)[0];
         mv.f.posts.push({ post_id: null, account_id: acc ? acc.account_id : '', link: '' }); mv.dirty = true; draw(true); return; }
       if (act === 'newPackage') { newPackagePanel(d); return; }
+      /* CR-22 §3.1 — the last rate card into the box (only when clicked) */
+      if (act === 'useLast') { mv.f.rateCard = a.dataset.amount; mv.dirty = true; const el = $('mv_root').querySelector('[data-mv="rateCard"]'); if (el) el.value = fmtMoney(a.dataset.amount); live(); return; }
+      if (act === 'editShip') { const id = mv.id; mv.applied = false; U.closeModal(); KT.screens.deals.openOver(id, { tab: 'ships' }); return; }
     }
     if (e.target.closest('[data-mvok]')) { submit(); return; }
     if (mv.ed && notesClick(e, mv.ed, () => { mv.dirty = true; draw(true); })) return;
@@ -304,8 +344,9 @@ KT.move = (function () {
     const key = form.notes && R.draftNo(R.stepOf(s.lookups, to)) ? R.draftKey(R.draftNo(R.stepOf(s.lookups, to))) : null;
     const snap = snapshot(s, dealId, key);
     let pn = parseInt(store.newId('post').slice(1), 10);
-    const r = R.applyMove(s, d, to, form, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId(), postId: () => 'P' + String(pn++).padStart(6, '0') });
+    const r = R.applyMove(s, d, to, form, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId(), postId: () => 'P' + String(pn++).padStart(6, '0'), shipmentId: () => store.newId('shipment') });
     s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); if (r.quote) s.kol_rate_quotes.push(r.quote); r.events.forEach(ev => s.deal_events.push(ev));
+    if (r.shipment) s.sample_shipments.push(r.shipment);   // CR-22 §3.3
     if (r.posts) s.deal_posts = s.deal_posts.filter(p => p.deal_id !== dealId).concat(r.posts);
     if (r.note) R.putStepNote(s, r.note);
     if (o.deliver) { const sh = shipToDeliver(s, r.deal); if (sh) { let e = 0; const base = store.newEventId(); const evs = R.shipQuick(s, sh, sh.status === 'shipped' ? 'delivered' : 'both', { date: form.date }, { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }); if (evs) s.deal_events.push(...evs); } }
@@ -468,5 +509,5 @@ KT.move = (function () {
     drawNotes(nv, h, can);
   }
 
-  return { open, isOpen, apply, phaseHint, openNotes, notesEditor, notesEditorHTML, notesWire, notesClick, fillThumbs, snapshot, restore, fmtMoney, money };
+  return { lastRateHTML, open, isOpen, apply, phaseHint, openNotes, notesEditor, notesEditorHTML, notesWire, notesClick, fillThumbs, snapshot, restore, fmtMoney, money };
 })();

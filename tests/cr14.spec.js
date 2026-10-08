@@ -39,11 +39,11 @@
       assert.equal(R.msLocked(['ongoing'], 'ongoing', 1), true);
       assert.equal(R.msLocked(['ongoing', 'complete'], 'ongoing', 1), false);
       assert.equal(C.overview.statusMin, 'Select at least one status');
-      const all = ['cancelled', 'pending', 'rejected'].reduce((v, k) => R.msToggle(opts, v, k, true, 1), R.DASH_STATUS_DEFAULT);   // CR-17: + Pending approval · Rejected for "All"
+      const all = ['cancelled', 'pending'].reduce((v, k) => R.msToggle(opts, v, k, true, 1), R.DASH_STATUS_DEFAULT);   // CR-17: + Pending approval for "All" (CR-21: no Rejected)
       assert.deepEqual(all, R.CAMPAIGN_STATUSES);
       assert.equal(R.dashStatusText(all).kind, 'all');
       const s = fresh(); assert.deepEqual(kpis(s, all), kpis(s, R.DASH_STATUS_DEFAULT));
-      assert.deepEqual(R.statusCounts(s, ...year(), TD), { ongoing: 3, not_started: 0, pending: 0, on_hold: 0, complete: 1, rejected: 0, cancelled: 0 });
+      assert.deepEqual(R.statusCounts(s, ...year(), TD), { ongoing: 3, not_started: 0, pending: 0, on_hold: 0, complete: 1, cancelled: 0 });
     });
     test('the words on the button: default · All · 1–2 names · "n selected" · nothing valid → the default', () => {
       const w = v => { const x = R.dashStatusText(v); return x.kind === 'default' ? C.overview.statusAllExcept : x.kind === 'all' ? C.overview.statusAll : x.kind === 'names' ? x.list.map(k => C.phaseStatus[k]).join(', ') : C.ms.nSelected(x.n); };

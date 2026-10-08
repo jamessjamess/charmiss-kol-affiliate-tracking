@@ -18,10 +18,12 @@
     return out.deal;
   }
   /* a move the way the dialog does it (state changed, like screen-move.js apply) */
+  /* CR-22: from Contacted a CTA is asked · at Confirm QT how the samples go (the seed deals have neither) — a move here gives both unless the test says otherwise */
+  const C22 = { cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } };
   function move(s, d, to, f) {
-    let pn = 900000;
-    const r = R.applyMove(s, d, to, Object.assign({ date: TD, today: TD }, f || {}), { logId: nextLog(s), quoteId: 'Q99999', eventId: nextEv(s), now: new Date(NOW), user: 'U000', postId: () => 'P' + pn++ });
-    s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); r.events.forEach(e => s.deal_events.push(e));
+    let pn = 900000, sn = 900;
+    const r = R.applyMove(s, d, to, Object.assign({ date: TD, today: TD }, C22, f || {}), { logId: nextLog(s), quoteId: 'Q99999', eventId: nextEv(s), now: new Date(NOW), user: 'U000', postId: () => 'P' + pn++, shipmentId: () => 'SH' + String(++sn).padStart(6, '0') });
+    s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); r.events.forEach(e => s.deal_events.push(e)); if (r.shipment) s.sample_shipments.push(r.shipment);
     if (r.quote) s.kol_rate_quotes.push(r.quote);
     if (r.posts) s.deal_posts = s.deal_posts.filter(p => p.deal_id !== d.deal_id).concat(r.posts);
     if (r.note) R.putStepNote(s, r.note);
@@ -38,7 +40,7 @@
       v18.schema_version = 18; delete v18.kol_packages; delete v18.step_notes;
       v18.deals.forEach(d => { delete d.package_id; delete d.package_units; delete d.script_link; delete d.package_paid; });
       const s = S.migrate(v18, new Date(NOW));
-      assert.equal(s.schema_version, 19); assert.equal(S.SCHEMA_VERSION, 19);
+      assert.ok(s.schema_version === S.SCHEMA_VERSION && S.SCHEMA_VERSION >= 19);   // (later CRs: on to the newest in the same pass)
       assert.deepEqual(s.kol_packages, []); assert.deepEqual(s.step_notes, []);
       assert.ok(s.deals.every(d => d.package_id === null && d.package_units === 1 && d.script_link === null && d.package_paid === false));
       assert.ok(R.PAYMENT_TERMS.includes('package') && R.isTerm('package') && !R.BASIC_TERMS.includes('package'));
@@ -47,7 +49,7 @@
       assert.equal(Math.round(k.money.committed), 1783579); assert.equal(Math.round(k.paid.paid), 774579); assert.equal(Math.round(k.money.pending), 98000);
       assert.equal(committed(s, 'CH'), 863700, 'Charming committed ฿863,700 → remaining −฿13,700');
       const again = S.migrate(JSON.parse(JSON.stringify(s)), new Date(NOW));
-      assert.equal(again.schema_version, 19, 'twice = the same');
+      assert.equal(again.schema_version, S.SCHEMA_VERSION, 'twice = the same');
     });
     test('Backup carries the packages and the notes (the images only with Include photos & draft images)', () => {
       const s = fresh(); pkgOf(s);
@@ -90,11 +92,11 @@
     });
     test('TC-06 / TC-30: Start at Confirm QT — the rows without a rate / term are found by the same rule (R.checkMove on the deal it would make)', () => {
       const s = fresh(), pseudo = kolId => Object.assign(JSON.parse(JSON.stringify(R.DEAL_TEMPLATE)), { kol_id: kolId, campaign_id: 'CH', pillar: 'Awareness' });
-      const rows = ['K0715', 'K0425'].map(k => R.checkMove(s, pseudo(k), 'Confirm QT', { date: TD, pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '' }).errs.map(e => e.field));
+      const rows = ['K0715', 'K0425'].map(k => R.checkMove(s, pseudo(k), 'Confirm QT', Object.assign({ date: TD, pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '' }, C22)).errs.map(e => e.field));
       assert.deepEqual(rows, [['rate_card'], ['rate_card']]);
       assert.equal(C.bulk.rowsNeed(2, C.bulk.needRate), '2 rows need a rate');
-      assert.deepEqual(R.checkMove(s, pseudo('K0715'), 'Confirm QT', { date: TD, pillar: 'Awareness', paymentTerm: '', rateCard: '3000' }).errs.map(e => e.field), ['payment_term']);
-      assert.deepEqual(R.checkMove(s, pseudo('K0715'), 'Contacted', { date: TD }).errs, [], 'Contacted: Rate / term optional');
+      assert.deepEqual(R.checkMove(s, pseudo('K0715'), 'Confirm QT', Object.assign({ date: TD, pillar: 'Awareness', paymentTerm: '', rateCard: '3000' }, C22)).errs.map(e => e.field), ['payment_term']);
+      assert.deepEqual(R.checkMove(s, pseudo('K0715'), 'Contacted', { date: TD, cta: 'TikTok' }).errs, [], 'Contacted: Rate / term optional (CR-22: the CTA is needed)');
       assert.deepEqual(R.checkMove(s, pseudo('K0715'), 'Shortlist', { date: TD }).errs, []);
     });
     test('TC-07: the budget words are English · no Thai in the New deal / Move stage messages', () => {
@@ -125,20 +127,23 @@
     test('TC-17: Shortlist → Contacted — Date only · Rate and Payment term optional', () => {
       const s = fresh(), d = shortlistDeal(s), q = R.stageRequirements(s, d, 'Contacted', {});
       assert.equal(q.kind, 'forward'); assert.equal(q.fields.date, 'req'); assert.equal(q.fields.rate_card, 'opt'); assert.equal(q.fields.payment_term, 'opt'); assert.ok(!q.fields.pillar);
-      assert.deepEqual(R.checkMove(s, d, 'Contacted', { date: TD }).errs, []);
-      assert.equal(R.dropPlan(s, d, 'Contacted', TD).kind, 'instant', 'an optional step on the way, nothing to fill');
+      assert.equal(q.fields.cta, 'req', 'CR-22 §3.2: + CTA');
+      assert.deepEqual(R.checkMove(s, d, 'Contacted', { date: TD }).errs.map(e => e.field), ['cta']);
+      assert.deepEqual(R.checkMove(s, d, 'Contacted', { date: TD, cta: 'TikTok' }).errs, []);
+      assert.equal(R.dropPlan(s, d, 'Contacted', TD).kind, 'dialog', 'CR-22: no CTA yet → the dialog');
+      d.cta = 'TikTok'; assert.equal(R.dropPlan(s, d, 'Contacted', TD).kind, 'instant', 'an optional step on the way, nothing to fill');
     });
     test('TC-18: → Confirm QT with nothing → Pillar · Payment term · Rate card (English) · Move is never blocked by the rule itself (errors after Move = the screen)', () => {
       const s = fresh(), d = shortlistDeal(s), r = R.checkMove(s, d, 'Confirm QT', { date: TD });
-      assert.deepEqual(r.errs.map(e => e.field), ['pillar', 'payment_term', 'rate_card']);
-      assert.deepEqual(r.errs.map(e => e.msg), ['Choose a pillar to move to Confirm QT or later', 'Choose a payment term to move to Confirm QT or later', 'Enter the rate card to move to Confirm QT or later']);
+      assert.deepEqual(r.errs.map(e => e.field), ['cta', 'ship_method', 'ship_items', 'pillar', 'payment_term', 'rate_card'], 'CR-22: + CTA · Method · Products');
+      assert.deepEqual(r.errs.map(e => e.msg).slice(3), ['Choose a pillar to move to Confirm QT or later', 'Choose a payment term to move to Confirm QT or later', 'Enter the rate card to move to Confirm QT or later']);
       assert.equal(R.dropPlan(s, d, 'Confirm QT', TD).kind, 'dialog');
     });
     test('TC-19: → Confirm QT · Awareness · Prepaid · Rate card 3,000 · Post due 20/10 → Total ฿3,000 · remaining −฿13,700 → −฿16,700 · Undo = the deal as before', () => {
       const s = fresh(), d = shortlistDeal(s), before = JSON.stringify(d);
       const f = { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', postDue: '2026-10-20' };
       assert.deepEqual(R.moveBudget(s, d, 'Confirm QT', f), { before: -13700, after: -16700, total: 3000 });
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f)).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f)).errs, []);
       const r = move(s, d, 'Confirm QT', f), nd = deal(s, d.deal_id);
       assert.equal(nd.sub_status, 'Confirm QT'); assert.equal(nd.rate_card, 3000); assert.equal(R.totalCost(nd), 3000); assert.equal(nd.expected_post_date, '2026-10-20');
       assert.equal(nd.pillar, 'Awareness'); assert.equal(nd.payment_term, 'prepaid');
@@ -149,8 +154,8 @@
     test('TC-20: babyjeno_2 (Contacted · Rate 2,300) → Confirm QT: only Pillar (+ term) asked · the rate is there', () => {
       const s = fresh(), d = deal(s, 'D000099');
       d.payment_term = 'prepaid';
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TD }).errs.map(e => e.field), ['pillar']);
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TD, pillar: 'Consideration' }).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22)).errs.map(e => e.field), ['pillar']);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD, pillar: 'Consideration' }, C22)).errs, []);
     });
     test('a deal past Confirm QT with something missing (imported) must fill it to go forward · back only needs a note', () => {
       const s = fresh(), d = s.deals.find(x => x.sub_status === 'Brief' && R.isBlank(x.pillar));
@@ -164,10 +169,10 @@
   describe('CR-20 §4.11 · Costs at Confirm QT', () => {
     test('TC-32: Rate card 3,000 + Gencode 1,000 without days → "Enter how many days the Gencode runs" · 30 days + Asset 500 → Total ฿4,500 · −฿13,700 → −฿18,200', () => {
       const s = fresh(), d = shortlistDeal(s), f = { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', costs: { gencode_expense: '1000', gencode_period: '' } };
-      const r = R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f));
+      const r = R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f));
       assert.deepEqual(r.errs.map(e => e.msg), ['Enter how many days the Gencode runs']);
       Object.assign(f.costs, { gencode_period: '30', asset_fee: '500', expediting_fee: '0' });
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f)).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f)).errs, []);
       assert.deepEqual(R.moveBudget(s, d, 'Confirm QT', f), { before: -13700, after: -18200, total: 4500 });
       move(s, d, 'Confirm QT', Object.assign({ postDue: '2026-10-20' }, f));
       const nd = deal(s, d.deal_id);
@@ -175,9 +180,9 @@
     });
     test('TC-33: Rate card empty → cannot move · 0 → can (Total = the other costs) · Free needs no rate', () => {
       const s = fresh(), d = shortlistDeal(s), f = { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '', costs: { asset_fee: '500' } };
-      assert.ok(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f)).errs.some(e => e.msg.startsWith('Enter the rate card')));
+      assert.ok(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f)).errs.some(e => e.msg.startsWith('Enter the rate card')));
       f.rateCard = '0';
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f)).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f)).errs, []);
       assert.equal(R.moveBudget(s, d, 'Confirm QT', f).total, 500);
       assert.equal(R.stageRequirements(s, d, 'Confirm QT', { paymentTerm: 'free' }).fields.rate_card, 'opt');
     });
@@ -196,7 +201,7 @@
       const s = fresh(), p = pkgOf(s), d = deal(s, 'D000099'), before = committed(s, 'CH');
       const f = { pillar: 'Awareness', paymentTerm: 'package', packageId: p.package_id, packageUnits: '1' };
       assert.equal(R.stageRequirements(s, d, 'Confirm QT', f).fields.rate_card, 'auto');
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, f)).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', Object.assign({ date: TD }, C22, f)).errs, []);
       move(s, d, 'Confirm QT', f);
       const nd = deal(s, 'D000099');
       assert.equal(nd.rate_card, 2000); assert.equal(nd.package_id, p.package_id); assert.equal(R.packageRemaining(s, p), 9);
@@ -257,7 +262,7 @@
     });
     test('TC-27: a Confirm QT date after the Brief date → order error · fixed → both logged on their dates', () => {
       const s = fresh(), d = shortlistDeal(s);
-      const f = { date: '2026-10-07', pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', steps: { 'Confirm QT': '2026-10-08' }, expected: { expected_draft1_date: '2026-10-15' } };
+      const f = Object.assign({ date: '2026-10-07', pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', steps: { 'Confirm QT': '2026-10-08' }, expected: { expected_draft1_date: '2026-10-15' } }, C22);
       assert.ok(R.checkMove(s, d, 'Brief', f).errs.some(e => e.field === 'date' && e.msg === C.msg.moveDateBeforeSteps));
       f.steps['Confirm QT'] = '2026-10-06';
       assert.deepEqual(R.checkMove(s, d, 'Brief', f).errs, []);
@@ -286,7 +291,7 @@
       const s = fresh(), d = shortlistDeal(s);
       move(s, d, 'Confirm QT', { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000' });
       const f = { expected: { expected_draft1_date: '2026-10-15' }, linkBrief: 'www.x.com' };
-      assert.ok(R.checkMove(s, deal(s, d.deal_id), 'Brief', Object.assign({ date: TD }, f)).errs.some(e => e.field === 'link_brief' && e.msg === 'Use a link that starts with https://'));
+      assert.ok(R.checkMove(s, deal(s, d.deal_id), 'Brief', Object.assign({ date: TD }, C22, f)).errs.some(e => e.field === 'link_brief' && e.msg === 'Use a link that starts with https://'));
       f.linkBrief = 'https://www.x.com/brief';
       move(s, deal(s, d.deal_id), 'Brief', f);
       move(s, deal(s, d.deal_id), 'Script', { scriptLink: 'https://www.x.com/script' });
@@ -322,11 +327,11 @@
       assert.deepEqual(q.drafts, [2, 3]); assert.ok(q.approve && q.post);
       const acc = R.accountsOfKol(s, cur.kol_id)[0].account_id;
       const f = { drafts: { 2: 'not_needed', 3: 'not_needed' }, approveDate: TD, posts: [{ post_id: null, account_id: acc, link: '' }] };
-      assert.ok(R.checkMove(s, cur, 'Post', Object.assign({ date: TD }, f)).errs.some(e => e.msg === 'Add the posted link to move to Post'));
+      assert.ok(R.checkMove(s, cur, 'Post', Object.assign({ date: TD }, C22, f)).errs.some(e => e.msg === 'Add the posted link to move to Post'));
       f.posts[0].link = 'https://www.tiktok.com/@07_liuliuly/video/7555000000000000000';
       f.approveDate = '2026-10-08';
       assert.ok(R.checkMove(s, cur, 'Post', Object.assign({}, f, { date: '2026-10-07' })).errs.some(e => e.msg === C.msg.movePostBeforeApprove), 'TC-40');
-      assert.deepEqual(R.checkMove(s, cur, 'Post', Object.assign({ date: TD }, f)).errs, []);
+      assert.deepEqual(R.checkMove(s, cur, 'Post', Object.assign({ date: TD }, C22, f)).errs, []);
       const before = JSON.parse(JSON.stringify(cur));
       move(s, cur, 'Post', f);
       const nd = deal(s, d.deal_id);
@@ -382,7 +387,7 @@
       assert.deepEqual(after.errs, []); assert.ok(after.warns.some(w => w.msg === 'After the post due (20/10)'));
     });
     test('an old date the deal already had (shown unchanged in the dialog) never blocks · the same field changed to a past date does', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { payment_term: 'postpaid', gencode_period: 30 });   // no pillar → the Confirm QT details (with Post due 07/09/2026, the past) are shown
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok' });   // no pillar → the Confirm QT details (with Post due 07/09/2026, the past) are shown · CR-22: a CTA
       assert.equal(d.expected_post_date, '2026-09-07');
       assert.equal(R.stageRequirements(s, d, 'Draft 1', {}).fields.expected_post_date, 'opt');
       assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TD, pillar: 'Awareness', postDue: '2026-09-07' }).errs, []);

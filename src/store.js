@@ -109,7 +109,15 @@
                          valid_until · payee_id · payment_status to_pay / sent / paid · paid_date · note · archived · created_by · created_at · updated_at) ·
                          step_notes (new: deal_id + step_key draft_1 / draft_2 / draft_3 · note · links [] · image_ids [] · updated_by · updated_at — the images
                          themselves are in IndexedDB step_images, never here) · deals + package_id null · package_units 1 · package_paid false · script_link null ·
-                         payment_lines + package_id null · payment term 'package' (R.PAYMENT_TERMS) */
+                         payment_lines + package_id null · payment term 'package' (R.PAYMENT_TERMS)
+   schema_version 20 (CR-21) — rules-request.js migrateV20: campaigns / phases approval_status draft · pending · approved (rejected → draft + returned_reason /
+                         returned_by / returned_at from the latest rejected event · submit_round = the submitted events · last_submitted = what was returned) ·
+                         pending_change + status draft / pending (+ submit_round · returned_* · last_submitted) — a rejected change (change_rejected) → a returned draft ·
+                         campaign_budget_changes.status draft · pending · approved · cancelled (rejected → draft + returned_*) · approved records untouched ·
+                         campaign_events approval + draft_saved · resubmitted · withdrawn · returned · draft_deleted · round
+   schema_version 21 (CR-22) — rules-samples.js migrateV21: sample_shipments + method npd / warehouse / self_purchase (every one there is: warehouse) ·
+                         items = the deal's products (qty 1) when it had none · purchase_amount null · purchased_date null · status + kol_purchase / purchased ·
+                         deals + product_purchase_fee null (in Total cost) · lookups.shipment_methods [{ key, label }] — the money does not change */
 
 KT.store = (function (R) {
   'use strict';
@@ -119,7 +127,7 @@ KT.store = (function (R) {
   const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
   const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 19;
+  const SCHEMA_VERSION = 21;
   const QUOTA_MB = 5;
   const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes'];
   /* collections that older versions do not have yet (they are created by migrate) */
@@ -307,6 +315,10 @@ KT.store = (function (R) {
   function toV18(obj) { R.migrateV18(obj); }
   /* v18 → v19 (CR-20 §3): kol_packages · step_notes · deals package_id / package_units / package_paid / script_link · payment_lines package_id */
   function toV19(obj) { R.migrateV19(obj); }
+  /* v19 → v20 (CR-21 §4): Return to draft instead of Rejected · submit rounds · draft requests */
+  function toV20(obj) { R.migrateV20(obj); }
+  /* v20 → v21 (CR-22 §4): the shipment method · KOL buys own · Product purchase */
+  function toV21(obj) { R.migrateV21(obj); }
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -327,6 +339,8 @@ KT.store = (function (R) {
     if (obj.schema_version === 16) toV17(obj, now);
     if (obj.schema_version === 17) toV18(obj);
     if (obj.schema_version === 18) toV19(obj);
+    if (obj.schema_version === 19) toV20(obj);
+    if (obj.schema_version === 20) toV21(obj);
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }

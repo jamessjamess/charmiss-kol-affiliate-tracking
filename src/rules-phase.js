@@ -129,11 +129,11 @@ Object.assign(KT.rules, (function (R, C) {
   const primaryPhase = (idx, dealId) => ((idx.deal.get(dealId) || {}).primary) || UNSCHEDULED;
 
   /* ---------- scopes (Deals strip, Overview): {campaignId|null, phaseIds|null} · phaseIds null = whole Campaign(s) ---------- */
-  const toScope = x => (Array.isArray(x) ? { campaignId: null, phaseIds: x } : Object.assign({ campaignId: null, phaseIds: null }, x || {}));
+  const toScope = x => (Array.isArray(x) ? { campaignId: null, phaseIds: x } : Object.assign({ campaignId: null, phaseIds: null, campaignIds: null }, x || {}));   // CR-21: campaignIds = the Campaigns of a Year
   /* deals of the Campaign · with Phases: deals with at least one post in them (the special keys __needs / __unscheduled work too) */
   function scopeDeals(state, scopeIn, idx) {
     const sc = toScope(scopeIn), set = sc.phaseIds ? new Set(sc.phaseIds) : null;
-    return state.deals.filter(d => (!sc.campaignId || d.campaign_id === sc.campaignId) && (!set || [...(idx.deal.get(d.deal_id) || { keys: [] }).keys].some(k => set.has(k))));
+    return state.deals.filter(d => (!sc.campaignId || d.campaign_id === sc.campaignId) && (!sc.campaignIds || sc.campaignIds.includes(d.campaign_id)) && (!set || [...(idx.deal.get(d.deal_id) || { keys: [] }).keys].some(k => set.has(k))));
   }
   /* posts of those deals · with Phases: only the posts whose Phase is in the set */
   function scopePosts(state, scopeIn, idx) {
@@ -155,7 +155,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* budget of a scope: whole = Campaign budgets · Phases = Phase budgets (null when none is set) */
   function scopeBudget(state, scopeIn) {
     const sc = toScope(scopeIn), num = list => { const v = list.filter(x => !isBlank(x)).map(Number); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
-    if (!sc.phaseIds) return num(state.campaigns.filter(c => !sc.campaignId || c.campaign_id === sc.campaignId).map(c => c.budget_kol));
+    if (!sc.phaseIds) return num(state.campaigns.filter(c => (!sc.campaignId || c.campaign_id === sc.campaignId) && (!sc.campaignIds || sc.campaignIds.includes(c.campaign_id)) && !R.isDraft(c)).map(c => c.budget_kol));
     const set = new Set(sc.phaseIds);
     return num(state.phases.filter(p => set.has(p.phase_id) && R.isApproved(p)).map(p => p.budget_kol));
   }
@@ -195,6 +195,12 @@ Object.assign(KT.rules, (function (R, C) {
   function canDeletePhase(state, phaseId, idxIn) {
     const idx = idxIn || phaseIndex(state), ph = idx.phase.get(phaseId);
     return !(ph && ph.posts) && !state.deal_posts.some(p => p.phase_override === phaseId);
+  }
+  /* CR-21 §3.7 — the deals in a Phase (a post in it, or moved there by hand): "Has n deals — move them first" */
+  function phaseDealCount(state, phaseId, idxIn) {
+    const idx = idxIn || phaseIndex(state), ids = new Set(((idx.phase.get(phaseId) || {}).dealIds) || []);
+    state.deal_posts.forEach(p => { if (p.phase_override === phaseId) ids.add(p.deal_id); });
+    return ids.size;
   }
 
   /* ---------- overlapping Phases (allowed, with a warning) ---------- */
@@ -332,9 +338,10 @@ Object.assign(KT.rules, (function (R, C) {
     const ids = new Set(state.deals.filter(d => d.campaign_id === campaignId).map(d => d.deal_id));
     const keyOf = r => (!r ? null : r.phase || r.slot);
     let moved = 0, toAuto = 0, needs = 0;
+    const movedDeals = new Set();   // CR-21 §3.7: "n deals will move to another phase"
     state.deal_posts.filter(p => ids.has(p.deal_id)).forEach(p => {
       const b = before.post.get(p.post_id), a = after.post.get(p.post_id); if (!b || !a) return;
-      if (keyOf(b) !== keyOf(a)) moved++;
+      if (keyOf(b) !== keyOf(a)) { moved++; movedDeals.add(p.deal_id); }
       if (b.kind !== 'auto' && a.kind === 'auto') toAuto++;
       if (a.slot === 'needs' && b.slot !== 'needs') needs++;
     });
@@ -346,7 +353,7 @@ Object.assign(KT.rules, (function (R, C) {
     const renumber = rows.map((r, i) => ({ r, i })).filter(x => x.r.phase_id && state.phases.some(p => p.phase_id === x.r.phase_id))
       .map(({ r, i }) => ({ from: phaseName(state, r.phase_id), to: phaseTitle(seqs[i], r.label), was: phaseSeq(state.phases, state.phases.find(p => p.phase_id === r.phase_id)), now: seqs[i] }))
       .filter(x => x.was !== x.now).sort((a, b) => a.was - b.was);
-    return { moved, toAuto, needs, rows: list, totalBefore: tot(before), totalAfter: tot(after), renumber };
+    return { moved, movedDeals: movedDeals.size, toAuto, needs, rows: list, totalBefore: tot(before), totalAfter: tot(after), renumber };
   }
 
   /* ---------- Campaign budget split (CR-03 §4.3) ---------- */
@@ -370,7 +377,7 @@ Object.assign(KT.rules, (function (R, C) {
   return {
     UNSCHEDULED, NEEDS, postDateOf, phaseTitle, planSeqs, phaseSeq, phaseTitleOf, labelFromName, phaseName, phaseLabel, campaignName, isShortlist, phasesOfCampaign, campaignOf, resolvePostPhase, canPickPhase, pickablePhases, postShare, byPostDate,
     phaseIndex, primaryPhase, toScope, scopeDeals, scopePosts, scopeMoney, scopeBudget,
-    phaseSummary, phaseCommitted, campaignSummary, campaignRange, canDeletePhase, phaseOverlaps, validatePhase,
+    phaseSummary, phaseCommitted, campaignSummary, campaignRange, canDeletePhase, phaseDealCount, phaseOverlaps, validatePhase,
     budgetFromPct, pctOfBudget, allocation, postFarOutside, planTotals, splitEvenly, fillRemaining, validatePhasePlan, planImpact,
     MAX_PHASES, checkPhaseCount, splitDates, evenAmounts, PRESETS, presetSplit, resizePlan,
   };

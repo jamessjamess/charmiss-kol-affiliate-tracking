@@ -8,7 +8,7 @@ Object.assign(KT.rules, (function (R, C) {
   const { isBlank, isISODate, trim, dayDiff } = R;
   const PURPOSES = ['review', 'gifting', 'replacement', 'affiliate', 'other'];
   const SHIP_TABS = ['to-ship', 'in-transit', 'delivered'];
-  const TO_SHIP_GROUPS = ['overdue', 'this_week', 'later', 'noShipBy', 'problem'];
+  const TO_SHIP_GROUPS = ['overdue', 'this_week', 'later', 'noShipBy', 'problem', 'kol_purchase'];   // CR-22: KOL buys own last (nothing to pack)
   const TRANSIT_SLOW = 5;   // days in transit above this are amber
 
   /* the PIC of a shipment: its deal's · without a deal, the person who made it (when they are a PIC) */
@@ -30,6 +30,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (f.campaign && r.campaign_id !== f.campaign) return false;
       if (f.pic && (f.pic === '__none' ? !isBlank(r.pic) : r.pic !== f.pic)) return false;
       if (f.purpose && r.purpose !== f.purpose) return false;
+      if (f.method && (r.sh.method || 'warehouse') !== f.method) return false;   // CR-22 §3.3
       if (f.status && (f.status === 'noShipBy' ? !(r.status === 'to_ship' && !isISODate(r.sh.ship_by)) : r.status !== f.status)) return false;
       if (q) {
         const kid = r.kol && r.kol.kol_id, hay = [r.kol && r.kol.display_name, handles.get(kid), r.sh.shipment_id, r.sh.deal_id, r.sh.tracking_no].map(v => String(v || '').toLowerCase()).join(' ');
@@ -38,8 +39,8 @@ Object.assign(KT.rules, (function (R, C) {
       return true;
     });
   }
-  const tabOfStatus = st => (st === 'shipped' ? 'in-transit' : st === 'delivered' || st === 'not_required' ? 'delivered' : 'to-ship');
-  const toShipGroup = r => (r.status === 'problem' ? 'problem' : r.status === 'overdue' ? 'overdue' : r.status === 'this_week' ? 'this_week' : isISODate(r.sh.ship_by) ? 'later' : 'noShipBy');
+  const tabOfStatus = st => (st === 'shipped' ? 'in-transit' : st === 'delivered' || st === 'not_required' || st === 'purchased' ? 'delivered' : 'to-ship');
+  const toShipGroup = r => (r.status === 'kol_purchase' ? 'kol_purchase' : r.status === 'problem' ? 'problem' : r.status === 'overdue' ? 'overdue' : r.status === 'this_week' ? 'this_week' : isISODate(r.sh.ship_by) ? 'later' : 'noShipBy');
   const daysInTransit = (sh, today) => (isISODate(sh.shipped_date) ? Math.max(0, dayDiff(today, sh.shipped_date)) : null);
   /* the rows of one tab in their order — To ship: Overdue → This week → Later → No ship-by date → Problem, by Ship by · In transit: the oldest
      shipped first · Delivered: the newest first; what came from the old files (or the clean-up) is hidden unless showImported → { rows, hidden } */

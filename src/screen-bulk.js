@@ -3,7 +3,9 @@
    and fill only a little per KOL in the Selected panel: Rate (the Latest rate, "Avg ฿x") · Post due ("→ Phase 2") · Payment term when the
    deals start at Contacted (optional) or Confirm QT (required — the rules of R.stageRequirements, through R.checkMove) · Package.
    Add n deals → Deals › Table of that Campaign with the new rows lit up and Undo. The header (Campaign · Phase · Assign to · Pillar · Start at ·
-   Products) is the New deal modal's (screen-newdeal.js), the same on both tabs. → KT.bulk */
+   Products) is the New deal modal's (screen-newdeal.js), the same on both tabs.
+   CR-22 — the Rate starts empty with "Last rate card ฿x" to click in (no Avg · no Use latest rates / Clear rates) · CTA and the sample method come
+   from the header · a search with no KOL: Create "<name>" as new KOL. → KT.bulk */
 KT.bulk = (function () {
   'use strict';
   const U = KT.ui;
@@ -25,8 +27,7 @@ KT.bulk = (function () {
   /* a selected KOL's row: Rate = the Latest rate (CR-07) · Post due · Payment term = the KOL's default */
   function addSel(id) {
     const s = state(), k = R.kolById(s, id); if (!k || bk.sel.has(id)) return;
-    const ref = R.costReference(s, id), latest = ref.latest ? ref.latest.values.rate_card : null;
-    bk.sel.set(id, { rate: latest != null ? String(latest) : '', latest, avg: ref.average ? ref.average.total : null, postDue: '', term: R.isTerm(k.default_payment_term) ? k.default_payment_term : '', packageId: '', units: '1' });
+    bk.sel.set(id, { rate: '', last: R.lastRateCard(s, id), postDue: '', term: R.isTerm(k.default_payment_term) ? k.default_payment_term : '', packageId: '', units: '1' });   // CR-22 §3.1: never filled in for you
   }
   const selectKols = ids => { if (!bk) return; ids.forEach(addSel); bk.dirty = true; };
 
@@ -51,7 +52,7 @@ KT.bulk = (function () {
         `<button type="button" class="btn small ghost hidden" data-bkclear id="bk_clear">${U.ICON.close}<span>${esc(C.common.clearAllFilters)}</span></button></div>` +
         `<div id="bk_selbar"></div><div id="bk_list"></div></div>` +
       `<aside class="bk-right" id="bk_right"><div class="bk-rh"><b id="bk_seln"></b><button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div>` +
-        `<div class="bk-ptools"><button type="button" class="btn small" data-bkdueall>${esc(B.setPostDueAll)}</button><button type="button" class="btn small" data-bklatest>${esc(B.useLatest)}</button><button type="button" class="btn small" data-bkclearrates>${esc(B.clearRates)}</button></div>` +
+        `<div class="bk-ptools"><button type="button" class="btn small" data-bkdueall>${esc(B.setPostDueAll)}</button></div>` +
         `<div id="bk_selected" class="bk-sel"></div><div id="bk_sum" class="bk-sum"></div></aside></div>`, !top, 'flush nd-body');
     api.m.setFoot(`<div class="checks" id="bk_checks"></div>`, `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button><button type="button" class="btn" data-bkadd="open" id="bk_addopen">${esc(B.addOpenFirst)}</button><button type="button" class="btn primary" id="bk_add" data-bkadd="add"></button>`);
     const root = $('cm_body'); if (!root) return;
@@ -76,7 +77,7 @@ KT.bulk = (function () {
     const s = state(), rows = matches(), pages = Math.max(1, Math.ceil(rows.length / PAGE)); bk.page = Math.min(bk.page, pages - 1); bk.rows = rows;
     const page = rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE), allPage = page.length > 0 && page.every(r => bk.sel.has(r.k.kol_id));
     const fol = n => (n ? R.fmtNum(n) : '—');
-    $('bk_list').innerHTML = !rows.length ? U.noMatchHTML(T.noMatch, []) : `<div class="tablewrap bk-wrap"><table class="tbl bk-tbl"><thead><tr><th class="cb"><input type="checkbox" id="bk_page" aria-label="${esc(B.selectPage)}"${allPage ? ' checked' : ''}></th>` +
+    $('bk_list').innerHTML = !rows.length ? emptyHTML() : `<div class="tablewrap bk-wrap"><table class="tbl bk-tbl"><thead><tr><th class="cb"><input type="checkbox" id="bk_page" aria-label="${esc(B.selectPage)}"${allPage ? ' checked' : ''}></th>` +
       `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th>${esc(B.colLastCampaign)}</th><th>${esc(B.perf)}</th><th title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th class="num">${esc(B.colRate)}</th></tr></thead><tbody>` +
       page.map(r => { const q = R.latestQuote(s, r.k.kol_id), rate = q && !R.isBlank(q.rate_card) ? q.rate_card : null, li = R.lastWorkedInfo(s, r.k.kol_id);
         return `<tr class="click${bk.sel.has(r.k.kol_id) ? ' selected' : ''}" data-bkrow="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-bksel="${esc(r.k.kol_id)}"${bk.sel.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
@@ -90,17 +91,25 @@ KT.bulk = (function () {
       : allSel && rows.length > page.length ? `<div class="bk-banner">${esc(B.allSelected(rows.length))} · <button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div>` : '';
     drawSide();
   }
+  /* CR-22 §3.4 — no KOL for the search: Create "<name>" as new KOL · Clear other filters (when others are on) */
+  function emptyHTML() {
+    const q = R.trim(bk.f.q); if (!q) return U.noMatchHTML(T.noMatch, []);
+    const others = R.pickerActive(Object.assign({}, bk.f, { q: '', status: bk.f.status === 'Active' ? '' : bk.f.status || 'any', notIn: !bk.f.notIn })).length > 0;
+    return `<div class="card empty bk-empty"><b>${esc(B.noKolMatch(q))}</b><div class="btns"><button type="button" class="btn primary" data-bknewkol>${esc(B.createNewKol(q))}</button>` +
+      (others ? `<button type="button" class="link" data-bkclearother>${esc(B.clearOther)}</button>` : '') + `</div></div>`;
+  }
   const startAt = () => api.header().startAt;
   const needsTerm = () => { const st = R.stepOf(state().lookups, startAt()); return !!st && st.sub_status !== (R.shortlistStep(state().lookups) || {}).sub_status && !R.isCancelStep(st); };
   /* the deal a selected row would make (for R.checkMove: what Start at needs — the one rule of R.stageRequirements) */
   function pseudo(id, x) {
     const h = api.header();
     return { deal: Object.assign(JSON.parse(JSON.stringify(R.DEAL_TEMPLATE)), { deal_id: null, kol_id: id, campaign_id: h.campaign, sub_status: null, status: null, pillar: h.pillar || null }),
-      form: { date: today(), today: today(), pillar: h.pillar || '', paymentTerm: x.term || '', packageId: x.packageId || '', packageUnits: x.units || '1', rateCard: KT.move.money(x.rate), postDue: x.postDue || '' } };
+      form: { date: today(), today: today(), pillar: h.pillar || '', paymentTerm: x.term || '', packageId: x.packageId || '', packageUnits: x.units || '1', rateCard: KT.move.money(x.rate), postDue: x.postDue || '',
+        cta: h.cta || '', ship: { method: h.method || '', items: (h.products || []).map(c => ({ tr_code: c, qty: 1 })) } } };
   }
   function rowChecks(id, x) {
     const p = pseudo(id, x), r = R.checkMove(state(), p.deal, startAt(), p.form);
-    return r.errs.filter(e => !['to', 'pillar'].includes(e.field));   // the pillar is the header's (one message there)
+    return r.errs.filter(e => !['to', 'pillar', 'cta', 'ship_method', 'ship_items'].includes(e.field));   // the pillar · CTA · sample method / products are the header's (one message there)
   }
   function plan() { const h = api.header(); return R.bulkShortlistPlan(state(), [...bk.sel.keys()], h.campaign, { pic: h.assign || 'me', me: R.picName(U.me()) || '' }); }
   function drawSide() {
@@ -118,7 +127,7 @@ KT.bulk = (function () {
       return `<div class="bk-srow${skip.has(id) ? ' skipped' : ''}${errs.length ? ' bad' : ''}" data-srow="${esc(id)}"><div class="bk-sk"><b>${U.nameHTML(k.display_name)}</b> <span class="chip">${esc(tier)}</span>${skip.has(id) ? ` <span class="muted small">${esc(B.skipReason[p.skip.find(y => y.kol.kol_id === id).reason])}</span>` : ''}` +
           `<button type="button" class="x" data-bkrm="${esc(id)}" aria-label="${esc(B.removeRow(k.display_name))}">×</button></div>` +
         `<div class="bk-sf"><label class="bk-f"><span>${esc(B.rate)}</span><input type="text" inputmode="decimal" class="mv-money${bad('rate_card') ? ' invalid' : ''}" data-srate="${esc(id)}" value="${esc(rateVal)}"${rateAuto ? ' disabled' : ''} autocomplete="off">` +
-          `<span class="muted small">${rateAuto ? esc(MV.fromPackage) : x.avg != null ? esc(B.avg(R.baht(x.avg))) : '&nbsp;'}</span></label>` +
+          `<span class="muted small">${rateAuto ? esc(MV.fromPackage) : KT.move.lastRateHTML(s, x.last, `data-slast="${esc(id)}"`)}</span></label>` +
         `<label class="bk-f"><span>${esc(B.postDue)}</span>${dateHTML(`data-sdue="${esc(id)}"`, x.postDue, { label: B.postDue })}<span class="muted small" data-sphase="${esc(id)}">${esc(KT.move.phaseHint(h.campaign, x.postDue)) || '&nbsp;'}</span></label>` +
         (showTerm ? `<label class="bk-f"><span>${esc(B.term)}${termReq ? ' <span class="req">*</span>' : ''}</span><select data-sterm="${esc(id)}"${bad('payment_term') ? ' class="invalid"' : ''}>${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), x.term, MV.chooseTerm)}</select><span>&nbsp;</span></label>` : '') +
         (showTerm && x.term === 'package' ? `<label class="bk-f"><span>${esc(MV.package)} <span class="req">*</span></span><select data-spkg="${esc(id)}"${bad('package_id') ? ' class="invalid"' : ''}>${optionsHTML(pk, x.packageId, MV.choosePackage)}</select><span>&nbsp;</span></label>` +
@@ -156,8 +165,9 @@ KT.bulk = (function () {
     const rm = t.closest('[data-bkrm]'); if (rm) { bk.sel.delete(rm.dataset.bkrm); bk.dirty = true; drawList(); return true; }
     const pg = t.closest('[data-bkpage]'); if (pg) { bk.page += +pg.dataset.bkpage; drawList(); return true; }
     if (t.closest('[data-bkclear]')) { bk.f = blank(); bk.page = 0; draw(api); return true; }
-    if (t.closest('[data-bklatest]')) { bk.sel.forEach(x => { if (x.latest != null) x.rate = String(x.latest); }); bk.dirty = true; drawSide(); return true; }
-    if (t.closest('[data-bkclearrates]')) { bk.sel.forEach(x => { x.rate = ''; }); bk.dirty = true; drawSide(); return true; }
+    const sl = t.closest('[data-slast]'); if (sl) { const x = bk.sel.get(sl.dataset.slast); if (x) { x.rate = sl.dataset.amount; bk.dirty = true; drawSide(); } return true; }   // CR-22 §3.1
+    if (t.closest('[data-bknewkol]')) { api.createAsNew(bk.f.q); return true; }   // CR-22 §3.4
+    if (t.closest('[data-bkclearother]')) { const q = bk.f.q; bk.f = blank(); bk.f.q = q; bk.page = 0; draw(api); return true; }
     const da = t.closest('[data-bkdueall]'); if (da) { dueAll(da); return true; }
     const row = t.closest('[data-bkrow]'); if (row && !t.closest('a,button,input')) { const id = row.dataset.bkrow; bk.sel.has(id) ? bk.sel.delete(id) : addSel(id); bk.dirty = true; drawList(); return true; }
     const ad = t.closest('[data-bkadd]'); if (ad) { if (!ad.disabled) confirm(ad.dataset.bkadd === 'open'); return true; }
@@ -207,12 +217,14 @@ KT.bulk = (function () {
       const acc = R.accountsOfKol(s, x.kol.kol_id).slice().sort((a, b) => (Number(b.followers) || 0) - (Number(a.followers) || 0))[0];
       const withPost = !!acc && (!!r.postDue || !!h.phase);
       const out = R.newDeal(s, { dealId: dealIds[i], logId: firstLog + i, campaignId: h.campaign, kolId: x.kol.kol_id, sub: step.sub_status, pic: h.assign || x.pic || null,
-        prefill: { pillar: h.pillar || null, payment_term: R.isTerm(r.term) ? r.term : null, rate_card: rate, expected_post_date: r.postDue || null, package_id: pk ? pk.package_id : null, package_units: pk ? units : 1, created_batch_id: batchId },
+        prefill: Object.assign({ pillar: h.pillar || null, payment_term: R.isTerm(r.term) ? r.term : null, rate_card: rate, expected_post_date: r.postDue || null, package_id: pk ? pk.package_id : null, package_units: pk ? units : 1, created_batch_id: batchId },
+          api.atLeast('Contacted') && h.cta ? { cta: h.cta } : {}),
         accountIds: withPost ? [acc.account_id] : [], postIds: withPost ? ['P' + String(postN++).padStart(6, '0')] : [], phaseOverrides: [h.phase || null], date: today(), now: new Date(), user: userId(), note: C.bulk.logNote });
       if (!R.isTerm(r.term)) out.deal.payment_term = R.isTerm(x.term) ? x.term : null;
       out.posts.forEach(pp => Object.assign(pp, { metrics_source: null, metrics_updated_by: null }));
       s.deals.push(out.deal); s.deal_status_log.push(out.log); out.posts.forEach(pp => s.deal_posts.push(pp));
       R.setDealProducts(s, out.deal.deal_id, (h.products || []).map(c => ({ tr_code: c, qty: 1, note: null })));
+      const shp = api.newDealShipment(s, out.deal); if (shp) s.sample_shipments.push(shp);   // CR-22 §3.3
       made.push(out.deal);
     });
     const snap = new Map(made.map(d => [d.deal_id, JSON.stringify(d)])), campaignId = h.campaign, after = api.after;
@@ -223,7 +235,7 @@ KT.bulk = (function () {
     toastAction(B.added(n), C.deal.undo, () => {
       const st = state(), keep = new Set(R.batchUntouched(st, batchId, snap).map(d => d.deal_id));
       st.deals = st.deals.filter(d => !keep.has(d.deal_id)); st.deal_status_log = st.deal_status_log.filter(l => !keep.has(l.deal_id)); st.deal_posts = st.deal_posts.filter(x => !keep.has(x.deal_id));
-      st.deal_products = st.deal_products.filter(x => !keep.has(x.deal_id));
+      st.deal_products = st.deal_products.filter(x => !keep.has(x.deal_id)); st.sample_shipments = (st.sample_shipments || []).filter(x => !keep.has(x.deal_id));
       commit(B.undone(keep.size)); KT.screens.deals.showBatch(campaignId, []);
     }, 10000);
   }

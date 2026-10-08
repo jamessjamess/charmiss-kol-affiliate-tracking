@@ -101,6 +101,7 @@ KT.samples = (function () {
   /* the button on the row: To ship → Shipped · in transit → Delivered (for those who do the sending) */
   function quickBtnHTML(sh, st) {
     if (R.isLegacyDelivered(sh) || !R.canShipWork(U.actor())) return '';
+    if (st === 'kol_purchase') return `<button type="button" class="btn small primary sm-qbtn" data-smpurchase="${esc(sh.shipment_id)}">${esc(SM.markPurchased)}</button>`;   // CR-22: KOL buys own
     if (['overdue', 'this_week', 'to_ship', 'problem'].includes(st)) return `<button type="button" class="btn small primary sm-qbtn" data-smquick="shipped" data-sm="${esc(sh.shipment_id)}">${esc(SM.quick.shipped)}</button>`;
     if (st === 'shipped') return `<button type="button" class="btn small primary sm-qbtn" data-smquick="delivered" data-sm="${esc(sh.shipment_id)}">${esc(SM.quick.delivered)}</button>`;
     return '';
@@ -113,7 +114,21 @@ KT.samples = (function () {
       sh.source !== 'auto' && sh.source !== 'legacy' && sh.status === 'to_ship' ? mi('delete', SM.del, 'danger') : ''].join('');
     if (st === 'shipped') return [mi('problem', SM.reportProblem), mi('edit', SM.quick.editTracking)].join('');
     if (st === 'delivered' && !R.isLegacyDelivered(sh)) return work ? `<button type="button" class="mi" data-smundo="${esc(sh.shipment_id)}">${esc(SM.quick.undoDelivered)}</button>` : '';
+    if (st === 'kol_purchase') return [mi('items', SM.editItems), mi('not_required', SM.notRequired)].join('');
+    if (st === 'purchased') return work ? `<button type="button" class="mi" data-smunpurchase="${esc(sh.shipment_id)}">${esc(SM.unmarkPurchased)}</button>` : '';
     return '';
+  }
+  /* CR-22 §3.3 — KOL buys own: Mark purchased (today) · Undo purchased */
+  function purchase(id, back, after) {
+    const s = state(), sh = shOf(id); if (!sh || !U.guard('shipment.ship')) return;
+    s.deal_events.push(R.updateShipment(sh, back ? { kind: 'unpurchased' } : { kind: 'purchased', date: today() }, { eventId: store.newEventId(), now: new Date().toISOString(), user: userId() }));
+    commit(back ? SM.quick.undone : SM.purchasedDone(shKol(sh))); if (after) after();
+  }
+  /* "Warehouse · Test 1 ×2 · To ship" — a shipment in one line (Move stage · the Deal modal) */
+  function summaryText(sh) {
+    if (!sh) return '';
+    const s = state(), items = (sh.items || []).map(x => { const p = R.productByCode(s, x.tr_code); return `${p ? R.productShort(p) : x.tr_code} ×${x.qty}`; }).join(', ');
+    return SM.summary(R.shipMethodLabel(s.lookups, sh.method || 'warehouse'), items, SM.status[R.sampleStatus(sh, today())] || sh.status);
   }
   const quickCtx = () => { let e = 0; const base = store.newEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }; };
   /* Shipped · Shipped & delivered · Delivered: a small form next to the button (today · the carrier last used by this person · tracking for one) */
@@ -156,6 +171,7 @@ KT.samples = (function () {
 
   /* clicks in the drawer or in the Samples tab → true when handled */
   function click(e, after) {
+    const pu = e.target.closest('[data-smpurchase], [data-smunpurchase]'); if (pu) { const m = pu.closest('details'); if (m) m.open = false; purchase(pu.dataset.smpurchase || pu.dataset.smunpurchase, !!pu.dataset.smunpurchase, after); return true; }
     const qk = e.target.closest('[data-smquick]'); if (qk) { const m = qk.closest('details'); if (m) m.open = false; quick(qk.dataset.smquick, [qk.dataset.sm], m ? m.querySelector('summary') : qk, after); return true; }   // CR-17
     const ud = e.target.closest('[data-smundo]'); if (ud) { const m = ud.closest('details'); if (m) m.open = false; undoDeliver(ud.dataset.smundo, after); return true; }
     const ad = e.target.closest('[data-smaddr]'); if (ad) { const m = ad.closest('details'); if (m) m.open = false; changeAddress(ad.dataset.smaddr, m ? m.querySelector('summary') : ad, after); return true; }
@@ -246,5 +262,5 @@ KT.samples = (function () {
     return `<span class="smicon sm-${st}" title="${esc(tip)}" aria-label="${esc(tip)}">📦</span>`;
   }
 
-  return { chip, trackHTML, sectionHTML, fillSecure, click, action, addDialog, shippingDialog, iconHTML, quick, undoDeliver, changeAddress, quickBtnHTML, simpleMenuItems, isSimple: simple };
+  return { summaryText, chip, trackHTML, sectionHTML, fillSecure, click, action, addDialog, shippingDialog, iconHTML, quick, undoDeliver, changeAddress, quickBtnHTML, simpleMenuItems, isSimple: simple };
 })();

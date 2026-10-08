@@ -2,6 +2,21 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-22 v1.0 · 08/10/2026 — Rate ไม่เติมให้เอง · CTA ตอน Contacted · Sample shipment ตอน Confirm QT · ค้นไม่เจอ → New KOL · Deal modal tabs · Assign to บังคับ
+schema **20 → 21** · tests **627**
+- **Rate card** ว่างเสมอ (เว้น deal มีของตัวเอง) + hint **Last rate card ฿x · Campaign · วันที่** คลิกเพื่อใส่ · ไม่มี Avg · ตัด Use latest rates / Clear rates
+- **CTA \*** ตั้งแต่ Contacted (Move stage · New deal ในแถบหัว) · **Sample shipment** ตอน Confirm QT: Method (NPD · Warehouse · KOL buys own) · Products × Qty · Ship to · Purchase amount → สร้างรายการใน Shipments (KOL buys own = KOL purchase → Mark purchased · ยอดเข้า Total cost เป็น Product purchase) · Shipments มีคอลัมน์ / ตัวกรอง Method
+- **New deal:** ค้นไม่เจอ → Create "<คำค้น>" as new KOL · Assign to บังคับ (Admin ต้องเลือก)
+- **Deal modal** กว้าง min(1400px, 94vw) · header มี Tier · Assigned to · แถบ Missing คลิกไปช่อง · 5 tabs (Overview · Costs & payment · Timeline & content · Shipments & posts · History) จำต่อผู้ใช้ · จาก Payments / Shipments เปิด tab ที่ตรง
+
+## CR-21 v3.0 · 08/10/2026 — Collapse all / Sort · Deals Year · Save draft · Approval review · Return to draft / Resubmit · Edit = Phase Planner
+schema **19 → 20** · tests **622**
+- **Campaign & Phase:** Sort (Status · Start date earliest / latest) + Collapse all / Expand all บน Table และ Timeline (จำแยกต่อผู้ใช้ · แถวที่พับมีเส้นแบ่ง Phase + "n phases") · ⋯ Edit · Draft ไม่แสดงในตาราง / Timeline / Dashboard / New deal
+- **Deals › Year** (All years + ปีของ Campaign ที่ Approved · "All campaigns in 2026" · ทุก view / export / ตัวนับกรองตามปี · แถบ ongoing ปีก่อน · ลิงก์จากหน้าอื่นตั้งปีตาม Campaign)
+- **Save draft** (Planner · Adjust budget · ต้องมีแค่ชื่อ · ตรวจเต็มสีเทาจนกด Submit · Save as draft? ตอนปิด) · **My requests / Approvals** Drafts · Pending · Decided · การ์ดปุ่มเดียว **Review** → **Approval review pop up** (What changed since last round · Approve ใช้ได้เมื่อเลื่อนถึง Decision · ตัด Approve selected)
+- **Return to draft** (เหตุผล ≥ 5 ตัว) → Resubmit (Round +1) · Withdraw to draft · ไม่มีคำว่า Rejected · ทุกการเปลี่ยนสถานะผ่าน `rules.requestTransition()` · diff ผ่าน `rules.requestDiff()`
+- **Edit = Phase Planner** (prefill · Note · footer "n changes · …" / No changes · Phase ที่มี deal ลบไม่ได้ · KOL budget อ่านอย่างเดียว) · drawer ตัดฟอร์มแก้ด้านข้าง · Plan phases · CTA / Default payment term
+
 ## CR-20 v1.3 · 08/10/2026 — New deal (From KOL Master · New KOL) · Deal modal · Move stage ตามปลายทาง · Package · Draft notes
 schema **18 → 19** · tests **613**
 - **New deal:** tab **From KOL Master** (default · 1 หรือหลาย KOL · แผง Selected: Rate · Post due → Phase · Payment term / Package เมื่อเริ่ม Contacted / Confirm QT · Set post due for all · Use latest rates · Add n deals / Add & open first · งบภาษาอังกฤษ) · ตัวกรอง **Worked in** + Posted only · tab **New KOL** (KOL ใหม่ + deal ละเอียด · ตรวจซ้ำ "Use this KOL") · แถบหัวร่วม Campaign · Phase · **Assign to** · Pillar · Start at · Products · ไม่มี "Adding to" / CTA · คำ **KOL owner** / **Assigned to**

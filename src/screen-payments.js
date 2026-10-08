@@ -946,7 +946,7 @@ KT.screens.payments = (function () {
     if (py) { const m = py.closest('details'); if (m) m.open = false; if (py.dataset.ppayee) KT.profile.open(py.dataset.ppayee, { tab: 'payee', opener: py }); else if (py.dataset.ppayeeid) KT.payee.openDialog({ payeeId: py.dataset.ppayeeid, onSaved: draw }); return; }
     const pt = e.target.closest('[data-ppayto]'); if (pt) { const m = pt.closest('details'); if (m) m.open = false; changePayeeDialog(pt.dataset.ppayto, m ? m.querySelector('summary') : pt); return; }
     const po = e.target.closest('[data-pposts]'); if (po) { U.go('deals', { deal: po.dataset.pposts }); return; }
-    const pd = e.target.closest('[data-pdeal]'); if (pd) { U.go('deals', { deal: pd.dataset.pdeal }); return; }
+    const pd = e.target.closest('[data-pdeal]'); if (pd) { U.go('deals', { deal: pd.dataset.pdeal, section: 'costs' }); return; }   // CR-22 §3.6: Costs & payment
     if (e.target.id === 'pm_all') { const on = e.target.checked, s0 = state(); pv.items.filter(x => x.status !== 'on_hold' && (!simple() || (canPayX(s0, x) && (pv.tab !== 'paid' || x.line.wht > 0)))).forEach(x => (on ? pv.selected.add(x.key) : pv.selected.delete(x.key))); draw(); return; }
     const cb = e.target.closest('[data-psel]'); if (cb) { cb.checked ? pv.selected.add(cb.dataset.psel) : pv.selected.delete(cb.dataset.psel); draw(); return; }
     const rn = e.target.closest('[data-prun]'); if (rn) { pv.run = rn.dataset.prun; pv.selected.clear(); draw(); window.scrollTo(0, 0); return; }

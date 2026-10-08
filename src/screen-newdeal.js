@@ -3,7 +3,9 @@
    One header for both (its values stay when the tab changes): Campaign * (approved ones only · status chip · days left) · Phase (Auto by post date) ·
    Assign to * (the owner of the new deals · Me) · Pillar (the Phase's default) · Start at (Shortlist · Contacted · Confirm QT) · Products.
    No "Adding to …" line · "Assign to" = who owns the deal, "KOL owner" = the PIC of the KOL in KOL Master · no CTA here (Deal modal).
-   What a deal needs at its Start at comes from R.stageRequirements (through R.checkMove) — the same rule as Move stage. → KT.newDeal */
+   What a deal needs at its Start at comes from R.stageRequirements (through R.checkMove) — the same rule as Move stage.
+   CR-22 — Start at Contacted / Confirm QT: CTA * in the header (every row) · Confirm QT: Sample method * + Products * (a shipment a deal) ·
+   Assign to * (no one picked = red, nothing made) · a search with no KOL → Create "<name>" as new KOL (the New KOL tab, the name filled in). → KT.newDeal */
 KT.newDeal = (function () {
   'use strict';
   const U = KT.ui;
@@ -20,7 +22,8 @@ KT.newDeal = (function () {
     const s = state(), myPic = R.picName(U.me()) || '';
     const tab = o.tab === 'newkol' ? 'newkol' : 'master';
     const me = { tab, after: o.after || null, h: { campaign: o.campaignId || KT.screens.deals.currentCampaign() || R.defaultCampaignId(s, today()) || '', phase: '', assign: myPic, pillar: '', pillarFromPhase: false,
-      startAt: (R.shortlistStep(s.lookups) || {}).sub_status || 'Shortlist', products: [], onlyProduct: false, dirty: false, submitted: false }, nk: null };
+      startAt: (R.shortlistStep(s.lookups) || {}).sub_status || 'Shortlist', products: [], onlyProduct: false, cta: '', method: '', dirty: false, submitted: false }, nk: null };
+    if (!picList().includes(me.h.assign)) me.h.assign = '';   // CR-22 §3.5: Me only when I am a PIC (an Admin picks)
     nd = me;
     if (!R.isApproved(s.campaigns.find(c => c.campaign_id === me.h.campaign) || {})) me.h.campaign = R.defaultCampaignId(s, today()) || '';
     fillProducts(); fillPillar();
@@ -41,7 +44,7 @@ KT.newDeal = (function () {
     else drawNewKol(top);
   }
   /* what the From KOL Master tab gets from the modal */
-  const api = () => ({ m: nd.m, header: () => nd.h, headerHTML, wireHeader, headerClick, headerErrors, showHeaderErrors, after: nd.after });
+  const api = () => ({ m: nd.m, header: () => nd.h, headerHTML, wireHeader, headerClick, headerErrors, showHeaderErrors, after: nd.after, createAsNew, newDealShipment, atLeast });
 
   /* ===================== the header (§4.1) ===================== */
   function fillProducts() {
@@ -67,13 +70,17 @@ KT.newDeal = (function () {
     const starts = R.stepsOf(s.lookups).filter(st => st.active !== false && ['Shortlist', 'Contacted', 'Confirm QT'].includes(st.sub_status)).map(st => ({ value: st.sub_status, label: st.sub_status }));
     const prods = R.campaignProducts(s, h.campaign).filter(p => p.active !== false);
     const errs = h.submitted ? headerErrors() : [], bad = k => (errs.some(e => e.field === k) ? ' invalid' : '');
+    /* CR-22 §3.2 · §3.3 — CTA (Contacted or later) · Sample method (Confirm QT) — for every deal of the batch */
+    const ctaF = atLeast('Contacted') ? `<div class="field"><label for="nd_cta">${esc(B.ctaAll)} <span class="req">*</span></label><select id="nd_cta" data-ndh="cta" class="${bad('cta')}">${optionsHTML(activeList('cta_list', h.cta || null), h.cta, MV.chooseCta)}</select></div>` : '';
+    const methodF = atLeast('Confirm QT') ? `<div class="field"><label for="nd_method">${esc(B.methodAll)} <span class="req">*</span></label><select id="nd_method" data-ndh="method" class="${bad('ship_method')}">${optionsHTML(R.SHIP_METHODS.map(k => ({ value: k, label: R.shipMethodLabel(s.lookups, k) })), h.method, MV.chooseMethod)}</select></div>` : '';
     return `<div class="nd-head" id="nd_head"><div class="fields nd-hf">
         <div class="field nd-camp"><label for="nd_camp">${esc(B.campaign)} <span class="req">*</span></label><div class="nd-cw"><select id="nd_camp" data-ndh="campaign" data-combo="campaign" class="${bad('campaign_id')}">${U.campaignOptionsHTML(h.campaign, B.chooseCampaign, { forDeal: true })}</select><span class="nd-cinfo">${campaignInfo(c)}</span></div></div>
         <div class="field"><label for="nd_phase">${esc(B.phase)}</label><select id="nd_phase" data-ndh="phase">${optionsHTML(phases, h.phase, B.autoPhase)}</select></div>
         <div class="field"><label for="nd_assign">${esc(B.assignTo)} <span class="req">*</span></label><select id="nd_assign" data-ndh="assign" class="${bad('pic')}">${optionsHTML(people, h.assign, D.choosePic)}</select><div class="hint">${esc(B.assignHint)}</div></div>
         <div class="field"><label for="nd_pillar">${esc(B.pillar)}${h.pillarFromPhase && h.pillar ? ` <span class="chip sh-from">${esc(C.fill.fromPhase)}</span>` : ''}</label><select id="nd_pillar" data-ndh="pillar" class="${bad('pillar')}">${optionsHTML(activeList('pillar_list', h.pillar), h.pillar, D.none)}</select></div>
         <div class="field"><label for="nd_start">${esc(B.startAt)}</label><select id="nd_start" data-ndh="startAt">${optionsHTML(starts, h.startAt)}</select></div>
-        <div class="field nd-prods"><label>${esc(F.products)}${h.onlyProduct ? ` <span class="chip sh-from">${esc(C.fill.onlyProduct)}</span>` : ''}</label><div class="nd-pl">${prods.length ? prods.map(p => `<label class="tick small"><input type="checkbox" data-ndprod="${esc(p.tr_code)}"${h.products.includes(p.tr_code) ? ' checked' : ''}> ${esc(R.productShort(p))}</label>`).join('') : `<span class="muted small">${esc(D.noProductsYet)}</span>`}</div></div>
+        ${ctaF}${methodF}
+        <div class="field nd-prods${bad('ship_items')}"><label>${esc(F.products)}${atLeast('Confirm QT') ? ' <span class="req">*</span>' : ''}${h.onlyProduct ? ` <span class="chip sh-from">${esc(C.fill.onlyProduct)}</span>` : ''}</label><div class="nd-pl">${prods.length ? prods.map(p => `<label class="tick small"><input type="checkbox" data-ndprod="${esc(p.tr_code)}"${h.products.includes(p.tr_code) ? ' checked' : ''}> ${esc(R.productShort(p))}</label>`).join('') : `<span class="muted small">${esc(D.noProductsYet)}</span>`}</div></div>
       </div><div class="checks" id="nd_hchecks">${errs.length ? checksHTML({ errs, warns: [], infos: [] }, '') : ''}</div></div>`;
   }
   /* Campaign (approved · not on hold / cancelled) · Assign to · a pillar when the deals start at Confirm QT or later */
@@ -81,9 +88,29 @@ KT.newDeal = (function () {
     const s = state(), h = nd.h, errs = [];
     if (!h.campaign || !s.campaigns.some(c => c.campaign_id === h.campaign)) errs.push({ field: 'campaign_id', msg: C.msg.addCampaignRequired });
     else if (R.campaignBlocksNew(s, h.campaign)) errs.push({ field: 'campaign_id', msg: R.campaignBlocksNew(s, h.campaign) });
-    if (!h.assign) errs.push({ field: 'pic', msg: C.msg.dealPicRequired });
+    if (!h.assign) errs.push({ field: 'pic', msg: C.msg.dealsPicRequired });
     if (R.pillarStepReached(s.lookups, h.startAt) && !h.pillar) errs.push({ field: 'pillar', msg: C.msg.pillarRequired });
+    if (atLeast('Contacted') && !h.cta) errs.push({ field: 'cta', msg: C.msg.moveCtaRequired });
+    if (atLeast('Confirm QT')) {
+      if (!R.SHIP_METHODS.includes(h.method)) errs.push({ field: 'ship_method', msg: C.msg.shipMethodRequired });
+      if (!h.products.length) errs.push({ field: 'ship_items', msg: C.msg.shipItemsRequired });
+    }
     return errs;
+  }
+  /* the header's Start at is at / past a step */
+  function atLeast(name) { const L = state().lookups, a = R.stepOf(L, nd.h.startAt), b = R.stepOf(L, name); return !!a && !!b && a.sort_order >= b.sort_order; }
+  /* CR-22 §3.3 — the shipment of a deal made at Confirm QT (the header's method and products) */
+  function newDealShipment(s, deal) {
+    const h = nd.h; if (!atLeast('Confirm QT') || !R.SHIP_METHODS.includes(h.method)) return null;
+    const own = h.method === 'self_purchase';
+    return Object.assign(R.newShipment({ id: store.newId('shipment'), deal, items: h.products.map(c => ({ tr_code: c, qty: 1 })), shipBy: own ? null : R.shipBy(deal, s.lookups.sample_settings),
+      status: own ? 'kol_purchase' : 'to_ship', source: 'new_deal', user: userId(), now: new Date().toISOString(), method: h.method }), { purpose: 'review', campaign_id: deal.campaign_id, pick_list_id: null });
+  }
+  /* CR-22 §3.4 — a search with no KOL: the New KOL tab with that name (the header stays) */
+  function createAsNew(name) {
+    if (!nd) return;
+    nd.nk = newKolState(); nd.nk.kol.display_name = R.trim(name); nd.nk.dirty = true;
+    nd.tab = 'newkol'; nd.m.setTab('newkol'); drawTab(true); nd.m.focusFirst();
   }
   function showHeaderErrors() { nd.h.submitted = true; const el = $('nd_head'); if (el) { el.outerHTML = headerHTML(); wireHeader($('cm_body')); } }
   function wireHeader(root) {
@@ -141,7 +168,7 @@ KT.newDeal = (function () {
       (pkg ? field('pkg_units', C.pkg.fPosts, inp('deal.pkg_units', 'pkg_units', d.pkg_units, 'number'), { req: 1 }) + field('pkg_price', C.pkg.fPrice, inp('deal.pkg_price', 'pkg_price', d.pkg_price, 'number'), { req: 1 }) +
         field('package_units', MV.uses, inp('deal.package_units', 'package_units', d.package_units, 'number'), { req: 1, hint: `<span id="nk_unit"></span>` }) : '') + `</div></section>`;
     const costs = `<section class="sec"><div class="sec-h"><span>${esc(D.secCosts)}</span></div><div class="fields">` +
-      money('rate_card', MV.rateCard, { req: termReq && !pkg && d.payment_term !== 'free', disabled: pkg, hint: pkg ? esc(MV.fromPackage) : esc(MV.zeroHint) }) + money('gencode_expense', MV.gencodeCost) +
+      money('rate_card', MV.rateCard, { req: termReq && !pkg && d.payment_term !== 'free', disabled: pkg, hint: pkg ? esc(MV.fromPackage) : `<span class="lastrate muted">${esc(MV.noRate)}</span> · ${esc(MV.zeroHint)}` }) + money('gencode_expense', MV.gencodeCost) +
       field('gencode_period', F.gencode_period, inp('deal.gencode_period', 'gencode_period', d.gencode_period, 'number')) +
       field('gencode_start_date', F.gencode_start_date, dateHTML('id="f_nk_gencode_start_date" data-nk="deal.gencode_start_date" data-key="gencode_start_date"', d.gencode_start_date, { label: F.gencode_start_date })) +
       money('basket_fee', F.basket_fee) + money('asset_fee', MV.assetFee) + money('expediting_fee', MV.expeditingFee) +
@@ -201,7 +228,7 @@ KT.newDeal = (function () {
     /* the stage rule (Payment term · Rate · Package · Gencode days) — a new package is made with the deal, so it is checked here */
     const r = R.checkMove(s, mdl.deal, nd.h.startAt, { date: today(), today: today(), paymentTerm: mdl.deal.payment_term || '', rateCard: mdl.deal.rate_card == null ? '' : String(mdl.deal.rate_card),
       costs: { gencode_expense: mdl.deal.gencode_expense == null ? '' : String(mdl.deal.gencode_expense), gencode_period: mdl.deal.gencode_period == null ? '' : String(mdl.deal.gencode_period), gencode_start_date: mdl.deal.gencode_start_date || '', asset_fee: mdl.deal.asset_fee == null ? '' : String(mdl.deal.asset_fee), expediting_fee: mdl.deal.expediting_fee == null ? '' : String(mdl.deal.expediting_fee) } });
-    errs.push(...r.errs.filter(e => !['to', 'pillar', 'package_id', 'package_units'].includes(e.field) && !(mdl.pkg && e.field === 'rate_card')));
+    errs.push(...r.errs.filter(e => !['to', 'pillar', 'package_id', 'package_units', 'cta', 'ship_method', 'ship_items'].includes(e.field) && !(mdl.pkg && e.field === 'rate_card')));   // (CTA · method · products: the header's)
     if (mdl.pkg) {
       if (R.isBlank(x.deal.pkg_units) || !Number.isInteger(Number(x.deal.pkg_units)) || Number(x.deal.pkg_units) < 1) errs.push({ field: 'pkg_units', msg: C.msg.pkgUnits });
       if (R.isBlank(x.deal.pkg_price) || !(Number(x.deal.pkg_price) > 0)) errs.push({ field: 'pkg_price', msg: C.msg.pkgPrice });
@@ -275,10 +302,12 @@ KT.newDeal = (function () {
       'expected_draft2_date', 'expected_draft3_date', 'expected_post_date', 'link_brief', 'remark', 'draft_rounds'].forEach(f => { const val = mdl.deal[f]; extra[f] = val == null || val === '' ? null : ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee', 'gencode_period'].includes(f) ? Number(val) : val; });
     extra.draft_rounds = mdl.deal.draft_rounds || 1;
     if (pkg) Object.assign(extra, { package_id: pkg.package_id, package_units: mdl.units });
+    if (atLeast('Contacted') && h.cta) extra.cta = h.cta;   // CR-22 §3.2
     const out = R.newDeal(s, { dealId, logId: store.newLogId(), campaignId: h.campaign, kolId, sub: step.sub_status, pic: h.assign, extra, accountIds: [accIds[0]], postIds: [postId], phaseOverrides: [h.phase || null], date: td, now, user: userId(), note: null });
     out.posts.forEach(p => Object.assign(p, { metrics_source: null, metrics_updated_by: null }));
     s.deals.push(out.deal); s.deal_status_log.push(out.log); out.posts.forEach(p => s.deal_posts.push(p));
     R.setDealProducts(s, dealId, h.products.map(c => ({ tr_code: c, qty: 1, note: null })));
+    const shp = newDealShipment(s, out.deal); if (shp) s.sample_shipments.push(shp);   // CR-22 §3.3
     const after = nd.after, campaignId = h.campaign;
     commit(B.kolDealCreated(kol.display_name, dealId));
     if (after) after(dealId);

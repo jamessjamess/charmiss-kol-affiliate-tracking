@@ -300,7 +300,7 @@
       assert.equal(d.sub_status, 'Brief');
       /* the seed deal has no Pillar (its old pillar sits in Remark) → §4.7: the dialog asks for it first */
       assert.deepEqual(R.dropPlan(s, d, 'Draft 1', TD), { kind: 'dialog' });
-      Object.assign(d, { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, expected_draft1_date: '2026-10-15' });   // CR-20 §4.7 · §4.15: the term, and the expected Draft 1 date that Script asks for
+      Object.assign(d, { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok', expected_draft1_date: '2026-10-15' });   // CR-20 §4.7 · §4.15: the term, and the expected Draft 1 date that Script asks for
       assert.deepEqual(R.dropPlan(s, d, 'Script', TD), { kind: 'instant' });
       assert.deepEqual(R.dropPlan(s, d, 'Draft 1', TD), { kind: 'dialog' }, 'a step passed on the way → the dialog says so');
       assert.ok(R.checkMove(s, d, 'Draft 1', { date: TD }).warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TD).slice(0, 5), 'Script')));

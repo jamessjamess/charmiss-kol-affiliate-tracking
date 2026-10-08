@@ -282,7 +282,7 @@ KT.screens.overview = (function () {
       ${dlMenu('timeline')}
       <button type="button" class="icon-btn" data-sact="expand" title="${esc(O.showAll)}" aria-label="${esc(O.showAll)}">${ICON.expand}</button></div></div>
     <div class="ctl-sub" id="ov_tlsub"></div><div class="ctl-box" id="ov_tlbox"></div><div class="foot-note" id="ov_tlfoot"></div></div>`;
-  const TL_LEGEND = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled'];
+  const TL_LEGEND = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   /* the line under the title: n campaigns · Today · the status colours there are (always On going · Not started · Pending approval · Complete) · Posted · Planned */
   const tlLegend = m => { const has = new Set(m.rows.map(r => r.status));
     return TL_LEGEND.filter(k => ['ongoing', 'not_started', 'pending', 'complete'].includes(k) || has.has(k)).map(k => `<span class="lg"><i class="gbar span ${k}"></i>${esc(C.phaseStatus[k])}</span>`).join('') +

@@ -100,12 +100,12 @@ Object.assign(KT.rules, (function (R, C) {
       undated: r.undated, outside: r.outside, outsidePeriod: r.outsidePeriod, first: r.first, last: r.last };
   }
   /* the order of the rows (§4.3): On going (ends soonest, then starts first) → Pending approval → Not started (starts soonest) → On hold →
-     Complete (ended last first) → Rejected → Cancelled */
-  const TL_RANK = { ongoing: 0, pending: 1, not_started: 2, on_hold: 3, complete: 4, rejected: 5, cancelled: 6 };
+     Complete (ended last first) → Cancelled (CR-21: a draft is never a row) */
+  const TL_RANK = { ongoing: 0, pending: 1, not_started: 2, on_hold: 3, complete: 4, draft: 5, cancelled: 6 };
   function timelineOrder(rows) {
     const k = (a, b) => String(a || '9999').localeCompare(String(b || '9999'));
     return rows.slice().sort((a, b) => (TL_RANK[a.status] - TL_RANK[b.status])
-      || (a.status === 'ongoing' ? k(a.end, b.end) || k(a.start, b.start) : a.status === 'complete' || a.status === 'cancelled' || a.status === 'rejected' ? k(b.end, a.end) : k(a.start, b.start))
+      || (a.status === 'ongoing' ? k(a.end, b.end) || k(a.start, b.start) : a.status === 'complete' || a.status === 'cancelled' ? k(b.end, a.end) : k(a.start, b.start))
       || String(a.campaign.campaign_name).localeCompare(String(b.campaign.campaign_name)));
   }
   /* the card: a row a Campaign (status · dates · Phase starts · bars · money for the tooltip) · bars by week when the range is longer than 45 days,

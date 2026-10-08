@@ -136,7 +136,7 @@
       assert.equal(R.isOverdue(s, d, TODAY), true);
     });
     test('TC-15 basis: D000044 (Brief, 1 round) → Draft 2 is an error unless a round is added', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30 });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok' });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
       const no = R.checkMove(s, d, 'Draft 2', opts());
       assert.ok(no.errs.some(e => e.code === 'add_round' && e.msg === C.msg.moveDraftNotInPlan(2, 1)));
       const yes = R.checkMove(s, d, 'Draft 2', opts({ addRound: true }));
@@ -153,7 +153,7 @@
       assert.equal(R.applyMove(s, d, 'Draft 1', opts(), { logId: 772 }).event, null);
     });
     test('CR-15: Script is in every plan (no toggle) · steps passed on the way count planned steps only', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, expected_draft1_date: '2026-09-05' });   // CR-03 pillar · CR-20 §4.7 term / Gencode days · §4.15 Script asks for the expected Draft 1 date
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok', expected_draft1_date: '2026-09-05' });   // CR-03 pillar · CR-20 §4.7 term / Gencode days · §4.15 Script asks for the expected Draft 1 date
       const dd = R.dmy(TODAY).slice(0, 5);
       assert.deepEqual(R.checkMove(s, d, 'Script', opts()).errs, []);
       assert.ok(R.checkMove(s, d, 'Draft 1', opts()).warns.some(w => w.msg === C.msg.moveAutoDone(dd, 'Script')));

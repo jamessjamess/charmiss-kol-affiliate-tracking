@@ -57,7 +57,7 @@ Object.assign(KT.rules, (function (R, C) {
     const postedNoDate = [...new Set(postsNoDate.map(p => p.deal_id))].map(id => deals.find(d => d.deal_id === id));
     /* Campaigns and Phases have no PIC: with one PIC picked, those where that PIC has a deal still going */
     const picCamps = pic ? new Set(state.deals.filter(d => ofPic(pic)(d) && !isClosedDeal(d)).map(d => d.campaign_id)) : null;
-    const camps = state.campaigns.filter(c => (!f.campaign || c.campaign_id === f.campaign) && (!picCamps || picCamps.has(c.campaign_id)) && R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today) !== 'cancelled');
+    const camps = state.campaigns.filter(c => (!f.campaign || c.campaign_id === f.campaign) && (!picCamps || picCamps.has(c.campaign_id)) && !['cancelled', 'draft'].includes(R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today)));   // (CR-21: not a draft)
     const noProducts = camps.filter(c => !R.campaignProductCodes(state, c.campaign_id).length);
     const campIds = new Set(camps.map(c => c.campaign_id));
     const noBudget = (state.phases || []).filter(p => campIds.has(p.campaign_id) && isBlank(p.budget_kol));

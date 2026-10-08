@@ -402,10 +402,12 @@ Object.assign(KT.rules, (function (R, C) {
   function filterDeals(state, f, today, ctx) {
     const q = trim(f.q).toLowerCase().replace(/^@/, '');
     const idx = ctx.phaseIdx || R.phaseIndex(state);
+    const inYear = f.year && f.year !== 'all' ? yearCampaignIds(state, f.year) : null;   // CR-21 §3.2: the Year of Deals (AND with the rest)
     /* CR-03 §4.5: a Phase filter keeps deals with at least one post in the Phase (keys __needs / __unscheduled work too) */
     const touches = (d, list) => { const keys = (idx.deal.get(d.deal_id) || { keys: new Set() }).keys; return list.some(k => keys.has(k)); };
     return state.deals.filter(d => {
       if (f.campaign && d.campaign_id !== f.campaign) return false;
+      if (inYear && !inYear.has(d.campaign_id)) return false;
       if (f.phase && !touches(d, [f.phase])) return false;
       if (f.phases && !touches(d, f.phases)) return false;
       if (f.payState && R.paymentState(d, today) !== f.payState) return false;
@@ -531,11 +533,48 @@ Object.assign(KT.rules, (function (R, C) {
     return { tab: 'all', reason: '' };
   }
   /* the Campaign Deals opens with: the last one used (if it still exists) → the first On going in §4.7 order → the first */
-  function defaultDealsCampaign(state, today, last) {
-    if (last && state.campaigns.some(c => c.campaign_id === last)) return last;
-    const list = R.sortCampaigns(state.campaigns, state.phases, today);
+  function defaultDealsCampaign(state, today, last, year) {
+    if (last && state.campaigns.some(c => c.campaign_id === last && R.isApproved(c))) return last;
+    const list = R.sortCampaigns(state.campaigns.filter(c => R.isApproved(c) && (!year || year === 'all' || campaignYear(state, c) === year)), state.phases, today);
     const c = list.find(x => R.campaignEffectiveStatus(x, R.phasesOfCampaign(state, x.campaign_id), today) === 'ongoing') || list[0];
     return c ? c.campaign_id : '';
+  }
+
+  /* ===================== CR-21 §3.2 — the Year of Deals ===================== */
+  /* a Campaign's year = the year of its start_date (one that runs into the next year stays in the year it starts) · none → its earliest Phase
+     (a draft Phase of an approved Campaign does not count) · no date at all → null (only under All years) */
+  function campaignYear(state, c) {
+    if (!c) return null;
+    if (R.isISODate(c.start_date)) return c.start_date.slice(0, 4);
+    const d = (state.phases || []).filter(p => p.campaign_id === c.campaign_id && R.isISODate(p.start_date) && (!R.isDraft(p) || R.isDraft(c))).map(p => p.start_date).sort()[0];
+    return d ? d.slice(0, 4) : null;
+  }
+  /* the Year options: 'all' + the years that have an approved Campaign, newest first */
+  function yearOptions(state) {
+    const ys = new Set();
+    (state.campaigns || []).filter(c => R.isApproved(c)).forEach(c => { const y = campaignYear(state, c); if (y) ys.add(y); });
+    return ['all'].concat([...ys].sort().reverse());
+  }
+  /* the Campaigns of a year (every one for 'all') */
+  const yearCampaignIds = (state, year) => new Set((state.campaigns || []).filter(c => !year || year === 'all' || campaignYear(state, c) === year).map(c => c.campaign_id));
+  /* approved Campaigns still On going that started before the year (the grey bar "1 ongoing campaign started in 2026 · Show") */
+  const ongoingBefore = (state, year, today) => (state.campaigns || []).filter(c => R.isApproved(c) && R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today) === 'ongoing')
+    .map(c => ({ c, y: campaignYear(state, c) })).filter(x => x.y && x.y < year);
+  /* the year Deals opens on for a person: the one they chose (still an option) · else this year */
+  const dealYearPref = (state, saved, today) => { const opts = yearOptions(state); return saved && (saved === 'all' || opts.includes(saved)) ? saved : today.slice(0, 4); };
+
+  /* CR-22 §3.6 — what an open deal still misses (the Deal modal's "Missing: …"): Assigned to · from Contacted: CTA · Rate card (not Free / Package) ·
+     from Confirm QT: Pillar · Payment term — keys in that order */
+  function dealMissing(state, d) {
+    if (!d || d.status === 'Cancel' || d.status === 'Complete') return [];
+    const L = state.lookups, st = R.stepOf(L, d.sub_status), at = name => { const x = R.stepOf(L, name); return !!st && !!x && st.sort_order >= x.sort_order; }, out = [];
+    if (isBlank(d.pic)) out.push('pic');
+    if (at('Contacted')) {
+      if (isBlank(d.cta)) out.push('cta');
+      const t = R.termOf(d); if (t !== 'free' && t !== 'package' && isBlank(d.rate_card)) out.push('rate_card');
+    }
+    if (at('Confirm QT')) { if (isBlank(d.pillar)) out.push('pillar'); if (!R.isTerm(R.termOf(d))) out.push('payment_term'); }
+    return out;
   }
 
   /* scope: {campaignId, phaseIds} (an array = phaseIds) · whole Campaign → deal totals · Phases → the post shares in them (CR-03 §4.5) */
@@ -728,6 +767,7 @@ Object.assign(KT.rules, (function (R, C) {
     dealContext, postsOfCtx, postPlatform, PAY_FLAGS, togglePayment, isUnpaid, validateDeal, rowWarnings,
     PAY_TABS, PAY_GROUPS, payTabOf, outstandingOf, paymentsView, payGroupOf, payGroupTotals, payFlags,
     DEAL_TABS, dealTabOf, inDealTab, ATTENTION, docsByDeal, attentionContext, attentionReasons, dealTabs, hasReason, DEAL_TAB_KEY, dealTabPref, setDealTabPref, dealTabFromLink, defaultDealsCampaign,
+    campaignYear, yearOptions, yearCampaignIds, ongoingBefore, dealYearPref, dealMissing,
     TEMPLATE_HEADERS, TEMPLATE_PLATFORMS, platformMark, dealPostSummary, templateRow, filterDeals, dealTiles,
     pipeline, overviewWindow, postBins, overviewTiles, paymentAttention, phaseAttention, funnel, niceStep, dataIssues, newDeal, blankPost,
     blankDealFilter, activeFilters, clearFilters, KOL_FILTER_KEYS, activeKolFilters, kolDrawerWidth, dealDrawerWidth, wideDrawerWidth, drawerWidth, stageSince,

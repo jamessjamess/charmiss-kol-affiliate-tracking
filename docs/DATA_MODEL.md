@@ -251,3 +251,27 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 | payment term | `R.PAYMENT_TERMS` + `package` (ท้ายรายการ · ไม่ใช่ default ของ KOL) | ไม่มี `lookups.payment_terms` ในข้อมูล (term อยู่ใน code) |
 
 **Migration v19** (`rules-package.js migrateV19` · รันซ้ำได้ผลเดิม): สร้าง `kol_packages` / `step_notes` ว่าง · ใส่ค่าเริ่มของ field ใหม่ใน deals / payment_lines · seed ไม่มี package → Committed ฿1,783,579 · Paid ฿774,579 · Pending ฿98,000 เท่าเดิม
+
+## CR-21 — schema 19 → 20 (Draft · Return to draft · Round)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `campaigns` / `phases` | `approval_status` **draft** · pending · approved (ไม่มี rejected) · `approval` + `created_by` / `created_at` · `submit_round` (0 = ยังไม่เคยส่ง) · `returned_reason` / `returned_by` / `returned_at` (ระหว่างเป็น draft ที่ถูกส่งกลับ) · `last_submitted` { round · at · by · reason · values } | `values` = `R.requestSnapshot` ตอนถูกส่งกลับ → What changed since last round · Phase ของ New campaign ตามสถานะ Campaign · `phases.budget_basis` (percent / amount — Planner เปิดตามนี้) |
+| `pending_change` | + `status` draft / pending · `submit_round` · `returned_*` · `last_submitted` | fields อาจมี `campaign_name` · `note` · `products` (CR-21 §3.7) · approve → `R.applyChange` (products → campaign_products) |
+| `campaign_budget_changes` | `status` draft · pending · approved · cancelled + `submit_round` · `returned_*` · `last_submitted` | Budget history ไม่แสดง draft |
+| `campaign_events` (approval) | to + `draft_saved` · `resubmitted` · `withdrawn` · `returned` · `draft_deleted` · field `round` | เขียนโดย `R.requestTransition` เท่านั้น |
+| localStorage (ต่อผู้ใช้) | `campaignTable.sort.<uid>` / `.collapsed.<uid>` · `campaignTimeline.sort.<uid>` / `.collapsed.<uid>` · `deals.year.<uid>` · `requests.seen.<uid>` | try/catch · ไม่มี = ค่าเริ่ม |
+
+**Migration v20** (`rules-request.js migrateV20` · รันซ้ำได้ผลเดิม): rejected → draft + `returned_*` จาก event rejected ล่าสุด (สำรอง: `approval.reason / decided_by / decided_at`) · `submit_round` = จำนวน event submitted (อย่างน้อย 1) · `last_submitted` = ค่าปัจจุบัน · `change_rejected` → `pending_change` draft ที่ถูกส่งกลับ · budget change rejected → draft · approved ไม่แตะ · seed ไม่มีคำขอ → Committed ฿1,783,579 · Paid ฿774,579 · Pending ฿98,000 เท่าเดิม
+
+## CR-22 — schema 20 → 21 (Shipment method · KOL buys own · Product purchase)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `sample_shipments` | + `method` npd · warehouse · self_purchase · `purchase_amount` (null · KOL buys own) · `purchased_date` · status + `kol_purchase` / `purchased` · `items` [{ tr_code, qty }] (key เดิม `tr_code` = product code) · `source` + `move` / `new_deal` | KOL purchase อยู่ tab To ship (กลุ่มท้าย) · Purchased อยู่ tab Delivered · deal Cancel → Not required |
+| `deals` | + `product_purchase_fee` (null) | = purchase_amount ของ shipment KOL buys own · รวมใน `R.totalCost` → Committed / Payments · ไม่เข้า rate quote |
+| `lookups.shipment_methods` (ใหม่) | [{ key, label }] npd · warehouse · self_purchase | แก้ label ได้ที่ Settings › Samples (key คงที่) |
+| localStorage (ต่อผู้ใช้) | `dealModal.tab.<uid>` (overview · costs · timeline · ships · history) | try/catch |
+
+**Migration v21** (`rules-samples.js migrateV21` · รันซ้ำได้ผลเดิม): shipment เดิมทั้งหมด method = warehouse · items ว่าง → สินค้าของ deal (qty 1) · purchase_amount / purchased_date null · deals.product_purchase_fee null · ไม่แตะยอดเงิน → Committed ฿1,783,579 · Paid ฿774,579 · Pending ฿98,000 เท่าเดิม
+

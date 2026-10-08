@@ -168,10 +168,12 @@
 
   describe('CR-17 §4.5 · Campaign / Phase approval', () => {
     const babe = s => user(s, 'Babe'), km = s => Object.assign({}, user(s, 'Admin'), { role: 'kol_manager', user_id: 'U900' });
-    const newCampaign = (s, who) => { const c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 100000, cta: null, note: null, status_override: null };
-      R.stampNew(c, who, '2026-10-08T03:00:00Z'); s.campaigns.push(c);
-      const p = { phase_id: 'TA-P1', campaign_id: 'TA', label: null, start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 100000 }; R.stampNew(p, who, '2026-10-08T03:00:00Z'); s.phases.push(p);
-      return c; };
+    /* CR-21: a new record starts as a draft of its maker · Submit (Staff) / Create (a manager) through R.requestTransition */
+    const ctxBy = (s, who) => Object.assign(aCtx(s), { user: who.user_id });
+    const send = (s, id, who) => s.campaign_events.push(...R.requestTransition(s, id, R.canApprove(who) ? 'approved' : 'pending', ctxBy(s, who), { direct: true }).events);
+    const newCampaign = (s, who) => { const c = R.stampDraft({ campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 100000, cta: null, note: null, status_override: null }, who, '2026-10-08T03:00:00Z'); s.campaigns.push(c);
+      s.phases.push(R.stampDraft({ phase_id: 'TA-P1', campaign_id: 'TA', label: null, start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 100000 }, who, '2026-10-08T03:00:00Z'));
+      send(s, 'campaign:TA', who); return c; };
     test('the matrix: Staff draft · Admin / KOL Manager approve · Viewer / Accounting neither', () => {
       const s = fresh();
       assert.deepEqual(['admin', 'kol_manager', 'staff', 'viewer', 'accounting'].map(r => [R.canDraft({ role: r }), R.canApprove({ role: r })]),
@@ -187,55 +189,55 @@
       assert.deepEqual(R.phasesOfCampaign(s, 'TA'), [], 'its Phase is not offered');
       assert.ok(R.CAMPAIGN_STATUSES.includes('pending') && !R.DASH_STATUS_DEFAULT.includes('pending'));
     });
-    test('TC-20 / TC-21 / TC-22: the queue counts 1 · Reject needs a reason · Resubmit → Pending · Approve → deals can be added · approval rows', () => {
+    test('TC-20 / TC-21 / TC-22 (CR-21): the queue counts 1 · Return to draft needs a reason · Resubmit → Pending (Round 2) · Approve → deals can be added · approval rows', () => {
       const s = fresh(), c = newCampaign(s, babe(s)), ctx = aCtx(s);
-      s.campaign_events.push({ event_id: 999, campaign_id: 'TA', type: 'approval', from: null, to: 'submitted', changed_at: '2026-10-08T03:00:00Z', changed_by: babe(s).user_id, note: null });
-      assert.equal(R.approvalCount(s), 1); assert.equal(R.approvalQueue(s)[0].kind, 'new');
-      assert.equal(R.rejectCampaign(s, 'TA', '  ', ctx), null, 'no reason → nothing');
-      s.campaign_events.push(...R.rejectCampaign(s, 'TA', 'budget too high', ctx));
-      assert.deepEqual([c.approval_status, c.approval.reason, s.phases.find(p => p.phase_id === 'TA-P1').approval_status, R.approvalCount(s)], ['rejected', 'budget too high', 'rejected', 0]);
-      s.campaign_events.push(...R.resubmitCampaign(s, 'TA', ctx));
-      assert.deepEqual([c.approval_status, R.approvalCount(s)], ['pending', 1]);
-      s.campaign_events.push(...R.approveCampaign(s, 'TA', ctx));
+      assert.equal(R.approvalCount(s), 1); assert.equal(R.approvalRequests(s)[0].type, 'new_campaign');
+      assert.equal(R.returnRequest(s, 'campaign:TA', '  ', ctx), null, 'no reason → nothing');
+      s.campaign_events.push(...R.returnRequest(s, 'campaign:TA', 'budget too high', ctx));
+      assert.deepEqual([c.approval_status, c.returned_reason, s.phases.find(p => p.phase_id === 'TA-P1').approval_status, R.approvalCount(s)], ['draft', 'budget too high', 'draft', 0]);
+      send(s, 'campaign:TA', babe(s));
+      assert.deepEqual([c.approval_status, c.submit_round, R.approvalCount(s)], ['pending', 2, 1]);
+      s.campaign_events.push(...R.approveRequest(s, 'campaign:TA', ctx));
       assert.deepEqual([c.approval_status, s.phases.find(p => p.phase_id === 'TA-P1').approval_status, R.campaignBlocksNew(s, 'TA'), kpis(s).campaigns.n], ['approved', 'approved', null, 5], 'approved: deals can be added · counted in the Dashboard');
-      assert.deepEqual(s.campaign_events.filter(e => e.campaign_id === 'TA' && e.type === 'approval').map(e => e.to), ['submitted', 'rejected', 'submitted', 'approved']);
+      assert.deepEqual(s.campaign_events.filter(e => e.campaign_id === 'TA' && e.type === 'approval').map(e => e.to), ['submitted', 'returned', 'resubmitted', 'approved']);
       assert.equal(R.phasesOfCampaign(s, 'TA').length, 1);
     });
     test('TC-23: Staff asks Kiss Signal ฿600,000 → ฿700,000 · ฿600,000 everywhere until approved · Approve → ฿700,000 · Reject → stays', () => {
       const s = fresh(), ks = camp(s, 'KS'), b = babe(s);
       const sp = R.splitChange(ks, { campaign_name: 'Kiss Signal Lip Gloss', budget_kol: 700000, cta: ks.cta }, R.KEY_CAMPAIGN, b);
       assert.deepEqual(sp.ask, { budget_kol: 700000 });
-      R.requestChange(ks, sp.ask, b, '2026-10-08T03:00:00Z');
+      R.requestChange(ks, sp.ask, b, '2026-10-08T03:00:00Z'); send(s, 'change:KS', b);
       assert.deepEqual([ks.budget_kol, R.campaignSummary(s, 'KS').budget, ks.pending_change.fields.budget_kol], [600000, 600000, 700000]);
-      assert.equal(R.approvalQueue(s)[0].kind, 'change');
+      assert.equal(R.approvalRequests(s)[0].type, 'change');
       const s2 = JSON.parse(JSON.stringify(s));
-      R.approveCampaign(s, 'KS', aCtx(s)); assert.deepEqual([ks.budget_kol, ks.pending_change], [700000, null]);
-      const ev = R.rejectCampaign(s2, 'KS', 'not this quarter', aCtx(s2)), ks2 = camp(s2, 'KS');
-      assert.deepEqual([ks2.budget_kol, ks2.pending_change, ev[0].to, ks2.change_rejected.reason], [600000, null, 'change_rejected', 'not this quarter']);
+      R.approveRequest(s, 'change:KS', aCtx(s)); assert.deepEqual([ks.budget_kol, ks.pending_change], [700000, null]);
+      const ev = R.returnRequest(s2, 'change:KS', 'not this quarter', aCtx(s2)), ks2 = camp(s2, 'KS');
+      assert.deepEqual([ks2.budget_kol, ks2.pending_change.status, ev[0].to, ks2.pending_change.returned_reason], [600000, 'draft', 'returned', 'not this quarter'], 'CR-21: returned to its maker as a draft');
     });
     test('TC-24: Staff adds a Phase 01/11–30/11 to Perfect Heart → Pending · a post in that time does not go into it until approved', () => {
       const s = fresh(), d = s.deals.find(x => x.campaign_id === 'PH' && x.status !== 'Cancel');
       s.deal_posts.push({ post_id: 'P999999', deal_id: d.deal_id, account_id: null, platform: 'TikTok', expected_post_date: '2026-11-15', post_date: null, phase_override: null });
-      const p = { phase_id: 'PH-NOV', campaign_id: 'PH', label: 'Nov', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 50000 }; R.stampNew(p, babe(s), '2026-10-08T03:00:00Z'); s.phases.push(p);
+      const p = R.stampDraft({ phase_id: 'PH-NOV', campaign_id: 'PH', label: 'Nov', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 50000 }, babe(s), '2026-10-08T03:00:00Z'); s.phases.push(p);
+      send(s, 'phase:PH-NOV', babe(s));
       assert.equal(p.approval_status, 'pending');
       assert.notEqual(R.phaseIndex(s).post.get('P999999').phase, 'PH-NOV');
       assert.equal(R.campaignSummary(s, 'PH').allocated, R.campaignSummary(fresh(), 'PH').allocated, 'its budget is not counted');
-      assert.equal(R.approvalQueue(s)[0].kind, 'phases');
-      R.approveCampaign(s, 'PH', aCtx(s));
+      assert.equal(R.approvalRequests(s)[0].type, 'new_phase');
+      R.approveRequest(s, 'phase:PH-NOV', aCtx(s));
       assert.equal(R.phaseIndex(s).post.get('P999999').phase, 'PH-NOV');
     });
     test('TC-25 / TC-26: Staff change name · CTA · note at once · a KOL Manager\'s Campaign is approved at once · a Phase asked to go is removed on approval', () => {
       const s = fresh(), ks = camp(s, 'KS');
       const sp = R.splitChange(ks, { campaign_name: 'KS renamed', cta: 'Shop now', note: 'n', budget_kol: 600000 }, R.KEY_CAMPAIGN, babe(s));
       assert.deepEqual([sp.ask, sp.now.campaign_name, sp.now.cta], [{}, 'KS renamed', 'Shop now']);
-      const c = { campaign_id: 'KM', campaign_name: 'By KM' }; R.stampNew(c, km(s), '2026-10-08T03:00:00Z');
+      const c = R.stampDraft({ campaign_id: 'KM', campaign_name: 'By KM' }, km(s), '2026-10-08T03:00:00Z'); s.campaigns.push(c); send(s, 'campaign:KM', km(s));
       assert.deepEqual([c.approval_status, c.approval.decided_by], ['approved', 'U900']);
       const p = { phase_id: 'X-1', campaign_id: 'KS', start_date: '2026-12-01', end_date: '2026-12-10', approval_status: 'approved' }; s.phases.push(p);
-      R.requestChange(p, { delete: true }, babe(s), '2026-10-08T03:00:00Z');
+      R.requestChange(p, { delete: true }, babe(s), '2026-10-08T03:00:00Z'); send(s, 'change:X-1', babe(s));
       assert.equal(R.pendingOf(s, 'KS').changes[0].fields[0].key, 'delete');
-      R.approveCampaign(s, 'KS', aCtx(s));
+      R.approveRequest(s, 'change:X-1', aCtx(s));
       assert.ok(!s.phases.some(x => x.phase_id === 'X-1'));
-      assert.equal(R.validateDecision('').errs.length, 1); assert.equal(R.validateDecision('123-4-56789-0').errs.length, 1);
+      assert.equal(R.validateReturn('').errs.length, 1); assert.equal(R.validateReturn('123-4-56789-0').errs.length, 1);
     });
   });
 });

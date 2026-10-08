@@ -4,7 +4,8 @@
    form (all optional — what is not given comes from the deal): { date, today, note, cancelReason, addRound, nextRound, pillar, paymentTerm, packageId,
    packageUnits, rateCard, costs {gencode_expense, gencode_period, gencode_start_date, asset_fee, expediting_fee}, postDue, linkBrief, scriptLink,
    expected {field: date}, steps {sub_status: date}, alsoContacted, contactedDate, drafts {k: 'done' | 'not_needed'}, approveDate,
-   posts [{post_id | account_id, link}], notes {note, links, image_ids} }.
+   posts [{post_id | account_id, link}], notes {note, links, image_ids},
+   CR-22: cta, ship { method npd | warehouse | self_purchase, items [{tr_code, qty}], address_id, purchase_amount, note } }.
    Adds to KT.rules (load after rules-package.js). */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
@@ -37,6 +38,8 @@ Object.assign(KT.rules, (function (R, C) {
     if (has(f, 'postDue')) v.expected_post_date = f.postDue || null;
     if (has(f, 'linkBrief')) v.link_brief = trim(f.linkBrief) || null;
     if (has(f, 'scriptLink')) v.script_link = trim(f.scriptLink) || null;
+    if (has(f, 'cta')) v.cta = isBlank(f.cta) ? null : f.cta;   // CR-22 §3.2
+    if (f.ship && has(f.ship, 'method')) v.product_purchase_fee = f.ship.method === 'self_purchase' && !isBlank(f.ship.purchase_amount) ? f.ship.purchase_amount : null;   // CR-22 §3.3
     EXPECTED.forEach(k => { if (f.expected && has(f.expected, k)) v[k] = f.expected[k] || null; });
     return v;
   }
@@ -82,7 +85,8 @@ Object.assign(KT.rules, (function (R, C) {
   function stageRequirements(state, deal, toSub, f) {
     f = f || {};
     const L = state.lookups, to = R.stepOf(L, toSub), from = R.stepOf(L, deal.sub_status), v = valuesOf(state, deal, f);
-    const out = { kind: 'unknown', to, from, v, fields: {}, qt: false, crossesQt: false, skipped: [], contacted: null, drafts: [], approve: false, post: false, next: [], nextRound: null, notesDraft: null, plan: R.planOf(deal) };
+    const out = { kind: 'unknown', to, from, v, fields: {}, qt: false, crossesQt: false, skipped: [], contacted: null, drafts: [], approve: false, post: false, next: [], nextRound: null, notesDraft: null, plan: R.planOf(deal),
+      ship: false, shipSummary: null };
     if (!to) return out;
     const set = (k, r) => { if (out.fields[k] !== 'req') out.fields[k] = r; };
     const fromSort = from ? from.sort_order : -Infinity;
@@ -93,6 +97,16 @@ Object.assign(KT.rules, (function (R, C) {
     if (to.sort_order < fromSort) { out.kind = 'back'; set('note', 'req'); return out; }
     out.kind = 'forward'; set('note', 'opt');
     const qt = R.stepOf(L, QT), qtSort = qt ? qt.sort_order : Infinity, term = R.termOf(v), plan = planAfter(state, deal, to, f);
+    /* CR-22 §3.2 — Contacted or later: a CTA (asked when the move reaches Contacted, or the deal has none) */
+    const ct = R.stepOf(L, 'Contacted'), ctSort = ct ? ct.sort_order : Infinity;
+    if (to.sort_order >= ctSort && (fromSort < ctSort || isBlank(deal.cta))) set('cta', 'req');
+    /* CR-22 §3.3 — Confirm QT or later and no shipment yet: how the samples go (Method · Products · Ship to · Purchase amount for KOL buys own) */
+    const ships = R.shipmentsOf ? R.shipmentsOf(state, deal.deal_id) : [];
+    if (to.sort_order >= qtSort) {
+      if (!ships.length) { out.ship = true; set('ship_method', 'req'); set('ship_items', 'req'); set('ship_note', 'opt');
+        const m = (f.ship || {}).method; if (m !== 'self_purchase') set('ship_to', 'opt'); else set('purchase_amount', 'opt'); }
+      else out.shipSummary = ships.filter(x => x.status !== 'not_required').pop() || ships[ships.length - 1];
+    }
     out.plan = plan;
     if (to.sort_order < qtSort) {
       /* Contacted: Rate and Payment term may be filled (§4.7) */
@@ -145,6 +159,8 @@ Object.assign(KT.rules, (function (R, C) {
     const req = stageRequirements(state, deal, toSub, {}), F = req.fields, v = req.v, out = [];
     if (req.kind !== 'forward') return [req.kind];
     if (req.skipped.length || req.drafts.length || req.approve) out.push('steps');
+    if (F.cta === 'req' && isBlank(v.cta)) out.push('cta');
+    if (F.ship_method === 'req') out.push('shipment');   // (a shipment is chosen in the dialog)
     if (F.pillar === 'req' && isBlank(v.pillar)) out.push('pillar');
     if (F.payment_term === 'req' && !R.isTerm(R.termOf(v))) out.push('payment_term');
     if (F.package_id === 'req' && !R.packageById(state, v.package_id)) out.push('package_id');
@@ -193,6 +209,16 @@ Object.assign(KT.rules, (function (R, C) {
     else if (req.kind === 'back') { if (!note) errs.push(issue('note', M.moveBackNote)); }
     if (req.kind !== 'forward') return out();
     const LB = LABEL();
+    /* CR-22 §3.2 — the CTA · §3.3 — the sample shipment */
+    if (F.cta === 'req' && isBlank(v.cta)) errs.push(issue('cta', M.moveCtaRequired, 'cta'));
+    if (F.ship_method === 'req') {
+      const sh = f.ship || {}, items = (sh.items || []).filter(x => x && x.tr_code);
+      if (!R.SHIP_METHODS.includes(sh.method)) errs.push(issue('ship_method', M.shipMethodRequired, 'ship'));
+      if (!items.length) errs.push(issue('ship_items', M.shipItemsRequired, 'ship'));
+      else if (items.some(x => !Number.isInteger(Number(x.qty)) || Number(x.qty) < 1)) errs.push(issue('ship_items', M.shipQtyWhole));
+      if (sh.method === 'self_purchase' && !isBlank(sh.purchase_amount) && (isNaN(sh.purchase_amount) || Number(sh.purchase_amount) < 0)) errs.push(issue('purchase_amount', M.moveMoney(C.move.purchaseAmount)));
+      if (R.looksSensitive(sh.note)) errs.push(issue('ship_note', M.sensitive));
+    }
     /* §4.7 · §4.11 — Confirm QT details */
     if (F.pillar === 'req' && isBlank(v.pillar)) errs.push(issue('pillar', M.movePillarRequired, 'pillar'));
     if (F.payment_term === 'req' && !R.isTerm(R.termOf(v))) errs.push(issue('payment_term', M.moveTermRequired, 'term'));
@@ -295,9 +321,10 @@ Object.assign(KT.rules, (function (R, C) {
     let event = null;
     if (planNow.drafts !== planBefore.drafts) { d.draft_rounds = planNow.drafts; event = R.planEvent(deal, planNow, evCtx()); }
     /* the values of the form */
-    let pillarEv = null, termEv = null;
+    let pillarEv = null, termEv = null, ctaEv = null, shipment = null, shipEv = null;
     if (forward) {
       if (!isBlank(v.pillar) && (deal.pillar || null) !== v.pillar) { d.pillar = v.pillar; pillarEv = R.fieldChange(deal, 'pillar', v.pillar, evCtx()).event; }
+      if (has(f, 'cta') && !isBlank(v.cta) && (deal.cta || null) !== v.cta) { d.cta = v.cta; ctaEv = R.fieldChange(deal, 'cta', v.cta, evCtx()).event; }   // CR-22 §3.2
       const t = R.isTerm(v.payment_term) ? v.payment_term : null;
       if (t && R.termOf(deal) !== t) { d.payment_term = t; termEv = R.termEvent(deal, t, evCtx()); }
       d.package_id = t === 'package' ? v.package_id || null : null;
@@ -351,9 +378,18 @@ Object.assign(KT.rules, (function (R, C) {
     if ((d.expected_post_date || null) !== (deal.expected_post_date || null)) list.forEach(p => {
       if (isBlank(p.post_date) && (isBlank(p.expected_post_date) || p.expected_post_date === deal.expected_post_date)) { p.expected_post_date = d.expected_post_date || null; postsChanged = true; }
     });
+    /* CR-22 §3.3 — the sample shipment (Move done): NPD / Warehouse → To ship · KOL buys own → KOL purchase (the amount → Product purchase on the deal) */
+    if (forward && req.fields.ship_method === 'req' && f.ship && R.SHIP_METHODS.includes(f.ship.method)) {
+      const own = f.ship.method === 'self_purchase', amt = own && !isBlank(f.ship.purchase_amount) ? round2(Number(f.ship.purchase_amount)) : null;
+      shipment = Object.assign(R.newShipment({ id: ctx.shipmentId ? ctx.shipmentId() : null, deal: d, items: (f.ship.items || []).filter(x => x && x.tr_code).map(x => ({ tr_code: x.tr_code, qty: Math.max(1, Math.round(Number(x.qty) || 1)) })),
+        shipBy: own ? null : R.shipBy(d, L.sample_settings), status: own ? 'kol_purchase' : 'to_ship', source: 'move', user: ctx.user, now: stamp, method: f.ship.method, purchaseAmount: amt }),
+      { address_id: own ? null : f.ship.address_id || null, note: trim(f.ship.note) || null, purpose: 'review', campaign_id: d.campaign_id, pick_list_id: null });
+      if (own) d.product_purchase_fee = amt;
+      shipEv = { event_id: ev(), deal_id: deal.deal_id, shipment_id: shipment.shipment_id, type: 'sample', from: null, to: shipment.status, changed_at: stamp, changed_by: ctx.user || null, note: null };
+    }
     /* one edit event for the values the move changed (pillar / term have their own) */
     let editEv = null;
-    const fields = ['package_id', 'package_units', 'rate_card'].concat(COST_FORM, ['expected_post_date', 'link_brief', 'script_link'], EXPECTED.filter(x => x !== 'expected_post_date'));
+    const fields = ['package_id', 'package_units', 'rate_card', 'product_purchase_fee'].concat(COST_FORM, ['expected_post_date', 'link_brief', 'script_link'], EXPECTED.filter(x => x !== 'expected_post_date'));
     const changes = R.diffFields(deal, d, [...new Set(fields)]).concat(postsChanged ? R.diffPosts(before, list) : []);
     if (changes.length) editEv = R.editEvent(deal, changes, Object.assign(evCtx(), { note: null }), 'edit');
     /* §4.13 — the draft's notes */
@@ -364,7 +400,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (R.sameNote(old, rec) || (!old && R.stepNoteEmpty(rec))) rec = null;
       else noteEv = R.stepNoteEvent(deal.deal_id, key, old, rec, evCtx());
     }
-    return { deal: d, log, logs, quote, event, events: [event, pillarEv, termEv, editEv, noteEv].filter(Boolean), posts: postsChanged ? list : null, note: rec };
+    return { deal: d, log, logs, quote, event, events: [event, pillarEv, termEv, ctaEv, editEv, noteEv, shipEv].filter(Boolean), posts: postsChanged ? list : null, note: rec, shipment };
   }
 
   /* ===================== §4.9 — a card dropped on a stage ===================== */
@@ -393,7 +429,7 @@ Object.assign(KT.rules, (function (R, C) {
     const c = state.campaigns.find(x => x.campaign_id === deal.campaign_id);
     if (!c || isBlank(c.budget_kol)) return null;
     const ctx = R.dealContext(state), committed = ctx.committedByCampaign.get(c.campaign_id) || 0, before = round2(Number(c.budget_kol) - committed);
-    const v = req.v, total = R.COST_KEYS.reduce((a, x) => a + (isBlank(v[x]) || isNaN(v[x]) ? 0 : Number(v[x])), 0);
+    const v = req.v, total = R.COST_KEYS.concat(['product_purchase_fee']).reduce((a, x) => a + (isBlank(v[x]) || isNaN(v[x]) ? 0 : Number(v[x])), 0);
     return { before, after: round2(before - total), total };
   }
 

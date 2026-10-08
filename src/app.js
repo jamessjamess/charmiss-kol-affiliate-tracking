@@ -158,12 +158,15 @@
       `<span class="ic">${ICON.nav[t.icon] || ''}</span><span class="lb">${esc(t.label)}</span><span class="nbadge hidden" data-nbadge="${t.key}"></span></button>`).join('');
     navTips(); navBadges();
   }
-  /* CR-17 §4.5 — the number of Campaigns waiting for a decision, on Campaign & Phase (only for those who approve) · kept up to date after every save */
+  /* CR-17 §4.5 — the number of requests waiting for a decision, on Campaign & Phase (those who approve) · kept up to date after every save ·
+     CR-21 §3.4: Staff — their returned drafts not opened yet */
   function navBadges() {
     const b = $('nav').querySelector('[data-nbadge="campaign"]'); if (!b) return;
-    const n = KT.ui.R.canApprove(KT.ui.actor()) ? KT.ui.R.approvalCount(KT.ui.state()) : 0;
+    const R = KT.ui.R, a = KT.ui.actor(), mgr = R.canApprove(a);
+    const n = mgr ? R.approvalCount(KT.ui.state()) : R.canDraft(a) && KT.approvals ? KT.approvals.returnedUnseen() : 0;
+    const tip = n ? (mgr ? C.approval.badge(n) : C.approval.badgeReturned(n)) : '';
     b.textContent = n ? String(n) : ''; b.classList.toggle('hidden', !n);
-    b.setAttribute('aria-label', n ? C.approval.badge(n) : ''); b.title = n ? C.approval.badge(n) : '';
+    b.setAttribute('aria-label', tip); b.title = tip;
   }
   KT.ui.onCommit = navBadges;
   function showTab(key, id) {

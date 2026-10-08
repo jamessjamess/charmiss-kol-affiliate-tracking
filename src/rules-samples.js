@@ -9,7 +9,12 @@ Object.assign(KT.rules, (function (R, C) {
   const { isBlank, isISODate, trim, addDays, dayDiff } = R;
   const CARRIERS = ['Kerry Express', 'Flash Express', 'Thailand Post', 'J&T Express', 'Lalamove', 'Grab', 'Messenger', 'Hand delivered', 'Other'];
   /* the group order on screen */
-  const SAMPLE_STATUSES = ['overdue', 'this_week', 'to_ship', 'shipped', 'problem', 'delivered', 'not_required'];
+  const SAMPLE_STATUSES = ['overdue', 'this_week', 'to_ship', 'kol_purchase', 'shipped', 'problem', 'delivered', 'purchased', 'not_required'];
+  /* CR-22 §3.3 — how the samples go: NPD · Warehouse · KOL buys own (self_purchase: nothing is sent — KOL purchase → Purchased) ·
+     lookups.shipment_methods keeps the words (Settings › Samples · the keys never change) */
+  const SHIP_METHODS = ['npd', 'warehouse', 'self_purchase'];
+  const shipMethodsDefault = () => SHIP_METHODS.map(key => ({ key, label: C.samples.method[key] }));
+  const shipMethodLabel = (lookups, key) => { const x = ((lookups || {}).shipment_methods || []).find(m => m.key === key); return (x && R.trim(x.label)) || (C.samples.method[key] || key || ''); };
   const sampleSettingsDefault = () => ({ lead_days: 7, carriers: CARRIERS.slice(), tracking_url: {} });
   const sampleSettings = lookups => { const s = Object.assign(sampleSettingsDefault(), (lookups || {}).sample_settings || {}); s.lead_days = Number(s.lead_days) >= 0 ? Math.round(Number(s.lead_days)) : 7; return s; };
   const shipmentsOf = (state, dealId) => (state.sample_shipments || []).filter(x => x.deal_id === dealId);
@@ -22,6 +27,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* stored status + today → the status on screen: a shipment not sent yet is Overdue (ship by < today) · Ship this week (≤ 7 days) · To ship */
   function sampleStatus(sh, today) {
     if (sh.status === 'not_required') return 'not_required';
+    if (sh.status === 'kol_purchase' || sh.status === 'purchased') return sh.status;   // CR-22: KOL buys own
     if (sh.status === 'problem') return 'problem';
     if (sh.status === 'delivered' || isISODate(sh.delivered_date)) return 'delivered';
     if (sh.status === 'shipped' || isISODate(sh.shipped_date)) return 'shipped';
@@ -29,12 +35,13 @@ Object.assign(KT.rules, (function (R, C) {
     if (sh.ship_by < today) return 'overdue';
     return sh.ship_by <= addDays(today, 7) ? 'this_week' : 'to_ship';
   }
-  const openShipment = sh => !['delivered', 'not_required'].includes(sh.status) && !isISODate(sh.delivered_date);
+  const openShipment = sh => !['delivered', 'not_required', 'purchased'].includes(sh.status) && !isISODate(sh.delivered_date);
   /* a deal that should have a sample on the way: not cancelled · Confirm QT or later · not Complete */
   const needsSample = (lookups, d) => d.status !== 'Cancel' && d.status !== 'Complete' && R.pillarStepReached(lookups, d.sub_status);
   const itemsOf = (dealProducts, dealId) => (dealProducts || []).filter(x => x.deal_id === dealId).map(x => ({ tr_code: x.tr_code, qty: Number(x.qty) || 1 }));
   function newShipment(o) {
     return { shipment_id: o.id, deal_id: o.deal.deal_id, kol_id: o.deal.kol_id, items: o.items || [], ship_by: o.shipBy || null, status: o.status || 'to_ship', ship_by_overridden: false,
+      method: o.method || 'warehouse', purchase_amount: o.purchaseAmount == null ? null : o.purchaseAmount, purchased_date: null,   // CR-22 §4
       shipped_date: null, carrier: null, tracking_no: null, delivered_date: o.deliveredDate || null, problem_reason: null, not_required_reason: null, source: o.source || 'manual',
       note: null, address_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };   // CR-16: address_id null = the default at Mark shipped
   }
@@ -70,7 +77,7 @@ Object.assign(KT.rules, (function (R, C) {
         state.sample_shipments.push(sh); list.push(sh); ev(sh, null, 'to_ship', C.samples.autoNote);
       }
       list.forEach(sh => {
-        if (d.status === 'Cancel' && sh.status === 'to_ship') { Object.assign(sh, { status: 'not_required', not_required_reason: C.samples.dealCancelled, updated_at: ctx.now, updated_by: ctx.user || null }); ev(sh, 'to_ship', 'not_required', C.samples.dealCancelled); }
+        if (d.status === 'Cancel' && (sh.status === 'to_ship' || sh.status === 'kol_purchase')) { const was = sh.status; Object.assign(sh, { status: 'not_required', not_required_reason: C.samples.dealCancelled, updated_at: ctx.now, updated_by: ctx.user || null }); ev(sh, was, 'not_required', C.samples.dealCancelled); }
         else if (sh.status === 'to_ship' && !sh.ship_by_overridden) { const sb = shipBy(d, set); if ((sh.ship_by || null) !== sb) sh.ship_by = sb; }
       });
       /* the deal's own fields follow its shipments (Template view / export unchanged) */
@@ -92,6 +99,8 @@ Object.assign(KT.rules, (function (R, C) {
     const from = sh.status;
     if (change.kind === 'shipped') Object.assign(sh, { status: 'shipped', shipped_date: change.date, carrier: change.carrier || sh.carrier || null, tracking_no: trim(change.tracking) || sh.tracking_no || null, items: change.items || sh.items });
     else if (change.kind === 'delivered') Object.assign(sh, { status: 'delivered', delivered_date: change.date, shipped_date: sh.shipped_date || null });
+    else if (change.kind === 'purchased') Object.assign(sh, { status: 'purchased', purchased_date: change.date });   // CR-22: the KOL bought it
+    else if (change.kind === 'unpurchased') Object.assign(sh, { status: 'kol_purchase', purchased_date: null });
     else if (change.kind === 'problem') Object.assign(sh, { status: 'problem', problem_reason: trim(change.reason) });
     else if (change.kind === 'not_required') Object.assign(sh, { status: 'not_required', not_required_reason: trim(change.reason) });
     else if (change.kind === 'ship_by') Object.assign(sh, change.date ? { ship_by: change.date, ship_by_overridden: true } : { ship_by_overridden: false });
@@ -102,7 +111,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
   function validateShipment(change, today) {
     const errs = [], M = C.msg;
-    if (['shipped', 'delivered'].includes(change.kind) && !isISODate(change.date)) errs.push({ field: 'date', msg: M.dateInvalid(C.samples.col[change.kind === 'shipped' ? 'shipped' : 'delivered']) });
+    if (['shipped', 'delivered', 'purchased'].includes(change.kind) && !isISODate(change.date)) errs.push({ field: 'date', msg: M.dateInvalid(C.samples.col[change.kind === 'shipped' ? 'shipped' : 'delivered']) });
     if (['problem', 'not_required'].includes(change.kind) && !trim(change.reason)) errs.push({ field: 'reason', msg: M.sampleReason });
     if (change.kind === 'ship_by' && change.date && !isISODate(change.date)) errs.push({ field: 'date', msg: M.dateInvalid(C.samples.col.shipBy) });
     if (['problem', 'not_required'].includes(change.kind) && R.looksSensitive(change.reason)) errs.push({ field: 'reason', msg: M.sensitive });
@@ -147,6 +156,26 @@ Object.assign(KT.rules, (function (R, C) {
     return { errs, warns: [], infos: [] };
   }
 
-  return { CARRIERS, SAMPLE_STATUSES, sampleSettingsDefault, sampleSettings, shipmentsOf, shipBy, sampleStatus, openShipment, needsSample, newShipment, migrateSamples,
+  /* ===================== schema 21 (CR-22 §4) ===================== */
+  /* every shipment there is: method Warehouse · items = the deal's products (qty 1) when it has none · purchase_amount null · deals + product_purchase_fee
+     null · lookups.shipment_methods · the money does not change · twice → the same */
+  function migrateV21(obj) {
+    const L = obj.lookups || (obj.lookups = {});
+    if (!Array.isArray(L.shipment_methods)) L.shipment_methods = shipMethodsDefault();
+    const prods = new Map();
+    (obj.deal_products || []).forEach(x => { if (!prods.has(x.deal_id)) prods.set(x.deal_id, []); prods.get(x.deal_id).push({ tr_code: x.tr_code, qty: 1 }); });
+    (obj.sample_shipments || []).forEach(sh => {
+      if (!SHIP_METHODS.includes(sh.method)) sh.method = 'warehouse';
+      if ((!Array.isArray(sh.items) || !sh.items.length) && sh.deal_id && prods.has(sh.deal_id)) sh.items = prods.get(sh.deal_id).map(x => Object.assign({}, x));
+      if (!Array.isArray(sh.items)) sh.items = [];
+      if (sh.purchase_amount === undefined) sh.purchase_amount = null;
+      if (sh.purchased_date === undefined) sh.purchased_date = null;
+    });
+    (obj.deals || []).forEach(d => { if (d.product_purchase_fee === undefined) d.product_purchase_fee = null; });
+    obj.schema_version = Math.max(obj.schema_version || 0, 21);
+    return obj;
+  }
+
+  return { SHIP_METHODS, shipMethodsDefault, shipMethodLabel, migrateV21, CARRIERS, SAMPLE_STATUSES, sampleSettingsDefault, sampleSettings, shipmentsOf, shipBy, sampleStatus, openShipment, needsSample, newShipment, migrateSamples,
     syncShipments, canEditShipment, trackingLink, updateShipment, validateShipment, sampleTrack, sampleRows, sampleCounts, itemsText, samplesToShip, sampleDues, validateSampleSettings };
 })(KT.rules, KT.content));

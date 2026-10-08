@@ -170,6 +170,7 @@ KT.screens.settings = (function () {
     return `<div class="card"><div class="card-head"><h3>${esc(T.nav)}</h3></div><div class="fields">
         <div class="field"><label for="ss_lead">${esc(T.lead)}</label><input type="number" min="0" max="60" step="1" inputmode="numeric" id="ss_lead" data-ss="lead_days" value="${esc(st.smp.lead_days)}"${ro}><div class="hint">${esc(T.leadHint)}</div></div>
         <div class="field wide"><label for="ss_car">${esc(T.carriers)}</label><textarea id="ss_car" data-ss="carriers" rows="${Math.min(12, Math.max(6, carriers.length + 1))}"${ro}>${esc(st.smp.carriers)}</textarea><div class="hint">${esc(T.carriersHint)}</div></div>
+        <div class="field wide"><label>${esc(C.samples.methodsTitle)}</label><div class="ss-trk">${R.SHIP_METHODS.map(k => `<label class="sm-trkrow"><span>${esc(k)}</span><input data-smm="${esc(k)}" value="${esc(R.shipMethodLabel(L, k))}"${ro} aria-label="${esc(`${C.samples.methodsTitle} · ${k}`)}"></label>`).join('')}</div><div class="hint">${esc(C.samples.methodsHint)}</div></div>
         <div class="field wide"><label>${esc(T.tracking)}</label><div class="ss-trk">${carriers.map(c => `<label class="sm-trkrow"><span>${esc(c)}</span><input data-sst="${esc(c)}" value="${esc(st.smp.tracking_url[c] || '')}" placeholder="https://…{tracking}" autocomplete="off"${ro}></label>`).join('')}</div><div class="hint">${esc(T.trackingHint)}</div></div>
       </div><div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
@@ -380,6 +381,9 @@ KT.screens.settings = (function () {
     if (t.dataset.ps) { st.pay[t.dataset.ps] = t.value; payCheck(); return; }
     if (t.dataset.pf2) { st.perf[t.dataset.pf2] = t.value; perfCheck(); return; }
     if (t.dataset.ss === 'carriers' && st.smp) { st.smp.carriers = t.value; samplesCheck(); render(); return; }   // the tracking fields follow the list
+    /* CR-22 §3.3 — the words of a shipment method (blank = the default word) */
+    if (t.dataset.smm) { const list = Array.isArray(L.shipment_methods) ? L.shipment_methods : (L.shipment_methods = R.shipMethodsDefault()), x = list.find(m => m.key === t.dataset.smm);
+      const v = R.trim(t.value) || C.samples.method[t.dataset.smm]; if (x && x.label !== v) { x.label = v; commit(C.samples.methodsSaved); } return; }
     const row = t.closest('[data-step]');
     if (row && t.dataset.s) {
       const step = L.journey_steps.find(j => j.sub_status === row.dataset.step);

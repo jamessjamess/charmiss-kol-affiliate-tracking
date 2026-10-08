@@ -14,6 +14,10 @@
   const used = (s, cid) => { const x = R.campaignSummary(s, cid); return Math.round(x.committed / x.budget * 100); };
   const kpis = s => R.portfolioKpis(s, '2026-01-01', '2026-12-31', TD, false);
   const inc = (amount, allocations, reason) => ({ type: 'increase', amount, allocations, reason: reason || 'Sales are strong' });
+  /* CR-21: a new record is a draft of its maker until R.requestTransition sends it (Staff) / makes it (a manager) */
+  const addSent = (s, coll, rec, who, now, note) => { R.stampDraft(rec, who, now); s[coll].push(rec);
+    const id = coll === 'campaigns' ? 'campaign:' + rec.campaign_id : 'phase:' + rec.phase_id, ctx = Object.assign(ctxOf(s, who.user_id), { now });
+    s.campaign_events.push(...R.requestTransition(s, id, R.canApprove(who) ? 'approved' : 'pending', ctx, { direct: true, note }).events); return rec; };
 
   describe('CR-18 §3 · schema 17', () => {
     test('TC-01: a schema 16 file → 17 · one approved Initial row a Campaign (4) by "system" · every budget the same', () => {
@@ -101,14 +105,15 @@
       assert.ok(k.errs.some(e => e.field === 'alloc_KS-P2'), 'KS Phase 2 has more committed than ฿0');
       assert.ok(R.validateBudgetChange(s, 'KS', { type: 'decrease', amount: 1000, allocations: [{ phase_id: 'unallocated', amount: 1000 }], reason: 'x' }).errs.some(e => e.field === 'alloc_unallocated'), 'nothing unallocated to take');
     });
-    test('TC-15: Reject (reason "รอ Q4") → the budget stays · the one who asked sees why (My requests · Budget history)', () => {
+    test('TC-15 (CR-21): Return to draft (reason "รอ Q4") → the budget stays · the one who asked sees why (My requests › Drafts · Decided)', () => {
       const s = fresh(), b = babe(s), r = R.submitBudgetChange(s, 'KS', inc(100000, [{ phase_id: 'KS-P2', amount: 100000 }]), b, ctxOf(s, b.user_id));
-      assert.equal(R.rejectRequest(s, R.approvalRequests(s)[0], ' ', ctxOf(s)), null, 'a reason is needed');
-      s.campaign_events.push(...R.rejectRequest(s, R.approvalRequests(s)[0], 'รอ Q4', ctxOf(s)));
-      assert.deepEqual([camp(s, 'KS').budget_kol, r.rec.status, r.rec.reject_reason], [600000, 'rejected', 'รอ Q4']);
-      const mine = R.requestsFor(s, b, { state: 'decided' });
-      assert.deepEqual(mine.map(x => [x.type, x.result, x.reason]), [['budget_increase', 'rejected', 'รอ Q4']]);
-      assert.deepEqual(R.budgetHistory(s, 'KS').pop().reject_reason, 'รอ Q4');
+      s.campaign_events.push(...r.events);
+      assert.equal(R.returnRequest(s, R.approvalRequests(s)[0], ' ', ctxOf(s)), null, 'a reason is needed');
+      s.campaign_events.push(...R.returnRequest(s, R.approvalRequests(s)[0], 'รอ Q4', ctxOf(s)));
+      assert.deepEqual([camp(s, 'KS').budget_kol, r.rec.status, r.rec.returned_reason], [600000, 'draft', 'รอ Q4']);
+      assert.deepEqual(R.requestsFor(s, b, { state: 'decided' }).map(x => [x.type, x.result, x.reason]), [['budget_increase', 'returned', 'รอ Q4']]);
+      assert.deepEqual(R.requestsFor(s, b, { state: 'drafts' }).map(x => [x.id, x.returned.reason]), [['budget:' + r.rec.change_id, 'รอ Q4']]);
+      assert.ok(!R.budgetHistory(s, 'KS').some(x => x.change_id === r.rec.change_id), 'a draft is not in the Budget history');
     });
     test('TC-16: a KOL Manager adjusts → applied at once · the history says who approved (themself) · not a request', () => {
       const s = fresh(), k = km(s), r = R.submitBudgetChange(s, 'AC', inc(50000, [{ phase_id: 'unallocated', amount: 50000 }], 'top up'), k, ctxOf(s, k.user_id));
@@ -137,7 +142,7 @@
     });
     test('a new Campaign by Staff: its first budget waits with it · approved → approved (and stays)', () => {
       const s = fresh(), b = babe(s), c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 };
-      R.stampNew(c, b, NOW, 'Please check the period'); s.campaigns.push(c);
+      addSent(s, 'campaigns', c, b, NOW, 'Please check the period');
       assert.equal(c.approval.note, 'Please check the period');
       const init = R.syncInitial(s, 'TA', b.user_id, NOW);
       assert.deepEqual([init.status, init.amount, init.allocations], ['pending', 300000, [{ phase_id: 'unallocated', amount: 300000 }]]);
@@ -148,18 +153,18 @@
   });
 
   describe('CR-17 v1.2 · one card a request · the Status order', () => {
-    test('the order: Cancelled > Rejected > Pending approval > On hold > the dates · the tabs in that order', () => {
-      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled']);
+    test('the order (CR-21): Cancelled > Draft > Pending approval > On hold > the dates · the tabs in that order (no Draft tab)', () => {
+      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled']);
       const ph = [{ start_date: '2026-10-01', end_date: '2026-10-31', approval_status: 'approved' }];
       const st = c => R.campaignEffectiveStatus(Object.assign({ campaign_id: 'x' }, c), ph, TD);
-      assert.deepEqual([st({}), st({ approval_status: 'pending' }), st({ approval_status: 'pending', status_override: 'on_hold' }), st({ approval_status: 'rejected' }), st({ approval_status: 'rejected', status_override: 'cancelled' })],
-        ['ongoing', 'pending', 'pending', 'rejected', 'cancelled']);
-      assert.equal(R.phaseStatus({ approval_status: 'rejected', start_date: '2026-10-01' }, TD), 'rejected');
-      assert.ok(!R.DASH_STATUS_DEFAULT.includes('rejected'));
+      assert.deepEqual([st({}), st({ approval_status: 'pending' }), st({ approval_status: 'pending', status_override: 'on_hold' }), st({ approval_status: 'draft', status_override: 'on_hold' }), st({ approval_status: 'draft', status_override: 'cancelled' })],
+        ['ongoing', 'pending', 'pending', 'draft', 'cancelled']);
+      assert.equal(R.phaseStatus({ approval_status: 'draft', start_date: '2026-10-01' }, TD), 'draft');
+      assert.ok(!R.DASH_STATUS_DEFAULT.includes('draft'));
     });
     test('TC-20a: "Test Approve" 01/10–31/10 waits → Pending approval (not On going) · Started 7 days ago', () => {
-      const s = fresh(), c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 1000 }; R.stampNew(c, babe(s), NOW); s.campaigns.push(c);
-      const p = { phase_id: 'TA-P1', campaign_id: 'TA', start_date: '2026-10-01', end_date: '2026-10-31' }; R.stampNew(p, babe(s), NOW); s.phases.push(p);
+      const s = fresh(), p = R.stampDraft({ phase_id: 'TA-P1', campaign_id: 'TA', start_date: '2026-10-01', end_date: '2026-10-31' }, babe(s), NOW); s.phases.push(p);
+      const c = addSent(s, 'campaigns', { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 1000 }, babe(s), NOW);
       assert.equal(R.campaignEffectiveStatus(c, s.phases.filter(x => x.campaign_id === 'TA'), TD), 'pending');
       assert.deepEqual(R.startTiming('2026-10-01', TD), { kind: 'ago', days: 7 });
       assert.equal(C.approval.startedAgo(7), 'Started 7 days ago');
@@ -167,9 +172,10 @@
     });
     test('TC-20 / TC-20b: one card a request, oldest first · a manager sees all · Staff only their own (My requests)', () => {
       const s = fresh(), b = babe(s), amp = user(s, 'Amp');
-      const c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }; R.stampNew(c, b, '2026-10-06T03:00:00Z'); s.campaigns.push(c);
-      const np = { phase_id: 'PH-NOV', campaign_id: 'PH', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 10000 }; R.stampNew(np, amp, '2026-10-07T03:00:00Z'); s.phases.push(np);
+      addSent(s, 'campaigns', { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }, b, '2026-10-06T03:00:00Z');
+      addSent(s, 'phases', { phase_id: 'PH-NOV', campaign_id: 'PH', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 10000 }, amp, '2026-10-07T03:00:00Z');
       R.requestChange(phase(s, 'KS-P2'), { end_date: '2026-11-15' }, b, NOW, 'one more fortnight');
+      s.campaign_events.push(...R.requestTransition(s, 'change:KS-P2', 'pending', ctxOf(s, b.user_id)).events);
       assert.deepEqual(R.approvalRequests(s).map(x => [x.type, x.campaign_id, x.phase_id]), [['new_campaign', 'TA', null], ['new_phase', 'PH', 'PH-NOV'], ['change', 'KS', 'KS-P2']]);
       assert.equal(R.approvalCount(s), 3);
       assert.deepEqual(R.requestsFor(s, b, { state: 'pending' }).map(x => x.id), ['campaign:TA', 'change:KS-P2']);
@@ -180,21 +186,23 @@
     });
     test('TC-20c / TC-22: each card is decided on its own · approving the New campaign leaves the others · Undo puts everything back', () => {
       const s = fresh(), b = babe(s);
-      const c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }; R.stampNew(c, b, NOW); s.campaigns.push(c);
+      const c = addSent(s, 'campaigns', { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }, b, NOW);
       R.requestChange(camp(s, 'KS'), { pillar_target: { awareness: 20, consideration: 30, conversion: 50 } }, b, NOW);
+      s.campaign_events.push(...R.requestTransition(s, 'change:KS', 'pending', ctxOf(s, b.user_id)).events);
       const before = JSON.stringify(s), snap = R.decisionSnapshot(s, 'TA');
       const evs = R.approveRequest(s, R.requestById(s, 'campaign:TA'), ctxOf(s)); s.campaign_events.push(...evs);
       assert.deepEqual([c.approval_status, R.approvalRequests(s).map(x => x.id)], ['approved', ['change:KS']]);
       assert.deepEqual(R.decidedRequests(s).map(x => [x.type, x.result, x.by]), [['new_campaign', 'approved', b.user_id]]);
       R.restoreSnapshot(s, snap, evs.map(e => e.event_id));
       assert.equal(JSON.stringify(s), before, 'Undo: the same data as before');
-      const ch = R.rejectRequest(s, R.requestById(s, 'change:KS'), 'not now', ctxOf(s));
-      assert.deepEqual([ch[0].to, camp(s, 'KS').pending_change, camp(s, 'KS').change_rejected.reason, camp(s, 'TA').approval_status], ['change_rejected', null, 'not now', 'pending']);
+      const ch = R.returnRequest(s, R.requestById(s, 'change:KS'), 'not now', ctxOf(s));
+      assert.deepEqual([ch[0].to, camp(s, 'KS').pending_change.status, camp(s, 'KS').pending_change.returned_reason, camp(s, 'TA').approval_status], ['returned', 'draft', 'not now', 'pending']);
     });
     test('New campaign card: the budget of the Campaigns running at the same time (approved, overlapping)', () => {
-      const s = fresh(), c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }; R.stampNew(c, babe(s), NOW); s.campaigns.push(c);
-      const p = { phase_id: 'TA-P1', campaign_id: 'TA', start_date: '2026-10-20', end_date: '2026-11-30' }; R.stampNew(p, babe(s), NOW); s.phases.push(p);
-      assert.deepEqual(R.sameTimeBudget(s, 'TA'), { before: 2348400, after: 2648400, count: 3 }, 'CH 850,000 (to 24/10) · KS 600,000 · PH 898,400 (to 31/10) — not AC (ended 04/10)');
+      const s = fresh(); s.phases.push(R.stampDraft({ phase_id: 'TA-P1', campaign_id: 'TA', start_date: '2026-10-20', end_date: '2026-11-30' }, babe(s), NOW));
+      addSent(s, 'campaigns', { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }, babe(s), NOW);
+      const x = R.sameTimeBudget(s, 'TA');
+      assert.deepEqual([x.before, x.after, x.count, x.list.map(k => k.campaign_id)], [2348400, 2648400, 3, ['CH', 'KS', 'PH']], 'CH 850,000 (to 24/10) · KS 600,000 · PH 898,400 (to 31/10) — not AC (ended 04/10)');
     });
     test('CR-18 §4.1: a new deal takes the KOL\'s term only (not the Campaign\'s)', () => {
       const s = fresh(); camp(s, 'AC').default_payment_term = 'full_after_post';

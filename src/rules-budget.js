@@ -1,8 +1,9 @@
 /* rules-budget.js — CR-18 §3 · §4.2 · §4.3: a Campaign's budget over time and the Phase Planner's Budget % ↔ Amount.
    campaign_budget_changes: initial (the first budget) · increase · decrease — each with allocations to Phases / 'unallocated', a reason and a status
-   (pending · approved · rejected · cancelled). campaigns.budget_kol = the approved total (initial + increases − decreases) and phases.budget_kol = the
+   (draft · pending · approved · cancelled — CR-21: a returned one is a draft again). campaigns.budget_kol = the approved total (initial + increases − decreases) and phases.budget_kol = the
    approved Phase budgets: both change only when a change is approved. Staff ask (pending, one at a time per Campaign) · Admin / KOL Manager apply at
    once (it is still in the history). Every money number elsewhere keeps using the approved budget — a pending one only shows as "+฿x pending".
+   CR-21 — Save draft too · every state change goes through R.requestTransition (rules-request.js).
    Pure functions; adds to KT.rules (load after rules-approval.js). */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
@@ -11,7 +12,7 @@ Object.assign(KT.rules, (function (R, C) {
   const round2 = n => Math.round(n * 100) / 100;
   const issue = (field, msg, kind) => (kind ? { field, msg, kind } : { field, msg });
   const BUDGET_TYPES = ['initial', 'increase', 'decrease'];
-  const BUDGET_STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
+  const BUDGET_STATUSES = ['draft', 'pending', 'approved', 'cancelled'];
   const UNALLOCATED = 'unallocated';
   /* "1,000,000" / 1000000 / '' → a number or null */
   const money = v => { if (v == null || v === '') return null; const t = String(v).replace(/,/g, '').trim(); return t === '' || isNaN(t) ? null : Number(t); };
@@ -56,11 +57,11 @@ Object.assign(KT.rules, (function (R, C) {
     if (rec && rec.status === 'approved' && rec.decided_at && R.isApproved(c) && rec.locked) return rec;
     const budget = isBlank(c.budget_kol) ? null : Number(c.budget_kol);
     if (budget == null) { if (rec && rec.status !== 'approved') list.splice(at, 1); return rec && rec.status === 'approved' ? rec : null; }
-    const st = c.approval_status === 'rejected' ? 'rejected' : R.isApproved(c) ? 'approved' : 'pending', a = c.approval || {};
+    const st = c.approval_status === 'draft' ? 'draft' : R.isApproved(c) ? 'approved' : 'pending', a = c.approval || {};
     if (!rec) { rec = { change_id: nextChangeId(list), campaign_id: cid, type: 'initial', requested_by: a.submitted_by || userId || null, requested_at: a.submitted_at || now || null }; list.push(rec); }
     Object.assign(rec, { amount: budget, allocations: initialAllocations(state, cid, budget), reason: rec.reason || null, note: rec.note || null, status: st,
-      decided_by: st === 'pending' ? null : a.decided_by || userId || null, decided_at: st === 'pending' ? null : a.decided_at || now || null,
-      reject_reason: st === 'rejected' ? a.reason || null : null, budget_before: null, budget_after: st === 'approved' ? budget : null });
+      decided_by: st === 'approved' ? a.decided_by || userId || null : null, decided_at: st === 'approved' ? a.decided_at || now || null : null,
+      reject_reason: null, budget_before: null, budget_after: st === 'approved' ? budget : null });
     if (st === 'approved') rec.locked = true;
     return rec;
   }
@@ -115,45 +116,41 @@ Object.assign(KT.rules, (function (R, C) {
     (rec.allocations || []).forEach(a => { if (a.phase_id === UNALLOCATED) return; const p = phaseOf(state, a.phase_id); if (p) p.budget_kol = round2((Number(p.budget_kol) || 0) + sgn * Number(a.amount || 0)); });
     rec.budget_after = c.budget_kol;
   }
-  const evOpts = rec => ({ change_id: rec.change_id, request: 'budget_' + rec.type, requested_by: rec.requested_by, fields: { type: rec.type, amount: rec.amount, allocations: rec.allocations } });
-  /* Submit (Staff → pending) / Apply (Admin · KOL Manager → approved at once) · me = the user · ctx = { eventId(), now, user } → { rec, events } */
-  function submitBudgetChange(state, cid, d, me, ctx) {
-    const ok = R.canApprove(me), c = campaignOf(state, cid);
-    const rec = { change_id: nextChangeId(changes(state)), campaign_id: cid, type: d.type === 'decrease' ? 'decrease' : 'increase', amount: round2(money(d.amount)),
-      allocations: (d.allocations || []).map(a => ({ phase_id: a.phase_id, amount: round2(money(a.amount) || 0) })).filter(a => a.amount > 0),
-      reason: trim(d.reason), note: trim(d.note) || null, status: ok ? 'approved' : 'pending', budget_before: isBlank(c.budget_kol) ? null : Number(c.budget_kol), budget_after: null,
-      requested_by: me.user_id, requested_at: ctx.now, decided_by: ok ? me.user_id : null, decided_at: ok ? ctx.now : null, reject_reason: null };
-    changes(state).push(rec);
-    if (ok) applyBudgetChange(state, rec);
-    return { rec, events: [R.approvalEvent(ctx, cid, ok ? 'approved' : 'submitted', Object.assign(evOpts(rec), { note: rec.note }))] };
+  /* the row of an Adjust budget (a draft until requestTransition moves it) · d = { type, amount, allocations, reason, note } */
+  const fieldsOf = d => ({ type: d.type === 'decrease' ? 'decrease' : 'increase', amount: round2(money(d.amount) || 0),
+    allocations: (d.allocations || []).map(a => ({ phase_id: a.phase_id, amount: round2(money(a.amount) || 0) })).filter(a => a.amount > 0), reason: trim(d.reason), note: trim(d.note) || null });
+  /* Save draft · Submit (Staff → pending) · Apply (Admin · KOL Manager → approved at once) · o.draft = Save draft · o.changeId = the draft it continues ·
+     me = the user · ctx = { eventId(), now, user } → { rec, events, err } */
+  function submitBudgetChange(state, cid, d, me, ctx, o = {}) {
+    const c = campaignOf(state, cid);
+    let rec = o.changeId ? changes(state).find(x => x.change_id === o.changeId && x.campaign_id === cid) : null;
+    const events = [];
+    if (rec && rec.status === 'pending') { const w = R.requestTransition(state, 'budget:' + rec.change_id, 'draft', ctx, { withdraw: true }); events.push(...w.events); }
+    if (!rec || rec.status !== 'draft') {
+      rec = { change_id: nextChangeId(changes(state)), campaign_id: cid, status: 'draft', budget_before: null, budget_after: null, requested_by: me.user_id, requested_at: ctx.now,
+        decided_by: null, decided_at: null, reject_reason: null, submit_round: 0, returned_reason: null, returned_by: null, returned_at: null, last_submitted: null };
+      changes(state).push(rec);
+    }
+    Object.assign(rec, fieldsOf(d), { budget_before: isBlank(c.budget_kol) ? null : Number(c.budget_kol) });
+    const to = o.draft ? 'draft' : R.canApprove(me) ? 'approved' : 'pending';
+    const r = R.requestTransition(state, 'budget:' + rec.change_id, to, ctx, { direct: to === 'approved', note: rec.note });
+    events.push(...r.events);
+    return { rec, events, err: r.err };
   }
-  function approveBudgetChange(state, changeId, ctx) {
-    const rec = changes(state).find(x => x.change_id === changeId && x.status === 'pending'); if (!rec) return [];
-    Object.assign(rec, { status: 'approved', decided_by: ctx.user || null, decided_at: ctx.now });
-    applyBudgetChange(state, rec);
-    return [R.approvalEvent(ctx, rec.campaign_id, 'approved', Object.assign(evOpts(rec), { from: 'pending' }))];
-  }
-  function rejectBudgetChange(state, changeId, reason, ctx) {
-    if (!trim(reason)) return null;
-    const rec = changes(state).find(x => x.change_id === changeId && x.status === 'pending'); if (!rec) return [];
-    Object.assign(rec, { status: 'rejected', decided_by: ctx.user || null, decided_at: ctx.now, reject_reason: trim(reason) });
-    return [R.approvalEvent(ctx, rec.campaign_id, 'rejected', Object.assign(evOpts(rec), { from: 'pending', reason }))];
-  }
-  function cancelBudgetChange(state, changeId, ctx) {
-    const rec = changes(state).find(x => x.change_id === changeId && x.status === 'pending'); if (!rec) return [];
-    Object.assign(rec, { status: 'cancelled', decided_by: ctx.user || null, decided_at: ctx.now });
-    return [R.approvalEvent(ctx, rec.campaign_id, 'change_cancelled', evOpts(rec))];
-  }
+  const approveBudgetChange = (state, changeId, ctx) => R.requestTransition(state, 'budget:' + changeId, 'approved', ctx).events;
+  const cancelBudgetChange = (state, changeId, ctx) => R.requestTransition(state, 'budget:' + changeId, 'cancelled', ctx).events;
+  /* the draft of one person on a Campaign (the one Adjust budget opens again) */
+  const budgetDraftOf = (state, cid, userId) => changes(state).filter(x => x.campaign_id === cid && x.status === 'draft' && x.type !== 'initial' && x.requested_by === userId).pop() || null;
   /* Used % before → after a change (the card of a budget request) */
   function budgetChangeImpact(state, rec, idxIn) {
     const c = campaignOf(state, rec.campaign_id) || {}, idx = idxIn || R.phaseIndex(state), committed = round2((idx.campaign.get(rec.campaign_id) || {}).committed || 0);
     const before = isBlank(c.budget_kol) ? null : Number(c.budget_kol), after = round2((before || 0) + sign(rec) * Number(rec.amount || 0));
     return { before, after, delta: sign(rec) * Number(rec.amount || 0), committed, usedBefore: before ? committed / before * 100 : null, usedAfter: after ? committed / after * 100 : null };
   }
-  /* Budget history (the Campaign drawer): date · type · ฿ · budget after · Phases · asked by · decided by · status · reason (oldest first) */
+  /* Budget history (the Campaign drawer): date · type · ฿ · budget after · Phases · asked by · decided by · status · reason (oldest first · CR-21: no drafts) */
   function budgetHistory(state, cid) {
     let run = 0;
-    return budgetChangesOf(state, cid).map(x => {
+    return budgetChangesOf(state, cid).filter(x => x.status !== 'draft').map(x => {
       const signed = x.type === 'initial' ? null : sign(x) * Number(x.amount || 0);
       let after = null;
       if (x.status === 'approved') { run = x.type === 'initial' ? Number(x.amount || 0) : round2(run + signed); after = run; }
@@ -162,7 +159,7 @@ Object.assign(KT.rules, (function (R, C) {
         allocations: x.allocations || [], requested_by: x.requested_by, decided_by: x.decided_by, status: x.status, reason: x.reason || null, reject_reason: x.reject_reason || null, note: x.note || null };
     });
   }
-  /* a Rejected Campaign deleted: its budget rows go with it */
+  /* a draft Campaign deleted: its budget rows go with it */
   function dropBudgetChanges(state, cid) { state.campaign_budget_changes = changes(state).filter(x => x.campaign_id !== cid); }
 
   /* ---------- §4.2 — the Phase table: Budget % ↔ Amount ---------- */
@@ -190,7 +187,7 @@ Object.assign(KT.rules, (function (R, C) {
     const list = obj.campaign_budget_changes, at = now || new Date().toISOString();
     (obj.campaigns || []).forEach(c => {
       if (isBlank(c.budget_kol) || list.some(x => x.campaign_id === c.campaign_id && x.type === 'initial')) return;
-      const st = c.approval_status === 'rejected' ? 'rejected' : !c.approval_status || c.approval_status === 'approved' ? 'approved' : 'pending';
+      const st = c.approval_status === 'rejected' ? 'rejected' : !c.approval_status || c.approval_status === 'approved' ? 'approved' : 'pending';   // (CR-21: migrateV20 reads rejected)
       list.push({ change_id: nextChangeId(list), campaign_id: c.campaign_id, type: 'initial', amount: Number(c.budget_kol), allocations: initialAllocations(obj, c.campaign_id, c.budget_kol),
         reason: null, note: null, status: st, budget_before: null, budget_after: st === 'approved' ? Number(c.budget_kol) : null,
         requested_by: 'system', requested_at: at, decided_by: st === 'approved' ? 'system' : null, decided_at: st === 'approved' ? at : null, reject_reason: null, locked: st === 'approved' });
@@ -200,6 +197,6 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   return { BUDGET_TYPES, BUDGET_STATUSES, UNALLOCATED, money, budgetChangesOf, pendingBudgetChange, pendingBudgetChanges, pendingDelta, pendingPhaseDelta, unallocatedOf,
-    initialAllocations, syncInitial, validateBudgetChange, splitByCurrent, applyBudgetChange, submitBudgetChange, approveBudgetChange, rejectBudgetChange, cancelBudgetChange,
+    initialAllocations, syncInitial, validateBudgetChange, splitByCurrent, applyBudgetChange, submitBudgetChange, approveBudgetChange, cancelBudgetChange, budgetDraftOf,
     budgetChangeImpact, budgetHistory, dropBudgetChanges, budgetRow, phaseBudgetSync, fillRemainingAmount, migrateV17 };
 })(KT.rules, KT.content));

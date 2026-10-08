@@ -1164,24 +1164,23 @@ KT.content = (function () {
   });
   C.counts.shipping_addresses = 'Shipping addresses';
   /* ===================== CR-17 — Operations mode (Simple / Full) · Campaign / Phase approval ===================== */
-  Object.assign(C.phaseStatus, { pending: 'Pending approval', rejected: 'Rejected' });
+  Object.assign(C.phaseStatus, { pending: 'Pending approval' });
   C.approval = {
     waiting: 'Waiting for manager approval', waitingShort: 'Waiting', submit: 'Submit for approval', resubmit: 'Resubmit',
     needsApproval: 'A manager needs to approve this before deals can be added', askHint: 'Budget, period, pillar target and phase changes wait for a manager’s approval — name, CTA, products and note change now',
-    sent: 'Sent for approval', changeSent: 'Change sent for approval', submittedBy: (n, d) => `Submitted by ${n} · ${d}`, rejectedBy: (n, d) => `Rejected by ${n} · ${d}`,
-    reason: r => `Reason: ${r}`, changeRejected: 'Change rejected', changeRejectedReason: r => `The last change asked for was rejected${r ? `: ${r}` : ''}`,
+    sent: 'Sent for approval', changeSent: 'Change sent for approval', submittedBy: (n, d) => `Submitted by ${n} · ${d}`,
+    reason: r => `Reason: ${r}`,
     changePending: 'Change pending', changePendingTip: 'A change waits for a manager — the numbers on screen are today’s until it is approved',
     changeTitle: 'Change pending', colWhat: 'What', colNow: 'Now', colAsked: 'Asked for', changeBy: (n, d) => `Asked by ${n} · ${d}`,
     fStart: 'Start', fEnd: 'End', fDelete: 'Remove', removePhase: 'Remove this phase',
     phasesN: 'Phases', impact: 'Budget of approved campaigns', impactLine: (a, b) => `${a} → ${b}`, newPhases: n => `New phase${n === 1 ? '' : 's'} (${n})`,
-    approve: 'Approve', reject: 'Reject', cancelRequest: 'Cancel request', del: 'Delete',
+    approve: 'Approve', cancelRequest: 'Cancel request', del: 'Delete',
     waitHint: 'Deals can be added once a manager approves it',
-    approved: n => `อนุมัติ ${n} แล้ว`, rejected: n => `ตีกลับ ${n} แล้ว`, resubmitted: n => `ส่ง ${n} ให้อนุมัติอีกครั้งแล้ว`, requestCancelled: 'ยกเลิกคำขอแก้แล้ว',
-    rejectTitle: n => `Reject ${n}`, rejectHint: 'The person who made it sees the reason and can change it, then resubmit', reasonL: 'Reason',
+    requestCancelled: 'Request cancelled',
     badge: n => `${n} waiting for approval`, approvals: 'Approvals',
   };
   Object.assign(C.msg, {
-    campaignNotApproved: n => `${n} ยังรอผู้จัดการอนุมัติ — ยังเพิ่ม Deal ไม่ได้`, rejectReason: 'ใส่เหตุผลที่ตีกลับ',
+    campaignNotApproved: n => `${n} ยังรอผู้จัดการอนุมัติ — ยังเพิ่ม Deal ไม่ได้`,
   });
   Object.assign(C.pay.tabs, { sent: 'Sent', paid: 'Paid' });
   Object.assign(C.pay.tabTip, { sent: 'Sent to accounting, not paid yet', paid: 'Paid · WHT certificates' });
@@ -1234,10 +1233,9 @@ KT.content = (function () {
     sameTime: (a, b) => `Budget of campaigns running at the same time ${a} → ${b}`, noPeriod: 'No dates yet',
     overlaps: (n, a, b) => `Overlaps ${n} on ${a}–${b}`, phaseTotal: (a, b) => `Phase budgets ${a} of ${b} campaign budget`, phaseOver: x => `Over the campaign budget by ${x}`, noCampaignBudget: 'The campaign has no budget',
     colField: 'Field', colCurrent: 'Current', colRequested: 'Requested', postsMove: (n, d) => `${n} post${n === 1 ? '' : 's'} of ${d} deal${d === 1 ? '' : 's'} will move phase`, noMove: 'No post moves phase',
-    approveSelected: n => `Approve selected (${n})`, selectCard: 'Select this request', openDetails: 'Open details',
-    approvedBy: (n, d) => `Approved by ${n} · ${d}`, rejectedColon: r => `Rejected: ${r}`, rejectedByLine: (n, d) => `Rejected by ${n} · ${d}`,
+    approvedBy: (n, d) => `Approved by ${n} · ${d}`,
     emptyPending: 'Nothing is waiting for approval', emptyMine: 'You have no requests waiting', emptyDecided: 'Nothing decided yet', emptyType: 'No request of this type',
-    approvedN: n => `อนุมัติ ${n} รายการแล้ว`, rejectedOne: n => `ตีกลับ ${n} แล้ว`, undone: 'ย้อนกลับแล้ว',
+    undone: 'Undone',
     noteL: 'Note to approver', noteOptional: '(optional)', notePh: 'Anything the approver should know', noteFrom: n => `Note from ${n}`,
     budgetLine: (a, b, d) => `Current ${a} → New ${b} (${d})`, usedLine: (a, b) => `Used ${a} → ${b}`, committedL: 'Committed', allocTitle: 'Allocations', reasonL2: 'Reason',
     someone: 'Someone', waitingFor: 'Waiting for a manager',
@@ -1292,8 +1290,8 @@ KT.content = (function () {
   Object.assign(C.bulk, {
     assignTo: 'Assign to', assignHint: 'Owner of the new deals', me: n => `Me (${n})`, kolOwner: 'KOL owner', kolOwnerTip: 'The PIC who looks after this KOL in KOL Master',
     startAt: 'Start at', workedIn: 'Worked in', workedInAny: 'Any campaign', postedOnly: 'Posted only', colLastCampaign: 'Last campaign',
-    selectedH: n => `Selected (${n})`, colRate: 'Latest rate', rate: 'Rate (฿)', postDue: 'Post due', avg: x => `Avg ${x}`, toPhase: p => `→ ${p}`, term: 'Payment term', uses: 'Uses',
-    setPostDueAll: 'Set post due for all', useLatest: 'Use latest rates', clearRates: 'Clear rates', setDueTitle: 'Post due for every selected KOL', apply: 'Apply',
+    selectedH: n => `Selected (${n})`, colRate: 'Latest rate', rate: 'Rate (฿)', postDue: 'Post due', toPhase: p => `→ ${p}`, term: 'Payment term', uses: 'Uses',
+    setPostDueAll: 'Set post due for all', setDueTitle: 'Post due for every selected KOL', apply: 'Apply',
     remainingLine: (a, b) => `Remaining ${a} → after adding ${b}`, noBudgetLine: 'This campaign has no KOL budget yet',
     willAddSkip: (n, m) => `Will add ${n} · Skip ${m}${m ? ' (already in campaign / blacklisted)' : ''}`, withoutDue: n => `${n} without post due`,
     rowsNeed: (n, what) => `${n} row${n === 1 ? ' needs' : 's need'} ${what}`, needRate: 'a rate', needTerm: 'a payment term', needPackage: 'a package',
@@ -1312,7 +1310,7 @@ KT.content = (function () {
     secQt: 'Confirm QT details', secCosts: 'Costs', secSteps: 'Steps completed by this move', alsoContacted: 'Also mark Contacted', secNext: 'Next expected', secLinks: 'Links', secPost: 'Post',
     stepsHint: 'Each step gets a date — in order, none in the future', drafts: 'Drafts in the plan',
     rateCard: 'Rate card (฿)', gencodeCost: 'Gencode cost (฿)', gencodeDays: 'Gencode days', gencodeStart: 'Gencode start', assetFee: 'Asset fee (฿)', expeditingFee: 'Expediting fee (฿)', totalCost: 'Total cost',
-    includesBasket: x => `Includes basket fee ${x}`, latestAvg: (l, a) => `Latest ${l} · Avg ${a}`, zeroHint: '฿0 = no fee, product only', totalLine: x => `Total ${x}`,
+    includesBasket: x => `Includes basket fee ${x}`, zeroHint: '฿0 = no fee, product only', totalLine: x => `Total ${x}`,
     budgetLine: (a, b) => `Campaign remaining ${a} → ${b} after this move`, toPhase: p => `→ ${p}`,
     term: 'Payment term', chooseTerm: 'Choose a term', pillar: 'Pillar', choosePillar: 'Choose a pillar', postDue: 'Post due',
     package: 'Package', choosePackage: 'Choose a package', uses: 'Uses', fromPackage: 'From package', willUse: (n, left) => `Will use ${n} · ${left} left`, newPackage: '+ New package',
@@ -1365,5 +1363,92 @@ KT.content = (function () {
     sheet: 'Draft notes', exportCols: ['Deal', 'Draft', 'Links', 'Images', 'Updated'],
   };
   Object.assign(C.pay, { packageBalance: 'Prepaid package balance' });
+  /* ===================== CR-21 — Collapse all / Sort · Deals Year · Save draft · Approval review · Return to draft / Resubmit · Edit = Phase Planner ===================== */
+  C.phaseStatus.draft = 'Draft';
+  C.budget.statuses = { draft: 'Draft', pending: 'Pending', approved: 'Approved', cancelled: 'Cancelled' };
+  C.request = {
+    fName: 'Name', fBudget: 'KOL budget', fProducts: 'Products', fNote: 'Note', fPeriod: 'period', fPhaseBudget: 'budget', fLabel: 'label', fPillar: 'default pillar', fRemove: 'removal',
+    fPhase: (name, what) => `${name} ${what}`, yes: 'Yes', fType: 'Type', fAmount: 'Amount', fReason: 'Reason', fAlloc: n => `Allocation · ${n}`,
+    added: n => `${n} added`, removed: n => `${n} removed`, phaseLine: (period, budget) => [period, budget].filter(x => x && x !== '—').join(' · ') || '—',
+    nChanges: n => `${n} change${n === 1 ? '' : 's'}`, reasonMin: n => `Add a reason (${n} characters or more)`,
+  };
+  Object.assign(C.approval, {
+    saveDraft: 'Save draft', resubmitFor: 'Resubmit for approval', submitChanges: 'Submit changes for approval', saveChanges: 'Save changes', noChanges: 'No changes',
+    review: 'Review', reviewRequest: 'Review request', withdraw: 'Withdraw to draft', returnToDraft: 'Return to draft', returnedChip: 'Returned', draftChip: 'Draft',
+    round: n => `Round ${n}`, edit: 'Edit', deleteDraft: 'Delete draft', fDrafts: 'Drafts', fMyDrafts: 'My drafts',
+    pendingBar: (n, d, r) => `Pending approval · Submitted by ${n} · ${d} · Round ${r}`, returnedBar: (n, d, r) => `Returned by ${n} · ${d} — ${r}`,
+    changeReturned: r => `Change returned — ${r}`, editingMovesBack: 'Editing moves this back to draft', returnedRound: n => `Returned · Round ${n}`, approvedRound: n => `Approved · Round ${n}`,
+    secWhatChanged: 'What changed since last round', prevReason: (n, r) => `Returned in Round ${n}: ${r}`, nothingChanged: 'Nothing changed since the last round',
+    secCampaign: 'Campaign', secPhases: 'Phases', secBudgetCtx: 'Budget context', secHistory: 'History', secDecision: 'Decision', secRequest: 'Request',
+    comment: 'Comment', commentHint: 'Optional to approve · needed to return it (5 characters or more)', commentPh: 'What should change, or a note for the record',
+    scrollToApprove: 'Scroll to the end to approve', jumpDecision: 'Jump to decision ↓', readOnly: 'Read only — waiting for Admin / KOL Manager',
+    prevReq: 'Previous request', nextReq: 'Next request', nOfM: (i, n) => `${i} of ${n}`, reviewTitle: (t, n) => `${t} · ${n}`,
+    approvedToast: n => `Approved ${n}`, returnedToast: n => `Returned ${n} to draft`, withdrawnToast: n => `${n} moved back to draft`, allDone: 'Nothing else is waiting for approval',
+    deleteDraftTitle: n => `Delete draft ${n}?`, deleteDraftBody: 'The draft and its phases are deleted. This can’t be undone.', draftDeleted: n => `Draft deleted · ${n}`,
+    cancelRequestTitle: n => `Cancel the request on ${n}?`, cancelRequestBody: 'The campaign keeps what it has now.',
+    draftSaved: n => `Draft saved · ${n}`, sentRound: (n, r) => `${n} sent for approval · Round ${r}`, changesSaved: n => `Changes saved · ${n}`,
+    saveAsDraftTitle: 'Save as draft?', saveAsDraftBody: 'You have changes that are not saved yet.', discard: 'Discard', keepEditing: 'Keep editing',
+    emptyDrafts: 'No drafts', emptyMinePending: 'Nothing of yours is waiting for approval', badgeReturned: n => `${n} returned to you`,
+    hist: { draft_saved: 'Draft saved', submitted: 'Submitted', resubmitted: 'Resubmitted', withdrawn: 'Withdrawn to draft', returned: 'Returned to draft', approved: 'Approved',
+      change_requested: 'Submitted', change_approved: 'Approved', change_cancelled: 'Request cancelled', draft_deleted: 'Draft deleted', rejected: 'Returned to draft', change_rejected: 'Returned to draft' },
+    histLine: (what, n, d, r) => `${what} · ${n} · ${d}${r ? ` · Round ${r}` : ''}`, overlapsNone: 'No other approved campaign runs at the same time',
+    kName: 'Name', kNote: 'Note', kUnallocated: 'Unallocated', colPhase: 'Phase', colLabel: 'Label', colPeriod: 'Period', colBudget: 'Budget', colPct: '%',
+    sameTimeRow: (n, a, b) => `${n} · ${a} – ${b}`, sameTimeTotal: (a, b) => `With this one ${a} → ${b}`, notThere: 'This request is no longer waiting',
+    returnHint: 'The request goes back to its maker as a draft with your reason',
+  });
+  Object.assign(C.campaign, {
+    collapseAll: 'Collapse all', expandAll: 'Expand all', sortL: 'Sort', sorts: { status: 'Status', start_asc: 'Start date · earliest first', start_desc: 'Start date · latest first' },
+    nPhases: n => `${n} phase${n === 1 ? '' : 's'}`, editIt: 'Edit',
+  });
+  Object.assign(C.planner, {
+    editTitle: n => `Edit ${n}`, hasDeals: n => `Has ${n} deal${n === 1 ? '' : 's'} — move them first`, dealsMove: n => `${n} deal${n === 1 ? '' : 's'} will move to another phase`,
+    fNote: 'Note', notePh: 'Anything the team should know about this campaign',
+  });
+  /* the Campaign / Phase / Plan checks the Phase Planner shows (English, as every UI label) */
+  Object.assign(C.msg, {
+    campaignNameRequired: 'Enter the campaign name', campaignNameDup: n => `A campaign named "${n}" already exists`,
+    planPeriodNeeded: 'Enter the campaign period (start – end) first',
+    planPeriodShort: n => `The campaign period is shorter than ${n} days — it can't be split into ${n} phases`,
+    planGap: (a, b) => `No phase covers ${a}–${b} — posts in that range need a phase picked by hand`, planDeleteHasPosts: n => `${n} has posts — it can't be deleted`,
+    phaseCampaignRequired: 'Choose a campaign', phaseCampaignMissing: 'Campaign not found', phaseDatesRequired: 'Enter the start and end dates', phaseDateInvalid: 'The date is not valid',
+    phaseEndBeforeStart: 'The end date must be on or after the start date', phaseBudgetInvalid: 'The budget is a number of 0 or more', phaseNoBudget: 'No KOL budget yet (it can wait)',
+    phaseBudgetBelowCommitted: (budget, committed) => `Budget ${budget} is below what is committed now (${committed})`, phaseCreatesNeeds: n => `After saving, ${n} post${n === 1 ? '' : 's'} will need a phase picked by hand`,
+    campaignProductsRequired: 'A new campaign needs at least 1 product', campaignNoProducts: 'This campaign has no products yet — they can be added later',
+    productUsedByDeals: (name, n) => `${name} can't be removed — ${n} deals use it`, productRemovedUsed: (name, n) => `${n} deals use ${name} — they keep it`,
+    campaignNotApproved: n => `${n} is waiting for a manager's approval — no deal can be added yet`,
+  });
+  Object.assign(C.deal, {
+    year: 'Year', allYears: 'All years', allCampaignsIn: y => `All campaigns in ${y}`, showingYear: y => `Showing ${y} campaigns`,
+    ongoingBefore: (n, y) => `${n} ongoing campaign${n === 1 ? '' : 's'} started in ${y}`, show: 'Show',
+  });
+  Object.assign(C.roles.perm, {
+    'campaign.draft': 'Create Campaign & Phase as a draft · submit it for approval · ask for changes · Adjust budget (waits for approval)',
+    'campaign.edit': 'Approve / Return to draft Campaigns, Phases and budget changes · change them at once · Adjust budget at once · On hold / Cancelled',
+  });
+  /* ===================== CR-22 — Rate card not filled for you · CTA at Contacted · Sample shipment at Confirm QT · New KOL from a search · Deal modal tabs ===================== */
+  C.samples.method = { npd: 'NPD', warehouse: 'Warehouse', self_purchase: 'KOL buys own' };
+  Object.assign(C.samples.status, { kol_purchase: 'KOL purchase', purchased: 'Purchased' });
+  Object.assign(C.samples, {
+    markPurchased: 'Mark purchased', unmarkPurchased: 'Undo purchased', purchasedOn: 'Purchased on', colMethod: 'Method', allMethods: 'All methods', methodsTitle: 'Shipment methods',
+    methodsHint: 'The words people see · the keys stay the same', methodsSaved: 'Shipment methods saved', purchasedDone: n => `Purchased · ${n}`,
+    summary: (m, items, st) => [m, items, st].filter(Boolean).join(' · '),
+  });
+  Object.assign(C.msg, {
+    moveCtaRequired: 'Choose a CTA to move to Contacted or later', shipMethodRequired: 'Choose how the samples are sent', shipItemsRequired: 'Choose at least one product',
+    shipQtyWhole: 'Qty is a whole number of 1 or more', dealsPicRequired: 'Choose who the deals are assigned to',
+  });
+  Object.assign(C.move, {
+    cta: 'CTA', chooseCta: 'Choose a CTA', chooseMethod: 'Choose a method', lastRate: (x, c, d) => `Last rate card ${x}${c ? ` · ${c}` : ''}${d ? ` · ${d}` : ''}`, noRate: 'No rate on file', useLastTip: 'Put this rate in the box',
+    secShip: 'Sample shipment', method: 'Method', products: 'Products', qty: 'Qty', shipTo: 'Ship to', chooseLater: 'Choose later', purchaseAmount: 'Purchase amount (฿)',
+    purchaseHint: 'Paid back to the KOL — added to Total cost as Product purchase', shipNote: 'Shipment note', noCampaignProducts: 'This campaign has no products yet — add them in Campaign & Phase',
+    shipExists: 'Sample shipment', editShip: 'Edit', productPurchase: 'Product purchase',
+  });
+  Object.assign(C.bulk, { createNewKol: q => `Create "${q}" as new KOL`, noKolMatch: q => `No KOLs match "${q}"`, clearOther: 'Clear other filters', ctaAll: 'CTA', methodAll: 'Sample method' });
+  Object.assign(C.deal, {
+    tabs2: { overview: 'Overview', costs: 'Costs & payment', timeline: 'Timeline & content', ships: 'Shipments & posts', history: 'History' },
+    missing: 'Missing:', missingKey: { pic: 'Assigned to', cta: 'CTA', rate_card: 'Rate card', pillar: 'Pillar', payment_term: 'Payment term' }, assign: 'Assign',
+    cardDeal: 'Deal', cardMoney: 'Money', cardNext: 'Next', nextStep: 'Next step', nextDue: 'Due', postDueL: 'Post due', shipmentL: 'Shipment', payStatus: 'Payment status',
+    colStep: 'Step', colExpected: 'Expected', colDone: 'Done', colLinks: 'Links / notes', noNext: 'Nothing next',
+  });
   return C;
 })();

@@ -3,7 +3,13 @@
    bulk bar · state tabs (CR-13: All · List · In process · Complete · Cancelled = the Pipeline groups) · Group by → summary → attention chips ·
    Table or Pipeline,
    and the Deal modal (CR-20 §4.6 — it took the place of the side drawer): every section reads, ✎ opens one section as a form with its locks (CR-04 §4.5) ·
-   ‹ › walk the deals of the view · New deal (screen-newdeal.js) · Move stage (screen-move.js). → KT.screens.deals */
+   ‹ › walk the deals of the view · New deal (screen-newdeal.js) · Move stage (screen-move.js).
+   CR-22 §3.6 — the Deal modal is wider (min(1400px, 94vw)) with a header that holds the KOL · Tier · Deal ID · Campaign · Phase · stage · Assigned to ·
+   a "Missing: …" line (each word goes to its field) · the Journey across · 5 tabs: Overview (Deal · Money · Next) · Costs & payment · Timeline & content ·
+   Shipments & posts · History — the last tab is remembered per person (dealModal.tab) · from Payments: Costs & payment · from Shipments: Shipments & posts.
+   CR-21 §3.2 — Year (left of the Campaign): All years + the years of approved Campaigns (a Campaign's year = its start) · the Campaigns of that year and
+   "All campaigns in 2026" · every view, export, count and search keeps to it · this year with a Campaign of an earlier year still On going: a grey bar
+   "1 ongoing campaign started in 2026 · Show" · a link from another page with a Campaign picks that Campaign's year · remembered per person. → KT.screens.deals */
 KT.screens.deals = (function () {
   'use strict';
   const U = KT.ui;
@@ -20,10 +26,10 @@ KT.screens.deals = (function () {
   const readSet = k => { try { return new Set(JSON.parse(pref.get(k, '[]'))); } catch (e) { return new Set(); } };
   const dl = {
     view: VIEWS.includes(pref.get('dealview', 'table')) ? pref.get('dealview', 'table') : 'table', cols: pref.get('dealcols', 'compact') === 'template' ? 'template' : 'compact',
-    tab: 'all', tabUser: null, reason: '', why: new Map(), f: blankFilter(), pic: null, picUser: null, pf: R.blankPerfFilter(),
+    tab: 'all', tabUser: null, reason: '', why: new Map(), f: blankFilter(), pic: null, picUser: null, pf: R.blankPerfFilter(), year: null, yearUser: null,
     sort: { key: 'due', dir: 'asc' }, limit: PAGE, openCols: new Set(), cancelOpen: false, rows: [], selected: new Set(), groupLimit: new Map(),
     collapsed: readSet('dealgroups2'), opened: readSet('dealgroupsopen'), groupKeys: [],
-    mode: 'none', id: null, draft: null, posts: null, ticks: null, touched: new Set(), showDraft23: false, dirty: false,
+    mode: 'none', id: null, draft: null, posts: null, ticks: null, touched: new Set(), showDraft23: false, dirty: false, dtab: null, dtabUser: null,
     /* CR-04 §4.5: the one section open for editing in the drawer (header · info · payment · costs · timeline · posts) */
     sec: null, costReason: '', picSource: null, ctaFromCampaign: false, saveTerm: false, updateKolTerm: false,
   };
@@ -69,16 +75,42 @@ KT.screens.deals = (function () {
   const filtersNow = () => Object.assign({}, dl.f, { pic: picSel(), reason: reasonNow() });
   const picFilter = () => { const v = picSel(); return v === 'all' ? '' : v === 'me' ? myPic() : v; };
   const picLabel = v => (v === 'me' ? D.picMe(myPic()) : v === '__none' ? D.unassigned : v === 'all' ? D.allPics : v);
-  /* one Campaign at a time: the last one used, else the first On going */
-  function ensureCampaign(s, td) { if (!dl.f.campaign || !s.campaigns.some(c => c.campaign_id === dl.f.campaign)) dl.f.campaign = R.defaultDealsCampaign(s, td, pref.get('dealcamp', '')); }
+  /* CR-22 §3.6 — the tab of the Deal modal, remembered for each person (dealModal.tab) */
+  const DTABS = ['overview', 'costs', 'timeline', 'ships', 'history'];
+  function dealTab() {
+    const uid = userId();
+    if (dl.dtabUser !== uid) { dl.dtabUser = uid; const v = pref.get('dealModal.tab.' + uid, 'overview'); dl.dtab = DTABS.includes(v) ? v : 'overview'; }
+    return dl.dtab;
+  }
+  const chooseDealTab = t => { dealTab(); dl.dtab = DTABS.includes(t) ? t : 'overview'; pref.set('dealModal.tab.' + userId(), dl.dtab); };
+  /* CR-21 §3.2 — the Year, remembered for each person (deals.year · default this year) */
+  function yearSel() {
+    const uid = userId();
+    if (dl.yearUser !== uid) { dl.yearUser = uid; dl.year = R.dealYearPref(state(), pref.get('deals.year.' + uid, ''), today()); }
+    return dl.year;
+  }
+  const chooseYear = y => { yearSel(); dl.year = y || 'all'; pref.set('deals.year.' + userId(), dl.year); };
+  const inYear = (s, cid) => { const y = yearSel(); return y === 'all' || R.campaignYear(s, s.campaigns.find(c => c.campaign_id === cid)) === y; };
+  /* the Year of a Campaign a link opened (Dashboard · Payments · the KOL modal) */
+  function yearFor(cid) { const s = state(), y = R.campaignYear(s, s.campaigns.find(c => c.campaign_id === cid)); if (y) chooseYear(y); }
+  /* the Campaign: the last one used (in the Year), else the first On going of the Year · '' = All campaigns of the Year (CR-21) */
+  function ensureCampaign(s, td) {
+    if (dl.f.campaign && !s.campaigns.some(c => c.campaign_id === dl.f.campaign && !R.isDraft(c))) { dl.f.campaign = ''; dl.campInit = false; }
+    if (!dl.campInit) {
+      dl.campInit = true;
+      const last = pref.get('dealcamp', '');
+      if (!dl.f.campaign) dl.f.campaign = last === '__all' ? '' : R.defaultDealsCampaign(s, td, inYear(s, last) ? last : '', yearSel());
+    }
+  }
   /* CR-03: Phase filter = deals with a post in the Phase(s) · All phases = the whole Campaign · money follows the same scope */
   function currentScope(s, td) {
-    const ids = special(dl.f.phaseSel) ? [dl.f.phaseSel] : phaseList(s, td).map(p => p.phase_id), whole = dl.f.phaseSel === 'all';
-    return { base: Object.assign({}, dl.f, { phases: whole ? undefined : ids, pic: picFilter() }), scope: { campaignId: dl.f.campaign || null, phaseIds: whole ? null : ids } };
+    const ids = special(dl.f.phaseSel) ? [dl.f.phaseSel] : phaseList(s, td).map(p => p.phase_id), whole = dl.f.phaseSel === 'all', y = yearSel();
+    const yearIds = !dl.f.campaign && y !== 'all' ? [...R.yearCampaignIds(s, y)] : null;
+    return { base: Object.assign({}, dl.f, { phases: whole ? undefined : ids, pic: picFilter(), year: y }), scope: { campaignId: dl.f.campaign || null, phaseIds: whole ? null : ids, campaignIds: yearIds } };
   }
   /* the Phases on screen, in group order (CR-02 §4.4, §4.8) */
   function phaseList(s, td) {
-    const all = R.orderedPhases(s.campaigns, s.phases, td).filter(p => !dl.f.campaign || p.campaign_id === dl.f.campaign);
+    const all = R.orderedPhases(s.campaigns, s.phases, td).filter(p => R.isApproved(p) && (dl.f.campaign ? p.campaign_id === dl.f.campaign : inYear(s, p.campaign_id)));
     if (dl.f.phaseSel === 'all') return all;
     if (dl.f.phaseSel === 'ongoing') return all.filter(p => R.phaseStatus(p, td) === 'ongoing');
     return all.filter(p => p.phase_id === dl.f.phaseSel);
@@ -98,6 +130,7 @@ KT.screens.deals = (function () {
         /* a link opens on All (CR-13) · old links: Needs phase / overdue → that chip · unpaid → Docs to collect (§4.5) · a PIC → the PIC box */
         const { scope, overdue, unpaid, pic, ...rest } = p.filter;
         tabSel(); dl.f = Object.assign(blankFilter(), fromScope(scope), rest); dl.tab = 'all'; dl.reason = '';
+        if (dl.f.campaign) yearFor(dl.f.campaign); else dl.campInit = false;   // CR-21 §3.2: the Year of the Campaign the link names (none: the usual one)
         if (dl.f.phaseSel === R.NEEDS) { dl.f.phaseSel = 'all'; dl.reason = 'needsPhase'; }
         if (overdue) dl.reason = 'overdue';
         if (unpaid) dl.reason = 'docs';
@@ -109,8 +142,9 @@ KT.screens.deals = (function () {
       /* CR-10 §4.14: Operations › Samples to ship → Deals › Samples of that PIC */
       if (p.samples) { go('shipments', { tab: 'to-ship', campaign: p.samples.campaign || '', pic: p.samples.pic || 'all' }); return; }   // CR-11 §4.10
       /* CR-11 §4.12: Operations › Metrics due → Performance of that Campaign / PIC, status Due */
-      if (p.perf) { dl.view = 'performance'; pref.set('dealview', 'performance'); if (p.perf.campaign) { dl.f.campaign = p.perf.campaign; dl.f.phaseSel = 'all'; } if (p.perf.pic !== undefined) choosePic(p.perf.pic || 'all'); dl.pf = Object.assign(R.blankPerfFilter(), { mstatus: p.perf.status || '' }); }
-      if (p.deal && p.deal !== '__new__') { id = p.deal; const d0 = dealById(id); if (d0 && d0.campaign_id !== dl.f.campaign) { dl.f.campaign = d0.campaign_id; dl.f.phaseSel = 'all'; } }
+      if (p.perf) { dl.view = 'performance'; pref.set('dealview', 'performance'); if (p.perf.campaign) { dl.f.campaign = p.perf.campaign; dl.f.phaseSel = 'all'; yearFor(p.perf.campaign); } if (p.perf.pic !== undefined) choosePic(p.perf.pic || 'all'); dl.pf = Object.assign(R.blankPerfFilter(), { mstatus: p.perf.status || '' }); }
+      if (p.section === 'shipments') chooseDealTab('ships'); else if (p.section === 'costs') chooseDealTab('costs');   // CR-22 §3.6
+      if (p.deal && p.deal !== '__new__') { id = p.deal; const d0 = dealById(id); if (d0 && d0.campaign_id !== dl.f.campaign) { dl.f.campaign = d0.campaign_id; dl.f.phaseSel = 'all'; } if (d0 && !inYear(state(), d0.campaign_id)) yearFor(d0.campaign_id); }
     }
     renderLeft();
     if (id && dealById(id) && !(dl.id === id && editing())) {
@@ -124,6 +158,7 @@ KT.screens.deals = (function () {
   function build(sec) {
     sec.innerHTML = `<div class="pagehead"><h1 class="page">${esc(D.title)}</h1><span class="spacer"></span><button type="button" class="btn primary" id="dl_new">${esc(D.newDeal)}</button></div>
       <div class="toolbar dl-scope" id="dl_tools">
+        <select id="dl_year" class="dl-year" aria-label="${esc(D.year)}"></select>
         <span class="dl-camp"><select id="dl_camp" aria-label="${esc(D.campaign)}" data-combo="campaign" data-combo-new="campaign"></select><span id="dl_campSt"></span></span>
         <select id="dl_phase" aria-label="${esc(D.phase)}" data-combo="phase"></select>
         <label class="tlab dl-piclab"><span class="tl">${esc(D.pic)}</span> <select id="dl_pic" aria-label="${esc(D.pic)}"></select></label>
@@ -139,6 +174,7 @@ KT.screens.deals = (function () {
           <div class="mh">${esc(D.density)}</div><div class="mi-seg"><div class="seg" role="group" aria-label="${esc(D.density)}"><button type="button" data-cols="compact">${esc(D.compact)}</button><button type="button" data-cols="template">${esc(D.template)}</button></div></div>
         </div></details>
       </div>
+      <div class="yearbar hidden" id="dl_yearbar"></div>
       <div class="toolbar hidden" id="dl_bulk"><b id="dl_selN"></b><button type="button" class="btn" id="dl_moveTo">${esc(C.bulk.moveTo)}</button><button type="button" class="btn" id="dl_setDetails">${esc(C.bulk.setDetails)}</button><button type="button" class="btn" id="dl_reassign">${esc(D.reassign)}</button><button type="button" class="btn" id="dl_setPillar">${esc(D.setPillar)}</button>
         <button type="button" class="btn" id="dl_selExport">${esc(D.exportSelected)}</button><button type="button" class="btn ghost" id="dl_selClear">${esc(D.clear)}</button></div>
       <div class="fchips" id="dl_chips"></div>
@@ -153,9 +189,11 @@ KT.screens.deals = (function () {
     });
     let qT;
     $('dl_q').addEventListener('input', e => { clearTimeout(qT); qT = setTimeout(() => { dl.f.q = e.target.value; dl.limit = PAGE; renderLeft(); }, 150); });
+    /* CR-21 §3.2 — the Year: a Campaign of another year → All campaigns of this one (said in a toast) */
+    $('dl_year').addEventListener('change', e => setYear(e.target.value));
+    $('dl_yearbar').addEventListener('click', e => { const b = e.target.closest('[data-yearshow]'); if (b) setYear(b.dataset.yearshow); });
     $('dl_camp').addEventListener('change', e => {
-      if (!e.target.value) return;
-      dl.f.campaign = e.target.value; pref.set('dealcamp', dl.f.campaign);
+      dl.f.campaign = e.target.value || ''; pref.set('dealcamp', dl.f.campaign || '__all');
       const p = phaseById(dl.f.phaseSel); if (p && p.campaign_id !== dl.f.campaign) dl.f.phaseSel = 'all';
       dl.limit = PAGE; renderLeft();
     });
@@ -222,6 +260,11 @@ KT.screens.deals = (function () {
     body.addEventListener('dragover', dragOver); body.addEventListener('dragleave', dragLeave); body.addEventListener('drop', dropOn);
     sec.dataset.built = '1';
   }
+  function setYear(y) {
+    const s = state(); chooseYear(y);
+    if (dl.f.campaign && !inYear(s, dl.f.campaign)) { dl.f.campaign = ''; dl.f.phaseSel = 'all'; pref.set('dealcamp', '__all'); if (y !== 'all') toast(D.showingYear(y)); }
+    dl.limit = PAGE; dl.selected.clear(); renderLeft();
+  }
   /* CR-07 §4.4 — every filter back to empty in one go, the attention chip too (Campaign, View, Group by, state tab and sort stay) · remembered: All PICs */
   function clearFilters() {
     const c = R.clearFilters(dl.f); choosePic(c.pic); dl.reason = c.reason; dl.pf = R.blankPerfFilter();
@@ -286,9 +329,16 @@ KT.screens.deals = (function () {
     markSelected(); bulkBar();
   }
   function renderScope(s, td) {
-    const f = dl.f, c = s.campaigns.find(x => x.campaign_id === f.campaign);
-    $('dl_camp').innerHTML = U.campaignOptionsHTML(f.campaign, null);
-    $('dl_camp').value = f.campaign;
+    const f = dl.f, c = s.campaigns.find(x => x.campaign_id === f.campaign), y = yearSel();
+    /* CR-21 §3.2 — Year ▾ (All years + the years with an approved Campaign, newest first) · the Campaigns of that year */
+    const ys = R.yearOptions(s).concat(y !== 'all' && !R.yearOptions(s).includes(y) ? [y] : []);
+    $('dl_year').innerHTML = ys.map(v => `<option value="${esc(v)}"${v === y ? ' selected' : ''}>${esc(v === 'all' ? D.allYears : v)}</option>`).join('');
+    $('dl_year').value = y;
+    $('dl_camp').innerHTML = U.campaignOptionsHTML(f.campaign, y === 'all' ? D.allCampaigns : D.allCampaignsIn(y), { year: y });
+    $('dl_camp').value = f.campaign || '';
+    const early = y === td.slice(0, 4) ? R.ongoingBefore(s, y, td) : [], ey = early.map(x => x.y).sort().pop(), en = early.filter(x => x.y === ey).length;
+    $('dl_yearbar').innerHTML = en ? `<span>${esc(D.ongoingBefore(en, ey))}</span> · <button type="button" class="link" data-yearshow="${esc(ey)}">${esc(D.show)}</button>` : '';
+    $('dl_yearbar').classList.toggle('hidden', !en);
     $('dl_campSt').innerHTML = c ? phaseChip(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td)) : '';
     /* the Phases of this Campaign only — posts that need a Phase are under the Needs phase chip (CR-13 §4.5) */
     const top = [['all', D.allPhases], ['ongoing', D.ongoingPhases]].map(([v, l]) => `<option value="${v}" data-special${f.phaseSel === v ? ' selected' : ''}>${esc(l)}</option>`).join('');
@@ -305,7 +355,7 @@ KT.screens.deals = (function () {
   }
   /* CR-10 §4.1 — Performance: Campaign · Phase (the posts in it) · PIC from the scope bar · Search and its own Filters at post level */
   function renderPerfView(s, ctx, td) {
-    const cur = currentScope(s, td), deals = R.filterDeals(s, { campaign: dl.f.campaign, pic: picFilter() }, td, ctx);
+    const cur = currentScope(s, td), deals = R.filterDeals(s, { campaign: dl.f.campaign, pic: picFilter(), year: yearSel() }, td, ctx);
     KT.perf.render($('dl_body'), { s, td, ctx, deals, phaseIds: dl.f.phaseSel === 'all' ? null : cur.scope.phaseIds, f: Object.assign({ q: dl.f.q }, dl.pf),
       campaignId: dl.f.campaign, used: dl.used, setFilter: (k, v) => { dl.pf[k] = v; renderLeft(); }, openPost, rerender: () => renderLeft() });
   }
@@ -955,6 +1005,7 @@ KT.screens.deals = (function () {
     if (editing() && dl.id !== id) { toast(C.common.blockWhileEditing); return; }
     if (U.drawerOwner() && U.drawerOwner() !== owner) U.suspendDrawer();
     const x = typeof o === 'function' ? { after: o } : o || {};
+    if (x.tab) chooseDealTab(x.tab);   // CR-22 §3.6
     dl.over = x.after || (() => {});
     dl.backKol = x.backKol || null; dl.nav = null;
     if (!(dl.id === id && editing())) Object.assign(dl, { mode: 'view', id, sec: null });
@@ -985,7 +1036,7 @@ KT.screens.deals = (function () {
   /* CR-07 §4.9 — Journey: the timeline (+ "Brief → Post: n d" / "In progress n d since Brief"), the payment track, then the content plan */
   function journeySecHTML(s, d, posts) {
     const j = U.journeyHTML(d, R.logsOf(s, d.deal_id), posts, { notes: true });   // CR-20 §4.13: a Draft step opens its notes
-    return `<section class="sec jsec"><div class="sec-h"><span>${esc(D.secJourney)}</span>${j.summary ? `<span class="jt-sum">${esc(j.summary)}</span>` : ''}</div>${j.html}${U.payTrackHTML(d)}${KT.samples.trackHTML(d)}${planLineHTML(s, d)}</section>`;
+    return `<section class="sec jsec"><div class="sec-h"><span>${esc(D.secJourney)}</span>${j.summary ? `<span class="jt-sum">${esc(j.summary)}</span>` : ''}</div>${j.html}${U.payTrackHTML(d)}${KT.samples.trackHTML(d)}</section>`;   // (CR-22: the content plan is in Timeline & content)
   }
   /* CR-02 §4.2 — Content plan: changed right here (an action like Move stage, no Edit needed) · CR-15: Drafts only — Script and Approve are in every plan */
   function planLineHTML(s, d) {
@@ -1072,7 +1123,7 @@ KT.screens.deals = (function () {
       (after > b ? `<div class="check warn" style="margin-top:6px">! <span>${esc(C.msg.campaignOver(R.baht(after - b)))}</span></div>` : '');
   }
   /* CR-07 §4.5 — the cost fields with the Price reference beside them (under them in a narrow drawer) */
-  const costBlock = (fieldsHTML, totalHTML2, kolId, d, excludeDealId) => `<div class="costwrap"><div class="costgrid"><div>${fieldsHTML}${totalHTML2}</div>${U.priceRefHTML(kolId, { excludeDealId, free: R.termOf(d) === 'free' })}</div></div>`;
+  const costBlock = (fieldsHTML, totalHTML2, kolId, d, excludeDealId) => `<div class="costwrap"><div>${fieldsHTML}${totalHTML2}${kolId ? `<div class="hint" style="margin-top:6px">${KT.move.lastRateHTML(state(), R.lastRateCard(state(), kolId, excludeDealId), 'data-act="useLastRate"')}</div>` : ''}</div></div>`;   // CR-22 §3.1
   const asCost = (html, f) => html.replace('<input ', `<input data-cost="${f}" placeholder="${esc(C.priceRef.zeroPh)}" `);
   /* status log + deal_events (PIC, content plan, payment term), newest first */
   function eventText(e) {
@@ -1158,10 +1209,11 @@ KT.screens.deals = (function () {
     const tier = ctx.tiers.get(d.deal_id) || {};
     const pay = payViewHTML(d);
     const timeline = timelineFields(d).map(f => kvF(d, f, R.dmy(d[f]))).join('');
-    const costs = ['rate_card', 'gencode_expense', 'gencode_period'].map(f => kvF(d, f, money(d[f]))).join('') +
+    const costs = `<div class="dm-costgrid">` + ['rate_card', 'gencode_expense', 'gencode_period'].map(f => kvF(d, f, money(d[f]))).join('') +
       kvF(d, 'gencode_start_date', R.dmy(d.gencode_start_date)) + kvAuto(F.gencode_end_date, esc(R.dmy(R.gencodeEndDate(d)) || C.common.none)) +
-      ['basket_fee', 'asset_fee', 'expediting_fee'].map(f => kvF(d, f, money(d[f]))).join('') +
-      kvAuto(D.tier, esc(tier.tier || R.UNKNOWN_TIER)) + kvAuto(F.total_cost, R.baht(R.totalCost(d)), 'total') + (d.kol_id ? `<div class="hint" style="margin-top:6px">${esc(U.priceRefSummary(d.kol_id, d.deal_id))}</div>` : '') + budgetHTML(s, d, ctx);
+      ['asset_fee', 'expediting_fee'].map(f => kvF(d, f, money(d[f]))).join('') + (Number(d.basket_fee) > 0 ? kvF(d, 'basket_fee', money(d.basket_fee)) : '') +
+      (Number(d.product_purchase_fee) > 0 ? kvAuto(C.move.productPurchase, R.baht(d.product_purchase_fee)) : '') + `</div>` +
+      kvAuto(F.total_cost, R.baht(R.totalCost(d)), 'total') + (d.kol_id ? `<div class="hint" style="margin-top:6px">${KT.move.lastRateHTML(s, R.lastRateCard(s, d.kol_id, d.deal_id), 'data-act="useLastRate"')}</div>` : '');
     /* CR-19 §4.6 — the pillar with its colour */
     const info2 = `<div class="kv"><span>${esc(F.pillar)}</span><b>${R.isBlank(d.pillar) ? `<span class="muted">${C.common.none}</span>` : U.pillarChipHTML(d.pillar)}${lockMark(lockOf(d, 'pillar'))}</b></div>` + kvF(d, 'pic', d.pic) + `<div class="kv"><span>${esc(F.cta)}</span><b>${d.cta ? esc(d.cta) : `<span class="muted">${C.common.none}</span>`}${ctaChip(d)}${lockMark(lockOf(d, 'cta'))}</b></div>` +
       kvF(d, 'products', [R.dealProductsText(s, R.dealProductList(s, d.deal_id))].concat(R.dealProductList(s, d.deal_id).filter(x => d.campaign_id && !R.campaignHasProduct(s, d.campaign_id, x.tr_code))   // CR-09 §4.7: kept after it left the Campaign
@@ -1191,26 +1243,63 @@ KT.screens.deals = (function () {
         ${dl.backKol ? `<button type="button" class="link backkol" data-backkol>${esc(D.backToKol(dl.backKol.name || dl.backKol.kolId))}</button>` : ''}
         <div class="dr-title">${k.kol_id ? U.avatarHTML(k, 'md') : ''}<div class="t"><h2><button type="button" data-kol="${esc(d.kol_id)}" title="${esc(D.openKol)}">${esc(k.display_name || d.kol_id)}</button>${U.copyBtnHTML(k.display_name || d.kol_id)}${lockMark(lockOf(d, 'kol_id'))}</h2>
           ${dl.backTo ? `<button type="button" class="link backstage" data-backstage>${esc(D.backTo(dl.backTo))}</button>` : ''}
-          <div class="dr-sub"><span>${esc(d.deal_id)}${lockMark(lockOf(d, 'deal_id'))} · ${esc(camp.campaign_name || '')}${campFe.editable ? penBtn(d, 'header', F.campaign_id) : lockMark(campFe)}${p.phase_id ? ` · ${esc(R.phaseName(s, p.phase_id))}` : ''}</span>${stageChip(d)}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${d.is_legacy ? `<span class="badge-legacy" title="${esc(D.legacyTip)}">${esc(D.legacy)}</span>` : ''}</div></div>
+          <div class="dr-sub"><span class="chip dm-tier" title="${esc(D.tier)}">${esc(tier.tier || R.UNKNOWN_TIER)}</span><span>${esc(d.deal_id)}${lockMark(lockOf(d, 'deal_id'))} · ${esc(camp.campaign_name || '')}${campFe.editable ? penBtn(d, 'header', F.campaign_id) : lockMark(campFe)}${p.phase_id ? ` · ${esc(R.phaseName(s, p.phase_id))}` : ''}</span>${stageChip(d)}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${d.is_legacy ? `<span class="badge-legacy" title="${esc(D.legacyTip)}">${esc(D.legacy)}</span>` : ''}` +
+          `<span class="dm-pic">${esc(F.pic)} ${d.pic ? `<b>${esc(d.pic)}</b>` : `<span class="late">${esc(C.common.none)}</span>`}</span></div></div>
           <div class="dm-acts">${moveBtn}${nav}${closeBtn}</div></div>
         ${head}
       </div>
       <div class="dr-body">
+        ${missingHTML(s, d)}
         ${issues.errs.length || issues.warns.length ? `<section class="sec"><div class="checks">${checksHTML(issues, '')}</div></section>` : ''}
         ${journeySecHTML(s, d, posts)}
-        <div class="dgrid"><div class="dg-l">
-          ${secCard(d, 'info', D.secDeal, info2)}
-          ${secCard(d, 'costs', D.secCosts, costs)}
-          ${secCard(d, 'timeline', D.secTimeline, timeline)}
-          ${source}
-          <details class="sec"><summary><span>${esc(D.secHistory)}</span><span class="chev">${ICON.chevron}</span></summary>${historyHTML(s, d)}</details>
-        </div><div class="dg-r">
-          ${secCard(d, 'payment', D.secPayment, pay.replace('</b></div>', `${termChip(d)}${lockMark(lockOf(d, 'payment_term'))}</b></div>`))}
-          ${KT.samples.sectionHTML(d)}
-          ${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
-            can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}
-        </div></div>
+        ${tabsHTML(d)}
+        <div class="dm-tab" data-dmpane="${esc(tabNow(d))}">${tabBody(tabNow(d), { s, d, ctx, td, info2, costs, pay, posts, postCards, source })}</div>
       </div>`;
+  }
+  /* CR-22 §3.6 — the tab shown (the one open for editing wins: a section being edited stays on screen) */
+  const SEC_TAB = { info: 'overview', costs: 'costs', payment: 'costs', timeline: 'timeline', posts: 'ships' };
+  const tabNow = () => (dl.sec && SEC_TAB[dl.sec] ? SEC_TAB[dl.sec] : dealTab());
+  function tabsHTML(d) {
+    const T2 = D.tabs2, cur = tabNow(d);
+    return `<div class="stabs dm-tabs" role="tablist">${DTABS.map(k => `<button type="button" role="tab" data-dmtab="${k}" class="${k === cur ? 'on' : ''}" aria-selected="${k === cur}">${esc(T2[k])}</button>`).join('')}</div>`;
+  }
+  /* "Missing: Assigned to · CTA · Rate card" — each word opens its field */
+  function missingHTML(s, d) {
+    const miss = R.dealMissing(s, d); if (!miss.length || !can('deal.edit')) return '';
+    return `<div class="check warn dm-missing">! <span>${esc(D.missing)} ${miss.map((k, i) => `${i ? ' · ' : ''}<button type="button" class="link" data-missing="${k}">${esc(D.missingKey[k])}</button>`).join('')}</span></div>`;
+  }
+  function tabBody(tab, x) {
+    const { s, d, ctx, td, info2, costs, pay, posts, postCards, source } = x;
+    if (tab === 'costs') return `<div class="dm-two"><div>${secCard(d, 'costs', D.secCosts, costs)}</div><div>${secCard(d, 'payment', D.secPayment, pay.replace('</b></div>', `${termChip(d)}${lockMark(lockOf(d, 'payment_term'))}</b></div>`))}` +
+      `<section class="sec">${budgetHTML(s, d, ctx).replace('style="margin:12px 0 0"', '')}</section></div></div>`;
+    if (tab === 'timeline') return secCard(d, 'timeline', D.secTimeline, stepsTableHTML(s, d)) + `<section class="sec">${planLineHTML(s, d)}</section>`;
+    if (tab === 'ships') return `<div class="dm-two"><div>${KT.samples.sectionHTML(d)}</div><div>${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
+      can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}</div></div>`;
+    if (tab === 'history') return `${source}<section class="sec"><div class="sec-h"><span>${esc(D.secHistory)}</span></div>${historyHTML(s, d)}</section>`;
+    /* Overview: Deal · Money · Next */
+    const term = R.termOf(d), st = R.paymentState(d, td), payee = R.payeeOfDeal(s, d), nx = R.nextStep(s.lookups, d), ships = R.shipmentsOf(s, d.deal_id), sh = ships.filter(y => y.status !== 'not_required').pop();
+    const money2 = `<div class="kv total"><span>${esc(F.total_cost)}</span><b>${R.baht(R.totalCost(d))}</b></div>` + `<div class="kv"><span>${esc(D.term)}</span><b>${esc(C.term[term || 'none'])}</b></div>` +
+      `<div class="kv"><span>${esc(D.payStatus)}</span><b>${st === 'free' ? '—' : `<span class="pay"><b class="${U.PAY_CLS[st]}">${esc(C.payState[st])}</b></span>`}</b></div>` +
+      `<div class="kv"><span>${esc(D.payTo)}</span><b>${esc(payee ? payee.label || C.payee.primary : C.common.none)}</b></div>`;
+    const next = `<div class="kv"><span>${esc(D.nextStep)}</span><b>${nx.step ? esc(nx.step.sub_status) : `<span class="muted">${esc(D.noNext)}</span>`}</b></div>` +
+      `<div class="kv"><span>${esc(D.nextDue)}</span><b>${dueHTML(s, d, td) || '—'}</b></div><div class="kv"><span>${esc(D.postDueL)}</span><b>${R.dmy(d.expected_post_date) || '—'}</b></div>` +
+      `<div class="kv"><span>${esc(D.shipmentL)}</span><b>${sh ? esc(KT.samples.summaryText(sh)) : `<span class="muted">${esc(C.samples.noShipments)}</span>`}</b></div>`;
+    return `<div class="dm-cards">${secCard(d, 'info', D.cardDeal, info2)}<section class="sec"><div class="sec-h"><span>${esc(D.cardMoney)}</span></div>${money2}</section>` +
+      `<section class="sec"><div class="sec-h"><span>${esc(D.cardNext)}</span></div>${next}</section></div>`;
+  }
+  /* Timeline & content: one row a step — Step · Expected · Done · Links / notes */
+  function stepsTableHTML(s, d) {
+    const plan = R.planOf(d), done = R.postsOf(s, d.deal_id).map(p => p.post_date).filter(Boolean).sort()[0] || null;
+    const link = (url, label) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>` : '');
+    const notes = k => { const n = R.stepNoteOf(s, d.deal_id, R.draftKey(k)), c = R.noteCounts ? R.noteCounts(n) : { links: 0, images: 0 };
+      return `<button type="button" class="link small" data-notes="${k}">${esc(C.notes.counts(c.links, c.images) || C.notes.edit)}</button>`; };
+    const steps = R.stepsOf(s.lookups), nm = (f, dflt) => ((steps.find(f) || {}).sub_status || dflt);
+    const rows = [[nm(x => x.date_field === 'brief_date', 'Brief'), null, d.brief_date, link(d.link_brief, F.link_brief)], [nm(R.isScriptStep, 'Script'), d.expected_script_date, d.script_date, link(d.script_link, F.script_link)]]
+      .concat(Array.from({ length: plan.drafts }, (_, i) => [nm(x => R.draftNo(x) === i + 1, `Draft ${i + 1}`), d[`expected_draft${i + 1}_date`], d[`approved_draft${i + 1}_date`], notes(i + 1)]))
+      .concat([[nm(R.isApproveStep, 'Approve'), d.expected_approve_date, d.approved_date, ''], [nm(R.isPostStep, 'Post'), d.expected_post_date, done, '']]);
+    return `<div class="tablewrap"><table class="tbl compact-sm dm-steps"><thead><tr><th>${esc(D.colStep)}</th><th>${esc(D.colExpected)}</th><th>${esc(D.colDone)}</th><th>${esc(D.colLinks)}</th></tr></thead><tbody>` +
+      rows.map(([n, e, x, l]) => `<tr><td>${esc(n)}</td><td class="nowrap">${e ? esc(R.dmy(e)) : '<span class="muted">—</span>'}</td><td class="nowrap">${x ? `✓ ${esc(R.dmy(x))}` : '<span class="muted">—</span>'}</td><td>${l || ''}</td></tr>`).join('') +
+      `</tbody></table></div>`;
   }
   /* ---------- the open section's form: inputs for open fields, the value + 🔒 for locked ones ---------- */
   const inpF = (d, f, type) => `<input type="${type || 'text'}" id="f_${f}" data-f="${f}" data-key="${f}" value="${esc(asText(d[f]))}"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''} autocomplete="off">`;
@@ -1532,8 +1621,12 @@ KT.screens.deals = (function () {
     const pl = e.target.closest('[data-plan]');
     if (pl && !pl.disabled) { changePlan(pl.dataset.plan); return; }
     const es = e.target.closest('[data-edsec]'); if (es) { startSection(es.dataset.edsec); return; }
+    /* CR-22 §3.6 — a tab · a word of "Missing: …" (its tab, its section open, the field focused — Assigned to opens its list) */
+    const tb = e.target.closest('[data-dmtab]'); if (tb) { if (dl.sec) { toast(C.common.blockWhileEditing); return; } chooseDealTab(tb.dataset.dmtab); renderPanel(); return; }
+    const ms = e.target.closest('[data-missing]'); if (ms) { goMissing(ms.dataset.missing); return; }
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const act = b.dataset.act, d = dl.draft;
+    if (act === 'useLastRate') { useLastRate(b.dataset.amount); return; }
     if (act === 'secCancel') cancelSection();
     else if (act === 'secSave') save();
     else if (act === 'move') openMove(dl.id);
@@ -1550,6 +1643,22 @@ KT.screens.deals = (function () {
       const cards = $('drawer_content').querySelectorAll('[data-pi]'); if (cards.length) cards[cards.length - 1].scrollIntoView({ block: 'nearest' });
     }
     else if (act === 'addAccount') KT.profile.open(d.kol_id, { edit: true, backDeal: dl.over ? null : d.deal_id });
+  }
+
+  const MISSING_AT = { pic: ['info', 'f_pic'], cta: ['info', 'f_cta'], pillar: ['info', 'f_pillar'], rate_card: ['costs', 'f_rate_card'], payment_term: ['payment', 'f_payment_term'] };
+  async function goMissing(k) {
+    const at = MISSING_AT[k]; if (!at) return;
+    chooseDealTab(SEC_TAB[at[0]]);
+    if (dl.sec !== at[0]) await startSection(at[0]); else renderPanel();
+    const el = $(at[1]); if (!el) return;
+    el.scrollIntoView({ block: 'center' }); el.focus();
+    if (el.tagName === 'SELECT' && typeof el.showPicker === 'function') { try { el.showPicker(); } catch (e) { /* not now */ } }
+  }
+  /* the last rate card into the Rate card box (the costs form open · else it opens) */
+  async function useLastRate(amount) {
+    if (dl.sec !== 'costs') { chooseDealTab('costs'); await startSection('costs'); }
+    const el = $('f_rate_card'); if (!el || el.disabled) return;
+    el.value = amount; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.focus();
   }
 
   /* ===================== CR-11 §4.3 — Deal drawer › + Add post: a modal (M) over the drawer, the deal fixed ===================== */

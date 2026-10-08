@@ -102,7 +102,7 @@ KT.ui = (function () {
     return `<span class="stage ${cls}" title="${tip}"><span class="dots">${dots.map(x => `<i class="${x.state}"></i>`).join('')}</span><span class="lbl">${esc(stageLabel(d))}${of ? ` <span class="muted">${esc(of)}</span>` : ''}</span></span>`;
   }
   /* Phase / Campaign status chip (CR-02 §4.8): On going blue · Not started grey outline · Complete pale green */
-  const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel', pending: 'apending', rejected: 'cancel' };   // CR-17: Pending approval (yellow) · Rejected
+  const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel', pending: 'apending', draft: 'adraft' };   // CR-17: Pending approval (yellow) · CR-21: Draft (grey)
   const phaseChip = st => `<span class="st ${PHASE_CLS[st] || ''}">${esc(C.phaseStatus[st] || st)}</span>`;
   /* Payment column (CR-02 §4.3): small grey term · coloured state; tooltip = the term's ticks with dates */
   const PAY_CLS = { paid: 'ok', deposit_paid: 'info', overdue: 'err', due: 'warn', not_due: 'muted', free: 'muted' };
@@ -214,6 +214,8 @@ KT.ui = (function () {
     download(name, '﻿' + R.toCSV(header, rows), 'text/csv;charset=utf-8');
     if (!quiet) toast(C.io.exported(name, rows.length));
   }
+  /* CR-21 §3.4 — before the first Submit / Create the full check is a grey hint (red only after it) */
+  const checksSoftHTML = (res, okText) => checksHTML({ errs: [], warns: res.warns || [], infos: (res.errs || []).map(x => ({ field: x.field, msg: x.msg })).concat(res.infos || []) }, okText);
   const checksHTML = (res, okText) => {
     /* one line per message (two fields can raise the same one) */
     const once = list => list.filter((x, i) => list.findIndex(y => y.msg === x.msg) === i);
@@ -473,14 +475,17 @@ KT.ui = (function () {
       today: today && today >= from && today <= to ? `<i class="gt-today" style="left:${pct(today)}%"></i>` : '' };
   }
   /* CR-17 — the dates of a Campaign that waits for approval: its own Phases (they wait too) */
-  const allDates = (s, cid) => { const ps = s.phases.filter(p => p.campaign_id === cid);
+  const allDates = (s, cid) => { const ps = s.phases.filter(p => p.campaign_id === cid && !R.isDraft(p));
     return [ps.map(p => p.start_date).filter(Boolean).sort()[0] || null, ps.map(p => p.end_date).filter(Boolean).sort().pop() || null]; };
+  /* o: { forDeal (a Campaign that waits is shown, not picked), year (CR-21 §3.2: only the Campaigns of that year — 'all' / none = every one) } ·
+     CR-21: a draft is never a choice (it is only on its maker's My requests) */
   function campaignOptionsHTML(selected, placeholder, o = {}) {
-    const s = state(), td = today();
-    return (placeholder != null ? `<option value="" data-special>${esc(placeholder)}</option>` : '') + R.sortCampaigns(s.campaigns, s.phases, td).map(c => {
+    const s = state(), td = today(), years = o.year && o.year !== 'all' ? R.yearCampaignIds(s, o.year) : null;
+    const list = s.campaigns.filter(c => !R.isDraft(c) && (!years || years.has(c.campaign_id) || c.campaign_id === selected));
+    return (placeholder != null ? `<option value="" data-special>${esc(placeholder)}</option>` : '') + R.sortCampaigns(list, s.phases, td).map(c => {
       const st = R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td) : R.campaignStatus(R.phasesOfCampaign(s, c.campaign_id), td), [a, z] = R.isApproved(c) ? R.scopeRange(s, { campaignId: c.campaign_id }) : allDates(s, c.campaign_id);
-      const chip = c.approval_status === 'rejected' ? 'rejected' : st, off = o.forDeal && !R.isApproved(c) && c.campaign_id !== selected;
-      return `<option value="${esc(c.campaign_id)}" data-st="${chip}" data-range="${esc(a ? `${dm(a)} – ${dm(z)}` : '')}"${st === 'cancelled' || c.approval_status === 'rejected' ? ' data-hide' : ''}` +
+      const chip = st, off = o.forDeal && !R.isApproved(c) && c.campaign_id !== selected;
+      return `<option value="${esc(c.campaign_id)}" data-st="${chip}" data-range="${esc(a ? `${dm(a)} – ${dm(z)}` : '')}"${st === 'cancelled' ? ' data-hide' : ''}` +
         `${off ? ` disabled data-off data-tip="${esc(C.approval.waiting)}"` : ''}${c.campaign_id === selected ? ' selected' : ''}>${esc(c.campaign_name)}</option>`;
     }).join('');
   }
@@ -671,6 +676,19 @@ KT.ui = (function () {
   /* wide: true = up to 1100px · 'mid' = up to 820px (CR-07: Add to campaign with its Price reference) */
   function openDialog(html, wide) { rescueToast(dlg); dlg.innerHTML = html; dlg.classList.toggle('wide', wide === true); dlg.classList.toggle('mid', wide === 'mid'); dlg.classList.toggle('xl', wide === 'xl'); if (!dlg.open) dlg.showModal(); }
   function closeDialog() { if (dlg.open) dlg.close(); }
+  /* CR-21 — a question with more than two answers (Save as draft? Save draft · Discard · Keep editing) · buttons [{ key, label, cls }] (the last = primary) →
+     the key of the one pressed (null when it is closed) */
+  function choiceDialog(title, body, buttons) {
+    return new Promise(resolve => {
+      openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b">${esc(body)}</div>
+        <div class="dlg-f">${buttons.map(b => `<button type="button" class="btn${b.cls ? ' ' + b.cls : ''}" data-r="${esc(b.key)}">${esc(b.label)}</button>`).join('')}</div>`);
+      const done = v => { dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); };
+      const onClose = () => done(null);
+      dlg.addEventListener('close', onClose);
+      dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r)));
+      const p = dlg.querySelector('.btn.primary'); if (p) p.focus();
+    });
+  }
   function confirmDialog(title, body, okLabel, danger, noLabel) {
     return new Promise(resolve => {
       openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b">${esc(body)}</div>
@@ -758,7 +776,8 @@ KT.ui = (function () {
   async function requestCloseModal() {
     if (!cm.open || cmAsking) return false;
     if (cmo && (cmo.isDirty ? cmo.isDirty() : cmo.typed)) {
-      cmAsking = true; const ok = await confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true, C.common.keepEditing); cmAsking = false;
+      /* CR-21 §3.4 — a modal may ask its own question (the Phase Planner: Save as draft?) · true = close it */
+      cmAsking = true; const ok = cmo.askClose ? await cmo.askClose() : await confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true, C.common.keepEditing); cmAsking = false;
       if (!ok) { focusFirstInModal(); return false; }
     }
     closeModal(); return true;
@@ -1154,13 +1173,13 @@ KT.ui = (function () {
   function linkParams(tab, q) { pending[tab] = Object.assign({}, pending[tab] || {}, { link: q || {} }); }
 
   const api = {
-    C, R, S, $, esc, today, store, state, pref, commit, toast, me, userId, filterChips, noMatchHTML, sizeDrawer, priceRefHTML, priceRefFree, priceRefSummary, costInput, journeyHTML, payTrackHTML, fitJourney, copyText, copyBtnHTML, actor, viewingAs, roleOverride, can, guard, picList, canSeeTab, toastAction, download, downloadCSV, checksHTML, kv, field, range, stChip, stageChip, stageText,
+    C, R, S, $, esc, today, store, state, pref, commit, toast, me, userId, filterChips, noMatchHTML, sizeDrawer, priceRefHTML, priceRefFree, priceRefSummary, costInput, journeyHTML, payTrackHTML, fitJourney, copyText, copyBtnHTML, actor, viewingAs, roleOverride, can, guard, picList, canSeeTab, toastAction, download, downloadCSV, checksHTML, checksSoftHTML, kv, field, range, stChip, stageChip, stageText,
     stageLabel, stageCell, planTip, PAY_CLS, payTicks, payCell, STATUS_CLS, PHASE_CLS, phaseChip,
     ganttAxis, pillarVar, pillarChipHTML, shortNum, bahtShort, dm, initials, avatarHTML, nameHTML, PHASE_RAMP, phaseColor, phaseColorAt, phaseVar, phaseVarAt, ppText, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
     dateHTML, setDate, setDateDisabled, parseDmy,
     multiSelect, msLabel, enhanceCombo, enhanceCombos, phaseOptionHTML, popForm, closePopForm, popFormError, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
     kolCreateHTML, kolCreateCheck, wireKolCreate, accountFieldsHTML, accountCheck, wireAccount,
-    dlg, openDialog, closeDialog, confirmDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
+    dlg, openDialog, closeDialog, confirmDialog, choiceDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
     renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams, linkParams,
     currentTab: () => null,          // set by app.js
     refresh: () => {},               // set by app.js: re-render the current tab

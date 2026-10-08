@@ -10,7 +10,7 @@ KT.screens.shipments = (function () {
   const U = KT.ui;
   const { C, R, $, esc, today, store, state, pref, commit, toast, userId, can, ICON, optionsHTML, checksHTML, go, setHash, takeParams, openDrawer, fillDrawer } = U;
   const SM = C.samples, SH = C.ship;
-  const sv = { tab: 'to-ship', f: { campaign: '', pic: 'all', purpose: '', q: '', status: '' }, showImported: false, sel: new Set(), rows: [], scope: [], pl: null, sh: null };
+  const sv = { tab: 'to-ship', f: { campaign: '', pic: 'all', purpose: '', method: '', q: '', status: '' }, showImported: false, sel: new Set(), rows: [], scope: [], pl: null, sh: null };
   const settings = () => R.sampleSettings(state().lookups);
   const actor = () => U.actor();
   const myPic = () => R.picName(actor()) || '';
@@ -29,6 +29,8 @@ KT.screens.shipments = (function () {
   const dm = x => R.dmy(x).slice(0, 5);
   const chip = st => KT.samples.chip(st);
   const purposeChip = p => `<span class="chip sh-purpose">${esc(SH.purposes[p] || p)}</span>`;
+  /* CR-22 §3.3 — the method of a shipment next to its purpose */
+  const methodChip = sh => `<span class="chip sh-method m-${esc(sh.method || 'warehouse')}">${esc(R.shipMethodLabel(state().lookups, sh.method || 'warehouse'))}</span>`;
   const itemsCell = sh => (sh.items && sh.items.length ? esc(R.itemsText(sh.items)) : ['to_ship', 'problem'].includes(sh.status) ? `<span class="chip warn-chip">${esc(SM.noProducts)}</span>` : '<span class="muted">—</span>');
   const dash = '<span class="muted">—</span>';
   const campPhase = r => { const s = state(), c = r.campaign_id ? R.campaignName(s, r.campaign_id) : '', idx = sv.idx, ph = r.deal && idx ? R.primaryPhase(idx, r.deal.deal_id) : null;
@@ -117,6 +119,7 @@ KT.screens.shipments = (function () {
         `<label class="tlab">${esc(SH.pic)} <select id="sh_pic">${picOpts}</select></label>` +
         (me ? `<button type="button" class="chipbtn${sv.f.pic === 'me' ? ' on' : ''}" data-shmine aria-pressed="${sv.f.pic === 'me'}">${esc(SH.mine)}</button>` : '') +
         `<label class="tlab">${esc(SH.purpose)} <select id="sh_purpose">${optionsHTML(R.PURPOSES.map(k => ({ value: k, label: SH.purposes[k] })), sv.f.purpose, SH.allPurposes)}</select></label>` +
+        `<label class="tlab">${esc(C.samples.colMethod)} <select id="sh_method">${optionsHTML(R.SHIP_METHODS.map(k => ({ value: k, label: R.shipMethodLabel(state().lookups, k) })), sv.f.method, C.samples.allMethods)}</select></label>` +
         `<input type="search" class="search" id="sh_q" placeholder="${esc(SH.search)}" value="${esc(sv.f.q)}" autocomplete="off">` +
         (stOpts.length ? `<details class="menu" id="sh_fmenu"><summary class="btn">${ICON.filter} ${esc(SH.filters)}${sv.f.status ? ' <span class="badge">· 1</span>' : ''}</summary><div class="popover"><div class="field"><label for="sh_status">${esc(SH.status)}</label><select id="sh_status">${optionsHTML(stOpts, sv.f.status, C.deal.any)}</select></div></div></details>` : '') +
         `<span class="spacer"></span>${pickMenuHTML(s)}<details class="menu"><summary class="btn small">${ICON.download}<span>${esc(SH.exportList)}</span></summary><div class="menu-list right"><button type="button" class="mi" data-shdl="xlsx">${esc(C.overview.dlXlsx)}</button><button type="button" class="mi" data-shdl="csv">${esc(C.overview.dlCsv)}</button></div></details>`;
@@ -127,6 +130,7 @@ KT.screens.shipments = (function () {
     if (sv.f.campaign) chips.push(['campaign', `${SH.campaign}: ${R.campaignName(s, sv.f.campaign)}`]);
     if (sv.f.pic !== 'all') chips.push(['pic', `${SH.pic}: ${sv.f.pic === 'me' ? C.deal.picMe(myPic()) : sv.f.pic === '__none' ? SH.noPic : sv.f.pic}`]);
     if (sv.f.purpose) chips.push(['purpose', `${SH.purpose}: ${SH.purposes[sv.f.purpose]}`]);
+    if (sv.f.method) chips.push(['method', `${C.samples.colMethod}: ${R.shipMethodLabel(state().lookups, sv.f.method)}`]);
     if (sv.f.status) chips.push(['status', `${SH.status}: ${sv.f.status === 'noShipBy' ? SH.cards.noShipBy : SM.status[sv.f.status]}`]);
     const q = R.trim(sv.f.q);
     sv.used = chips.map(c => c[1]).concat(q ? [C.common.searchChip(q)] : []);
@@ -137,6 +141,7 @@ KT.screens.shipments = (function () {
     if (t.id === 'sh_camp') sv.f.campaign = t.value;
     else if (t.id === 'sh_pic') sv.f.pic = t.value;
     else if (t.id === 'sh_purpose') sv.f.purpose = t.value;
+    else if (t.id === 'sh_method') sv.f.method = t.value;
     else if (t.id === 'sh_status') sv.f.status = t.value;
     else return;
     sv.sel.clear(); $('sh_tools').dataset.built = ''; draw();
@@ -146,7 +151,7 @@ KT.screens.shipments = (function () {
     const d = e.target.closest('[data-shdl]'); if (d) { const m = d.closest('details'); if (m) m.open = false; exportList(d.dataset.shdl, sv.rows.map(r => r.sh), null); return; }
     const pl = e.target.closest('[data-shpl]'); if (pl) { const m = pl.closest('details'); if (m) m.open = false; openPickList(pl.dataset.shpl); }
   }
-  function clearAll() { sv.f = { campaign: '', pic: 'all', purpose: '', q: '', status: '' }; sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); }
+  function clearAll() { sv.f = { campaign: '', pic: 'all', purpose: '', method: '', q: '', status: '' }; sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); }
 
   /* ---------- queue cards (To ship) ---------- */
   function drawCards(scope) {
@@ -196,7 +201,11 @@ KT.screens.shipments = (function () {
       if (r.deal) items.push(`<button type="button" class="mi" data-shdeal="${esc(r.deal.deal_id)}">${esc(SH.openDeal)}</button>`);
       return items.length ? `<details class="menu sh-menu"><summary class="icon-btn" aria-label="${esc(SH.menu)}" title="${esc(SH.menu)}">⋯</summary><div class="menu-list right">${items.join('')}</div></details>` : '';
     }
-    if (['overdue', 'this_week', 'to_ship', 'problem'].includes(st)) {
+    if (st === 'kol_purchase' || st === 'purchased') {   // CR-22: KOL buys own — nothing is sent
+      if (work && st === 'kol_purchase') items.push(`<button type="button" class="mi" data-smpurchase="${esc(sh.shipment_id)}">${esc(SM.markPurchased)}</button>`);
+      if (work && st === 'purchased') items.push(`<button type="button" class="mi" data-smunpurchase="${esc(sh.shipment_id)}">${esc(SM.unmarkPurchased)}</button>`);
+      if (edit && st === 'kol_purchase') items.push(it('items', SM.editItems), it('not_required', SM.notRequired));
+    } else if (['overdue', 'this_week', 'to_ship', 'problem'].includes(st)) {
       if (work) items.push(it('shipped', SM.markShipped));
       if (work && st !== 'problem') items.push(it('problem', SM.reportProblem));
       if (edit) items.push(it('ship_by', SM.setShipBy), it('items', SM.editItems), it('not_required', SM.notRequired));
@@ -225,18 +234,18 @@ KT.screens.shipments = (function () {
     if (sv.tab === 'to-ship') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipBy)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.address)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th>${plCol ? `<th>${esc(T.pickList)}</th>` : ''}<th></th>`;
       span = (pick ? 11 : 10) - (plCol ? 0 : 1);
-      row = r => `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.ship_by))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
+      row = r => `<tr class="click${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.ship_by))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
         `<td>${chip(r.status)}${r.status === 'problem' && r.sh.problem_reason ? ` <span class="muted small">${esc(r.sh.problem_reason)}</span>` : ''}</td>${pl(r)}<td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     } else if (sv.tab === 'in-transit') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipped)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th class="num">${esc(T.days)}</th><th>${esc(T.pic)}</th><th></th>`;
       span = pick ? 11 : 10;
       row = r => { const n = R.daysInTransit(r.sh, td), slow = n != null && n > R.TRANSIT_SLOW;
-        return `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.shipped_date))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
+        return `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.shipped_date))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
           `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td><td class="num">${n == null ? dash : `<span class="${slow ? 'sh-slow' : ''}"${slow ? ` title="${esc(SH.slowTip(R.TRANSIT_SLOW))}"` : ''}>${esc(SH.daysN(n))}</span>`}</td><td>${r.pic ? esc(r.pic) : dash}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`; };
     } else {
       head = `<th>${esc(T.delivered)}</th><th class="stk at0">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th>${esc(T.shipped)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th><th></th>`;
       span = 11;
-      row = r => `<tr class="click${old(r) ? ' sm-legacy' : ''}" data-shrow="${esc(r.sh.shipment_id)}"${tip(r)}>${tdv(d(r.sh.delivered_date))}${kolCell(r).replace(' at0', ' at0')}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
+      row = r => `<tr class="click${old(r) ? ' sm-legacy' : ''}${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}"${tip(r)}>${tdv(d(r.sh.delivered_date))}${kolCell(r).replace(' at0', ' at0')}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
         `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td>${tdv(d(r.sh.shipped_date))}<td>${r.pic ? esc(r.pic) : dash}</td><td>${chip(r.status)}${r.status === 'not_required' && r.sh.not_required_reason ? ` <span class="muted small">${esc(r.sh.not_required_reason)}</span>` : ''}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     }
     let body;

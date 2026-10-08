@@ -9,13 +9,17 @@
    CR-17 v1.2 — a third page tab Approvals n (managers) / My requests n (Staff) = KT.approvals (#campaigns/approvals) · Status tabs in the order
    On going · Not started · Pending approval · On hold · Complete · Rejected · Cancelled (the empty ones hidden) · a waiting one says how soon it starts.
    CR-18 — Budget: "+฿x pending" next to a budget that waits · row ⋯ › Adjust budget · the drawer's Budget section (Adjust budget · Budget history) ·
-   an approved Campaign's budget is changed only with Adjust budget. → KT.screens.campaign */
+   an approved Campaign's budget is changed only with Adjust budget.
+   CR-21 — Collapse all / Expand all + Sort (Status · Start date) on the Table and the Timeline, each remembered per person (a folded Timeline row keeps the
+   Campaign bar with a thin line where each Phase starts and "n phases") · drafts are not listed (they are on My requests) · Edit (drawer · row ⋯) =
+   the Phase Planner (the side edit form and Plan phases are gone) · the drawer of a request that waits: Pending approval · Submitted by … · Round n with
+   Review request (a manager) / Withdraw to draft (the one who sent it) · no CTA / Default payment term in Details. → KT.screens.campaign */
 KT.screens.campaign = (function () {
   'use strict';
   const U = KT.ui;
   const { C, R, $, esc, today, store, state, commit, toast, toastAction, checksHTML, kv, field, range, dm, stChip, phaseChip, info, ICON, dateHTML, confirmDialog, openDialog, closeDialog, openDrawer, fillDrawer, setHash, go, can, guard, userId, optionsHTML, activeList } = U;
   const K = C.campaign;
-  const cp = { mode: 'none', kind: null, id: null, draft: null, touched: new Set(), dirty: false, collapsed: new Set(),
+  const cp = { mode: 'none', kind: null, id: null, draft: null, touched: new Set(), dirty: false, prefUser: null, coll: { table: new Set(), timeline: new Set() }, sorts: { table: 'status', timeline: 'status' },
     year: null, status: '', q: '', view: U.pref.get('cpview', 'table') === 'timeline' ? 'timeline' : 'table', zoom: 'month', includeCancelled: false, sortDays: null, prodEdit: null,
     camps: null, campsUser: null };   // CR-10 §4.9: the Campaigns picked (empty = All campaigns), kept for each person
   /* CR-10 §4.9 — the Campaign filter, remembered per person */
@@ -29,7 +33,25 @@ KT.screens.campaign = (function () {
     const was = camps().size; cp.camps = new Set(ids); U.pref.set('cpcamps_' + (U.userId() || ''), JSON.stringify([...cp.camps]));
     if (!was && cp.camps.size) cp.zoom = 'fit'; else if (was && !cp.camps.size && cp.zoom === 'fit') cp.zoom = 'month';   // picking Campaigns zooms to Fit
   }
-  const editing = () => cp.mode === 'edit';
+  /* CR-21 §3.1 — Sort and the folded rows of the Table and of the Timeline, kept apart, for each person (campaignTable.sort / .collapsed · campaignTimeline.…) */
+  const PREF_OF = { table: 'campaignTable', timeline: 'campaignTimeline' };
+  function prefs() {
+    const uid = U.userId() || '';
+    if (cp.prefUser !== uid) {
+      cp.prefUser = uid;
+      ['table', 'timeline'].forEach(v => {
+        let list = []; try { list = JSON.parse(U.pref.get(`${PREF_OF[v]}.collapsed.${uid}`, '[]')); } catch (e) { list = []; }
+        cp.coll[v] = new Set(Array.isArray(list) ? list : []);
+        const so = U.pref.get(`${PREF_OF[v]}.sort.${uid}`, 'status'); cp.sorts[v] = R.SORT_MODES.includes(so) ? so : 'status';
+      });
+    }
+    return cp;
+  }
+  const viewKey = () => (cp.view === 'timeline' ? 'timeline' : 'table');
+  const coll = () => prefs().coll[viewKey()];
+  const saveColl = () => U.pref.set(`${PREF_OF[viewKey()]}.collapsed.${U.userId() || ''}`, JSON.stringify([...coll()]));
+  const sortNow = () => prefs().sorts[viewKey()];
+  const editing = () => false;   // CR-21 §3.7: a Campaign is edited in the Phase Planner (no form in the drawer)
   const campById = id => state().campaigns.find(c => c.campaign_id === id);
   const phaseById = id => state().phases.find(p => p.phase_id === id);
   const phasesOf = cid => R.sortPhases(state().phases.filter(p => p.campaign_id === cid));
@@ -40,7 +62,7 @@ KT.screens.campaign = (function () {
     if (!sec.dataset.built) build(sec);
     $('cp_new').classList.toggle('hidden', !can('campaign.draft'));   // CR-17: Staff too (it waits for approval)
     const p = U.takeParams('campaign');
-    if ((p && p.approvals) || id === 'approvals') { cp.view = 'approvals'; KT.approvals.state.state = 'pending'; if (id === 'approvals') id = null; }   // CR-17 v1.2: Operations › Approvals · the badge · #campaigns/approvals
+    if ((p && p.approvals) || id === 'approvals') { cp.view = 'approvals'; KT.approvals.state.state = null; if (id === 'approvals') id = null; }   // CR-17 v1.2: Operations › Approvals · the badge · #campaigns/approvals
     if (cp.view === 'approvals' && !KT.approvals.tabLabel()) cp.view = 'table';
     /* the menu (#campaigns with nothing after it) goes back to the Table / Timeline — a redraw on #campaigns/approvals stays */
     if (cp.view === 'approvals' && !id && !(p && p.approvals) && !/\/approvals$/.test(location.hash)) cp.view = U.pref.get('cpview', 'table') === 'timeline' ? 'timeline' : 'table';
@@ -64,12 +86,17 @@ KT.screens.campaign = (function () {
         <input type="search" class="search" id="cp_q" placeholder="${esc(K.search)}" autocomplete="off">
         <label class="tick small"><input type="checkbox" id="cp_inclCancel"> ${esc(K.includeCancelled)}</label>
         <span class="spacer"></span>
+        <span class="cp-sortbox" id="cp_tlTools"></span>
         <div class="seg hidden" id="cp_zoom" role="group" aria-label="${esc(K.zoom)}"><button type="button" data-zoom="month">${esc(K.zoomMonth)}</button><button type="button" data-zoom="quarter">${esc(K.zoomQuarter)}</button><button type="button" data-zoom="fit" title="${esc(K.zoomFitTip)}">${esc(K.zoomFit)}</button></div>
         <button type="button" class="btn small hidden" id="cp_today">${esc(K.today)}</button>
       </div>
       <div class="fchips hidden" id="cp_chips"></div>
-      <div class="stabs" id="cp_tabs" role="tablist"></div>
+      <div class="cp-tabsrow" id="cp_tabsrow"><div class="stabs" id="cp_tabs" role="tablist"></div><span class="spacer"></span><span class="cp-sortbox" id="cp_tblTools"></span></div>
       <div id="cp_body"></div>`;
+    /* CR-21 §3.1 — Sort · Collapse all / Expand all (the Table: right of the status tabs · the Timeline: with Month / Quarter / Fit / Today) */
+    sec.addEventListener('change', e => { const t = e.target.closest('[data-cpsort]'); if (!t) return; prefs().sorts[viewKey()] = t.value; U.pref.set(`${PREF_OF[viewKey()]}.sort.${U.userId() || ''}`, t.value); renderTable(); });
+    sec.addEventListener('click', e => { const b = e.target.closest('[data-collapseall]'); if (!b) return; const set = coll(), ids = (b.dataset.ids || '').split('|').filter(Boolean);
+      if (b.dataset.collapseall === 'collapse') ids.forEach(id => set.add(id)); else ids.forEach(id => set.delete(id)); saveColl(); renderTable(); });
     $('cp_newMenu').addEventListener('click', e => {
       const b = e.target.closest('[data-new]'); if (!b) return; b.closest('details').open = false;
       const opener = b.closest('details').querySelector('summary');
@@ -96,11 +123,12 @@ KT.screens.campaign = (function () {
       if (e.target.closest('button.info')) return;
       /* CR-18 §4.3 — the row ⋯ (Adjust budget) does not open the row */
       const adj = e.target.closest('[data-adjust]'); if (adj) { const m = adj.closest('details'); if (m) m.open = false; KT.budget.open(adj.dataset.adjust, { opener: adj.closest('details').querySelector('summary'), onDone: () => { renderTable(); if (cp.mode === 'view') renderPanel(); } }); return; }
+      const ed = e.target.closest('[data-editcamp]'); if (ed) { const m = ed.closest('details'); if (m) m.open = false; KT.planner.open({ campaignId: ed.dataset.editcamp, opener: ed.closest('details').querySelector('summary') }); return; }   // CR-21 §3.7
       if (e.target.closest('details.rowmenu')) return;
       const ep = e.target.closest('[data-editprod]'); if (ep) { if (editing()) { toast(C.common.blockWhileEditing); return; } Object.assign(cp, { mode: 'view', kind: 'campaign', id: ep.dataset.editprod }); startProducts(); return; }
       const sd = e.target.closest('[data-sortdays]'); if (sd) { cp.sortDays = cp.sortDays === 'asc' ? 'desc' : cp.sortDays === 'desc' ? null : 'asc'; renderTable(); return; }
       const ch = e.target.closest('[data-toggle]');
-      if (ch) { const c = ch.dataset.toggle; cp.collapsed.has(c) ? cp.collapsed.delete(c) : cp.collapsed.add(c); renderTable(); return; }
+      if (ch) { const c = ch.dataset.toggle, set = coll(); set.has(c) ? set.delete(c) : set.add(c); saveColl(); renderTable(); return; }
       if (e.target.closest('[data-clear]')) { cp.q = ''; cp.status = ''; $('cp_q').value = ''; setCamps([]); renderTable(); return; }
       if (e.target.closest('[data-clearsearch]')) { cp.q = ''; $('cp_q').value = ''; renderTable(); $('cp_q').focus(); return; }   // CR-14 §4.3
       const gd = e.target.closest('[data-godeals]'); if (gd) { const [campaign, phaseSel] = gd.dataset.godeals.split('|'); go('deals', { filter: { campaign, phaseSel } }); return; }
@@ -127,30 +155,34 @@ KT.screens.campaign = (function () {
   const overlaps = (p, y) => !!p.start_date && !!p.end_date && p.start_date <= `${y}-12-31` && p.end_date >= `${y}-01-01`;
   function yearsOf(s) {
     const ys = new Set([today().slice(0, 4)]);
-    s.phases.forEach(p => { if (p.start_date && p.end_date) for (let y = +p.start_date.slice(0, 4); y <= +p.end_date.slice(0, 4); y++) ys.add(String(y)); });
+    s.phases.forEach(p => { if (p.start_date && p.end_date && !R.isDraft(p)) for (let y = +p.start_date.slice(0, 4); y <= +p.end_date.slice(0, 4); y++) ys.add(String(y)); });
     return [...ys].sort();
   }
   /* Campaigns in §4.7 order (On going → Not started → On hold → Complete → Cancelled) with the Phases to show, after the Campaign filter, Year and
      Search (CR-14 §4.3 R.filterCampaignTree: a Campaign name → all its Phases · Phase names only → the Campaign + those Phases, shown open) */
   function listed(s, td, all) {
     const picked = camps();
-    const tree = R.sortCampaigns(s.campaigns, s.phases, td).filter(c => all || !picked.size || picked.has(c.campaign_id)).map(c => {
-      const every = phasesOf(c.campaign_id), inYear = cp.year === 'all' ? every : every.filter(p => overlaps(p, cp.year));
+    /* CR-21 — a draft (a Campaign, or a Phase of an approved one) is not listed: it is on its maker's My requests */
+    const tree = R.sortCampaigns(s.campaigns.filter(c => !R.isDraft(c)), s.phases, td).filter(c => all || !picked.size || picked.has(c.campaign_id)).map(c => {
+      const every = phasesOf(c.campaign_id).filter(p => !R.isDraft(p)), inYear = cp.year === 'all' ? every : every.filter(p => overlaps(p, cp.year));
       if (every.length && !inYear.length) return null;
       return { c, name: c.campaign_name, phases: inYear.map(p => ({ p, name: R.phaseName(s, p.phase_id) })), status: R.campaignEffectiveStatus(c, every, td) };
     }).filter(Boolean);
     const whole = new Map(tree.map(x => [x.c.campaign_id, x.phases.map(y => y.p)]));
     return R.filterCampaignTree(tree, cp.q).map(x => ({ c: x.c, phases: x.phases.map(y => y.p), every: whole.get(x.c.campaign_id), status: x.status, match: x.match }));
   }
-  /* CR-17 — something of this approved Campaign waits for a manager (new Phases · asked changes) */
+  /* CR-17 — something of this approved Campaign waits for a manager (new Phases · asked changes — pending ones) */
   const waits = c => { const x = R.pendingOf(state(), c.campaign_id); return !!x && x.status !== 'pending' && (x.changes.length > 0 || x.newPhases.length > 0); };
   /* CR-17 v1.2 — under a Pending approval chip: Starts 01/11 · Starts today · Started 7 days ago */
   const timingLine = start => { const t = R.startTiming(start, today()); if (!t) return '';
     return `<div class="sttime">${esc(t.kind === 'in' ? C.approval.startsOn(dm(start)) : t.kind === 'today' ? C.approval.startsToday : C.approval.startedAgo(t.days))}</div>`; };
   const baseHash = () => (cp.view === 'approvals' ? 'campaign/approvals' : 'campaign');
-  /* CR-18 §4.3 — the row ⋯ of a Campaign: Adjust budget (approved · not cancelled · for those who may) */
-  const rowMenuHTML = (c, status) => (KT.budget.canAdjust() && R.isApproved(c) && status !== 'cancelled' ? `<details class="menu rowmenu"><summary class="icon-btn" aria-label="${esc(K.rowMenu(c.campaign_name))}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">` +
-    `<button type="button" class="mi" data-adjust="${esc(c.campaign_id)}">${esc(K.adjustBudget)}</button></div></details>` : '');
+  /* CR-18 §4.3 — the row ⋯ of a Campaign: Adjust budget (approved · not cancelled · for those who may) · CR-21 §3.7: Edit (the Phase Planner) */
+  function rowMenuHTML(c, status) {
+    const items = (can('campaign.draft') ? `<button type="button" class="mi" data-editcamp="${esc(c.campaign_id)}">${esc(K.editIt)}</button>` : '') +
+      (KT.budget.canAdjust() && R.isApproved(c) && status !== 'cancelled' ? `<button type="button" class="mi" data-adjust="${esc(c.campaign_id)}">${esc(K.adjustBudget)}</button>` : '');
+    return items ? `<details class="menu rowmenu"><summary class="icon-btn" aria-label="${esc(K.rowMenu(c.campaign_name))}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">${items}</div></details>` : '';
+  }
   /* the search found in a name, marked */
   const hl = t => R.highlightParts(t, cp.q).map(x => (x.hit ? `<mark>${esc(x.t)}</mark>` : esc(x.t))).join('');
 
@@ -180,7 +212,7 @@ KT.screens.campaign = (function () {
       (apTab ? `<button type="button" role="tab" data-view="approvals" class="${cp.view === 'approvals' ? 'on' : ''}" aria-selected="${cp.view === 'approvals'}">${esc(apTab.text)}${apTab.n ? `<span class="n">${R.fmtNum(apTab.n)}</span>` : ''}</button>` : '');
     /* CR-17 v1.2 — the Approvals page: its own tools, the table's filters hidden */
     const isAp = cp.view === 'approvals';
-    ['cp_toolbar', 'cp_tabs'].forEach(k => $(k).classList.toggle('hidden', isAp)); if (isAp) $('cp_chips').classList.add('hidden');
+    ['cp_toolbar', 'cp_tabsrow'].forEach(k => $(k).classList.toggle('hidden', isAp)); if (isAp) $('cp_chips').classList.add('hidden');
     if (isAp) { if (cp.mode === 'none') setHash('campaign/approvals'); KT.approvals.render($('cp_body'), { open: (kind, rid) => select(kind, rid), after: () => renderTable() }); return; }
     const tl = cp.view === 'timeline';
     $('cp_zoom').classList.toggle('hidden', !tl); $('cp_today').classList.toggle('hidden', !tl);
@@ -193,11 +225,15 @@ KT.screens.campaign = (function () {
     $('cp_tabs').innerHTML = [['', K.all]].concat(R.CAMPAIGN_STATUSES.map(k => [k, C.phaseStatus[k]])).filter(([k]) => !k || counts[k] || cp.status === k)
       .map(([k, l]) => `<button type="button" role="tab" data-st="${k}" class="${cp.status === k ? 'on' : ''}">${esc(l)}<span class="n">${R.fmtNum(counts[k] || 0)}</span></button>`).join('');
     let items = cp.status ? all.filter(x => x.status === cp.status) : all;
+    /* CR-21 §3.1 — Sort (after the filters): the Campaigns only, their Phases keep their order */
+    const order = R.sortCampaigns(items.map(x => x.c), s.phases, td, sortNow()).map(c => c.campaign_id);
+    items = items.slice().sort((a, b) => order.indexOf(a.c.campaign_id) - order.indexOf(b.c.campaign_id));
+    sortTools(items);
     /* Days left sorts the Campaigns (On going fewest days first) — their Phases stay under them */
     if (cp.sortDays) { const k = cp.sortDays === 'desc' ? -1 : 1, rk = x => R.daysLeftRank(R.daysLeft(R.campaignItem(s, x.c, td), td)); items = items.slice().sort((a, b) => k * ((rk(a)[0] - rk(b)[0]) || (rk(a)[1] - rk(b)[1]))); }
     if (!items.length) {
       const q = R.trim(cp.q);
-      $('cp_body').innerHTML = !s.campaigns.length ? `<div class="card empty"><b>${esc(K.noCampaign)}</b></div>`
+      $('cp_body').innerHTML = !s.campaigns.some(c => !R.isDraft(c)) ? `<div class="card empty"><b>${esc(K.noCampaign)}</b></div>`
         : q && !all.length ? `<div class="card empty"><b>${esc(K.noSearchMatch(q))}</b><button type="button" class="btn" data-clearsearch>${esc(K.clearSearch)}</button></div>`
         : `<div class="card empty"><b>${esc(K.noMatch)}</b><button type="button" class="btn" data-clear>${esc(K.clearFilters)}</button></div>`;
       return;
@@ -205,11 +241,19 @@ KT.screens.campaign = (function () {
     if (tl) renderTimeline(s, items, td); else renderGrid(s, items, td);
     markSelected();
   }
+  /* CR-21 §3.1 — Sort ▾ · Collapse all ↔ Expand all (one row open = Collapse all) for the Campaigns shown */
+  function sortTools(items) {
+    const so = sortNow(), set = coll(), ids = items.map(x => x.c.campaign_id), anyOpen = ids.some(id => !set.has(id));
+    const html = `<label class="tlab cp-sort"><span class="tl">${esc(K.sortL)}</span> <select data-cpsort aria-label="${esc(K.sortL)}">${R.SORT_MODES.map(m => `<option value="${m}"${m === so ? ' selected' : ''}>${esc(K.sorts[m])}</option>`).join('')}</select></label>` +
+      `<button type="button" class="btn small" data-collapseall="${anyOpen ? 'collapse' : 'expand'}" data-ids="${esc(ids.join('|'))}"${ids.length ? '' : ' disabled'}>${esc(anyOpen ? K.collapseAll : K.expandAll)}</button>`;
+    const tl = cp.view === 'timeline';
+    $('cp_tlTools').innerHTML = tl ? html : ''; $('cp_tblTools').innerHTML = tl ? '' : html;
+  }
   /* CR-10 §4.9 · CR-14 §4.2 — the Campaign filter (ui.multiSelect): the Campaigns of the Year (cancelled ones only with Include cancelled) and the ones
      picked, searchable, a status chip each · Table and Timeline share it */
   function campMenu(s, td) {
     const picked = camps();
-    const opts = R.sortCampaigns(s.campaigns, s.phases, td).map(c => ({ c, st: R.campaignEffectiveStatus(c, phasesOf(c.campaign_id), td) }))
+    const opts = R.sortCampaigns(s.campaigns.filter(c => !R.isDraft(c)), s.phases, td).map(c => ({ c, st: R.campaignEffectiveStatus(c, phasesOf(c.campaign_id), td) }))
       .filter(x => picked.has(x.c.campaign_id) || ((cp.includeCancelled || x.st !== 'cancelled') && (cp.year === 'all' || !phasesOf(x.c.campaign_id).length || phasesOf(x.c.campaign_id).some(p => overlaps(p, cp.year)))));
     const options = opts.map(x => ({ value: x.c.campaign_id, label: x.c.campaign_name, chip: chip(x.st) })), value = options.map(o => o.value).filter(v => picked.has(v));
     $('cp_cms').innerHTML = U.multiSelect({ id: 'cp_camps', options, value, label: U.msLabel(value, options, K.allCampaigns), aria: K.campFilter, searchable: true,
@@ -220,9 +264,9 @@ KT.screens.campaign = (function () {
   /* a Phase's committed against its budget, in the Campaign drawer */
   const usageHTML = (budget, committed) => (budget == null ? `<span class="muted">${esc(K.noBudget)}</span>` : usedHTML(R.moneyOf(budget, committed, 0, 0)));
   function renderGrid(s, items, td) {
-    const rows = [], tot = [], idx = R.phaseIndex(s), act = KT.budget.canAdjust(), actTd = act ? '<td class="act"></td>' : '';
+    const rows = [], tot = [], idx = R.phaseIndex(s), act = KT.budget.canAdjust() || can('campaign.draft'), actTd = act ? '<td class="act"></td>' : '';
     items.forEach(({ c, phases, every, status, match }) => {
-      const open = !cp.collapsed.has(c.campaign_id) || match === 'phase', m = R.campaignMoney(s, c.campaign_id, idx), cs = R.campaignSummary(s, c.campaign_id, idx);
+      const open = !coll().has(c.campaign_id) || match === 'phase', m = R.campaignMoney(s, c.campaign_id, idx), cs = R.campaignSummary(s, c.campaign_id, idx);
       if (cp.includeCancelled || status !== 'cancelled') tot.push(m);
       const held = status === 'on_hold' || status === 'cancelled';
       /* Allocated vs the Campaign budget (CR-03 §4.3): a chip under the budget, never a block */
@@ -232,7 +276,7 @@ KT.screens.campaign = (function () {
       const budgetCell = m.budget == null ? `<span class="muted">${esc(K.noBudget)}</span>${pend}` : `<div class="cell2 r" title="${esc(K.allocatedOf(R.baht(al.allocated || 0), R.baht(m.budget)))}"><span>${R.baht(m.budget)}</span>${pend ? `<span>${pend}</span>` : ''}${alChip}</div>`;
       const start = every.map(p => p.start_date).filter(Boolean).sort()[0] || null, end = every.map(p => p.end_date).filter(Boolean).sort().pop() || null;   // the whole Campaign (CR-14 §4.3)
       rows.push(`<tr class="click grp${status === 'cancelled' ? ' cancelled' : ''}" tabindex="0" data-kind="campaign" data-id="${esc(c.campaign_id)}"><td class="nm"><div class="nmw"><button type="button" class="chevbtn${open ? ' open' : ''}" data-toggle="${esc(c.campaign_id)}" aria-label="${esc(open ? K.collapse : K.expand)}" aria-expanded="${open}">${ICON.chevron}</button>` +
-        `<b>${hl(c.campaign_name)}</b>${c.cta ? ` <span class="ctachip" title="${esc(K.ctaTip)}">${esc(c.cta)}</span>` : ''}${status !== 'pending' && waits(c) ? ` <span class="st apending ap-chg" title="${esc(C.approval.changePendingTip)}">${esc(C.approval.changePending)}</span>` : ''}${status !== 'cancelled' && !R.campaignProductCodes(s, c.campaign_id).length ? (can('campaign.products') ? ` <button type="button" class="nopchip" data-editprod="${esc(c.campaign_id)}" title="${esc(K.addProductsTip)}">${esc(C.products.noProductsChip)}</button>` : ` <span class="nopchip" title="${esc(C.products.noProductsTip)}">${esc(C.products.noProductsChip)}</span>`) : ''}</div></td><td title="${esc(c.status_reason || '')}">${chip(status)}${status === 'pending' && start ? timingLine(start) : ''}</td>` +
+        `<b>${hl(c.campaign_name)}</b>${!open && phases.length ? ` <span class="muted small nph">${esc(K.nPhases(phases.length))}</span>` : ''}${c.cta ? ` <span class="ctachip" title="${esc(K.ctaTip)}">${esc(c.cta)}</span>` : ''}${status !== 'pending' && waits(c) ? ` <span class="st apending ap-chg" title="${esc(C.approval.changePendingTip)}">${esc(C.approval.changePending)}</span>` : ''}${status !== 'cancelled' && !R.campaignProductCodes(s, c.campaign_id).length ? (can('campaign.products') ? ` <button type="button" class="nopchip" data-editprod="${esc(c.campaign_id)}" title="${esc(K.addProductsTip)}">${esc(C.products.noProductsChip)}</button>` : ` <span class="nopchip" title="${esc(C.products.noProductsTip)}">${esc(C.products.noProductsChip)}</span>`) : ''}</div></td><td title="${esc(c.status_reason || '')}">${chip(status)}${status === 'pending' && start ? timingLine(start) : ''}</td>` +
         `<td>${start ? period(start, end) : `<span class="muted">${esc(K.noPhase)}</span>`}</td><td class="num">${daysHTML(R.daysLeft(R.campaignItem(s, c, td), td))}</td><td class="num">${budgetCell}</td>` +
         `<td class="num"><span class="${m.remaining < 0 ? 'late' : ''}">${R.baht(m.committed)}</span></td><td>${usedHTML(m)}</td><td class="num">${remainingHTML(m)}</td><td class="num">${pendingHTML(m.pending)}</td><td class="num">${R.fmtNum(m.deals)}</td>${act ? `<td class="act">${rowMenuHTML(c, status)}</td>` : ''}</tr>`);
       if (!open) return;
@@ -269,8 +313,9 @@ KT.screens.campaign = (function () {
     const rows = [];
     items.forEach(({ c, phases, every, status, match }) => {
       const start = every.map(p => p.start_date).filter(Boolean).sort()[0] || null, end = every.map(p => p.end_date).filter(Boolean).sort().pop() || null;
-      rows.push({ kind: 'campaign', id: c.campaign_id, name: c.campaign_name, start, end, status, over: false, camp: c, campStatus: status, open: match === 'phase' });
-      if (cp.collapsed.has(c.campaign_id) && match !== 'phase') return;
+      const folded = coll().has(c.campaign_id) && match !== 'phase';
+      rows.push({ kind: 'campaign', id: c.campaign_id, name: c.campaign_name, start, end, status, over: false, camp: c, campStatus: status, open: match === 'phase', folded, phases });
+      if (folded) return;
       phases.forEach(p => { const y = R.phaseSummary(s, p.phase_id); rows.push({ kind: 'phase', id: p.phase_id, name: R.phaseName(s, p.phase_id), start: p.start_date, end: p.end_date, status: R.phaseStatus(p, td), over: y.over, campaign: c.campaign_id, campStatus: status, budget: y.budget, committed: y.committed }); });
     });
     const dated = rows.filter(r => r.start && r.end);
@@ -294,6 +339,9 @@ KT.screens.campaign = (function () {
     const showToday = td >= from && td <= to;
     const todayLine = showToday ? `<i class="gt-today" style="left:${pct(td)}%"></i>` : '';
     const when = b => (td < b.start ? K.startsIn(R.dayDiff(b.start, td)) : td > b.end ? K.ended : R.dayDiff(b.end, td) === 0 ? K.endsToday : K.daysLeft(R.dayDiff(b.end, td)));
+    /* CR-21 §3.1 — a folded Campaign: a thin line where each later Phase starts (as on the Dashboard timeline, CR-19) */
+    const phaseLines = r => (!r.folded ? '' : (r.phases || []).filter(p => p.start_date && p.start_date > r.start && p.start_date >= from && p.start_date <= to)
+      .map(p => `<i class="gt-ph" style="left:${pct(p.start_date)}%" title="${esc(C.overview.tlPhaseStart(R.phaseName(s, p.phase_id), R.dmy(p.start_date)))}"></i>`).join(''));
     const bar = r => {
       if (!r.start || !r.end || r.end < from || r.start > to) return '';
       const l = pct(r.start < from ? from : r.start), w = pct(R.addDays(r.end > to ? to : r.end, 1)) - l;
@@ -306,9 +354,10 @@ KT.screens.campaign = (function () {
       .filter(o => o.a === r.id || o.b === r.id).map(o => `<i class="ghatch" title="${esc(C.msg.phaseOverlap(R.phaseName(s, o.a), R.phaseName(s, o.b), dm(o.from), dm(o.to)))}" style="left:${pct(o.from)}%;width:${pct(R.addDays(o.to, 1)) - pct(o.from)}%"></i>`).join(''));
     $('cp_body').innerHTML = `<div class="tablewrap gantt-wrap" id="cp_tl"><table class="tbl gantt" id="cp_tbl"><thead><tr><th class="gn">${esc(K.colName)}</th><th class="gs">${esc(K.colStatus)}</th><th class="gtl" style="min-width:${minW}px"><div class="gt-head">${ticks}</div></th></tr></thead><tbody>` +
       rows.map(r => `<tr class="click ${r.kind === 'campaign' ? 'grp' : 'child'}" tabindex="0" data-kind="${r.kind}" data-id="${esc(r.id)}">` +
-        `<td class="gn">${r.kind === 'campaign' ? `<div class="nmw"><button type="button" class="chevbtn${cp.collapsed.has(r.id) && !r.open ? '' : ' open'}" data-toggle="${esc(r.id)}" aria-label="${esc(cp.collapsed.has(r.id) && !r.open ? K.expand : K.collapse)}">${ICON.chevron}</button><b>${hl(r.name)}</b></div>` : `<span class="pn">${hl(r.name)}</span>`}</td>` +
+        `<td class="gn">${r.kind === 'campaign' ? `<div class="nmw"><button type="button" class="chevbtn${r.folded ? '' : ' open'}" data-toggle="${esc(r.id)}" aria-label="${esc(r.folded ? K.expand : K.collapse)}" aria-expanded="${!r.folded}">${ICON.chevron}</button><b>${hl(r.name)}</b>` +
+          `${r.folded && r.phases.length ? ` <span class="muted small nph">${esc(K.nPhases(r.phases.length))}</span>` : ''}<span class="spacer"></span>${rowMenuHTML(r.camp, r.status)}</div>` : `<span class="pn">${hl(r.name)}</span>`}</td>` +
         `<td class="gs">${r.kind === 'phase' && (r.campStatus === 'on_hold' || r.campStatus === 'cancelled') ? chip(r.campStatus, true) : chip(r.status)}</td>` +
-        `<td class="gtl"><div class="gt-row">${grid.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${hatch(r)}</div></td></tr>`).join('') +
+        `<td class="gtl"><div class="gt-row">${grid.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${phaseLines(r)}${hatch(r)}</div></td></tr>`).join('') +
       `</tbody></table></div>` + legendHTML(rows, showToday, hatch);
     const pane = $('cp_tl'), head = pane.querySelector('th.gtl');
     pane.dataset.today = showToday ? String(head.offsetLeft + head.offsetWidth * pct(td) / 100) : '';
@@ -349,8 +398,7 @@ KT.screens.campaign = (function () {
     if (cp.mode === 'view') {
       const rec = cp.kind === 'campaign' ? campById(cp.id) : phaseById(cp.id); if (!rec) { U.closeDrawer(); return; }
       html = cp.kind === 'campaign' ? viewCampaignHTML(rec) : viewPhaseHTML(rec); setHash('campaign/' + cp.id);
-    } else if (editing()) { html = formCampaignHTML(); setHash('campaign/' + cp.id); }
-    else return;
+    } else return;
     if (U.drawerOwner() === owner) fillDrawer(html); else openDrawer(owner, html);
     $('drawer_content').onclick = panelClick;
     /* CR-11 §4.11 — the Phase's default pillar, set right here (Admin · KOL Manager) */
@@ -358,7 +406,6 @@ KT.screens.campaign = (function () {
       const s = state(), from = p.default_pillar || null; p.default_pillar = t.value || null;
       s.campaign_events.push({ event_id: store.newCampaignEventId(), campaign_id: p.campaign_id, type: 'default_pillar', from: { phase_id: p.phase_id, default_pillar: from }, to: { phase_id: p.phase_id, default_pillar: p.default_pillar }, changed_at: new Date().toISOString(), changed_by: userId(), note: null });
       commit(C.fill.pillarSaved(p.default_pillar || C.fill.none, R.phaseName(s, p.phase_id))); renderPanel(); };
-    if (editing()) wireForm();
     if (cp.prodEdit && cp.mode === 'view' && cp.kind === 'campaign') wireProducts();
     markSelected();
   }
@@ -373,11 +420,10 @@ KT.screens.campaign = (function () {
     return `<div class="dr-head"><div class="dr-title"><div class="t"><h2 title="${esc(c.campaign_name)}">${esc(c.campaign_name)}</h2><div class="dr-sub"><span>${esc(K.campaignTag)}</span>${phaseChip(st)}</div></div>
         <details class="menu"><summary class="icon-btn" title="${esc(C.app.more)}" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list right">${R.isApproved(c) ? statusItems : ''}
           <button type="button" class="mi danger" data-act="delete"${canDel && edit ? '' : ` disabled title="${esc(K.cannotDeleteCampaign(phases.length))}"`}>${esc(K.deleteCampaign)}</button></div></details>${closeBtn}</div>
-        ${draft ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="plan">${esc(C.planner.planPhases)}</button><button type="button" class="btn" data-act="addPhase">${esc(K.addPhase)}</button><button type="button" class="btn" data-act="edit">${esc(K.edit)}</button></div>` : ''}</div>
+        ${draft ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="edit">${esc(K.edit)}</button>${R.isDraft(c) ? '' : `<button type="button" class="btn" data-act="addPhase">${esc(K.addPhase)}</button>`}</div>` : ''}</div>
       <div class="dr-body">${approvalHTML(c)}
         ${c.status_override ? `<section class="sec"><div class="check ${c.status_override === 'cancelled' ? 'err' : 'warn'}">! <span>${esc(K.statusLine(C.phaseStatus[c.status_override], c.status_reason || '', c.status_changed_at ? R.dmy(R.dateOfTimestamp(c.status_changed_at)) : ''))}</span></div></section>` : ''}
         ${sec(K.secDetails, kv(K.fNote, c.note) + kv(K.colPeriod, pStart ? range(pStart, pEnd) : '') + `<div class="kv"><span>${esc(K.colBudget)}</span><b>${x.budget == null ? '—' : R.baht(x.budget)}${KT.budget.pendingTagHTML(c.campaign_id)}</b></div>` +
-          kv(K.fCta, c.cta) + kv(C.fill.defaultTerm, R.isTerm(c.default_payment_term) ? C.term[c.default_payment_term] : '') + applyTermBtn(c) +
           kv(K.allocated, x.allocated == null ? '' : R.baht(x.allocated)) + kv(K.colShortlist, R.baht(x.shortlist)) +
           kv(K.colCommitted, R.baht(x.committed), x.budget != null && x.committed > x.budget ? 'over' : '') + kv(K.colPaid, R.baht(x.paid)) + kv(K.colDeals, R.fmtNum(x.activeDeals)), lockedTag())}
         ${sec(K.secPhases(phases.length), phases.length ? phases.map(p => { const y = R.phaseSummary(s, p.phase_id);
@@ -388,12 +434,7 @@ KT.screens.campaign = (function () {
           `<div class="bh-l">${esc(C.budget.history)}</div>${KT.budget.historyHTML(c.campaign_id)}`)}
       </div>`;
   }
-  /* CR-11 §4.11 — Apply the Campaign's default term to its open deals without one · the Phase's default pillar to its deals without one */
-  function applyTermBtn(c) {
-    if (!can('campaign.edit') || !R.isTerm(c.default_payment_term)) return '';
-    const n = R.openDealsWithoutTerm(state(), c.campaign_id).length;
-    return n ? `<div class="fill-apply"><button type="button" class="btn small" data-act="applyTerm">${esc(C.fill.applyTerm(n))}</button></div>` : '';
-  }
+  /* CR-11 §4.11 — the Phase's default pillar to its deals without one (CR-21: the Campaign's default term is no longer shown) */
   function defaultPillarHTML(p) {
     const s = state(), v = p.default_pillar || '', n = v ? R.dealsWithoutPillar(s, p.phase_id).length : 0;
     if (!can('campaign.edit')) return kv(C.fill.defaultPillar, v);
@@ -467,14 +508,13 @@ KT.screens.campaign = (function () {
     return `<div class="dr-head"><div class="dr-title"><div class="t"><h2 title="${esc(pname)}">${esc(pname)}</h2><div class="dr-sub"><span>${esc(K.phaseTag)} · ${esc(c.campaign_name || '')}</span>${phaseChip(R.phaseStatus(p, today()))}</div></div>
         <details class="menu"><summary class="icon-btn" title="${esc(C.app.more)}" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list right">
           <button type="button" class="mi danger" data-act="delete"${canDel ? '' : ` disabled title="${esc(K.cannotDeletePhase(x.posts))}"`}>${esc(K.deletePhase)}</button></div></details>${closeBtn}</div>
-        ${can('campaign.draft') ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="plan">${esc(C.planner.planPhases)}</button>${canDel ? '' : `<span class="muted small">${esc(K.cannotDeletePhase(x.posts))}</span>`}</div>` : ''}</div>
+        ${can('campaign.draft') ? `<div class="dr-actions"><button type="button" class="btn primary" data-act="plan">${esc(K.edit)}</button>${canDel ? '' : `<span class="muted small">${esc(K.cannotDeletePhase(x.posts))}</span>`}</div>` : ''}</div>
       <div class="dr-body">${!R.isApproved(p) || p.pending_change ? approvalHTML(c) : ''}
         ${sec(K.secDetails, kv(K.fCampaign, c.campaign_name || '') + kv(K.colPeriod, `${range(p.start_date, p.end_date)} (${C.common.days(R.dayDiff(p.end_date, p.start_date) + 1)})`) + defaultPillarHTML(p))}
         ${sec(K.secBudget, budget)}
         ${sec(K.secDeals, `<div class="chips">${['List', 'Inprocess', 'Complete', 'Cancel'].map(k => stChip(k, x.counts[k] || 0)).join('')}</div>`)}
       </div>`;
   }
-  const targetText = c => { const t = R.pillarTargetOf(state(), c.campaign_id); return `${R.PILLARS.filter(p => t[R.PILLAR_KEY[p]] != null).map(p => t[R.PILLAR_KEY[p]]).join(' / ')}${c.pillar_target ? '' : ` (${K.targetDefault})`}`; };
   const fmtPct = v => `${Math.round(v * 10) / 10}%`;
   const pctText = (amount, campaignBudget) => { const pct = R.pctOfBudget(amount, campaignBudget); return pct == null ? R.baht(amount) : K.pctAndAmount(fmtPct(pct), R.baht(amount)); };
   /* ---------- edit (a Campaign's details; Phases are edited in the Phase Planner) ---------- */
@@ -487,109 +527,6 @@ KT.screens.campaign = (function () {
       foot: ['', U.cmButtons(C.planner.next, 'pc_ok', { attrs: ' disabled' })] });
     $('pc_camp').addEventListener('change', e => { id = e.target.value; $('pc_ok').disabled = !id; });
     $('pc_ok').addEventListener('click', () => { if (id) KT.planner.open({ campaignId: id, addRow: true, opener }); });
-  }
-  function startEdit() {
-    if (cp.kind !== 'campaign') { const p = phaseById(cp.id); if (p) KT.planner.open({ campaignId: p.campaign_id, focusPhase: p.phase_id }); return; }
-    const rec = campById(cp.id); if (!rec || !guard('campaign.draft')) return;
-    /* CR-17 — someone who asks for changes edits what was asked (else today's values) */
-    const pc = !R.canApprove(U.actor()) && rec.pending_change ? rec.pending_change.fields : {};
-    const draft = Object.assign({}, rec, pc.budget_kol !== undefined ? { budget_kol: pc.budget_kol } : {});
-    draft.budget_kol = draft.budget_kol == null ? '' : String(draft.budget_kol);
-    if (cp.kind === 'campaign') { draft.cta = rec.cta || ''; draft.default_payment_term = R.isTerm(rec.default_payment_term) ? rec.default_payment_term : ''; }
-    draft.products = R.campaignProductCodes(state(), rec.campaign_id);
-    Object.assign(cp, { mode: 'edit', draft, dirty: false, submitted: false }); cp.touched.clear();
-    renderPanel();
-  }
-  const lockedOf = code => (cp.draft && cp.draft.campaign_id ? R.productDealsInCampaign(state(), cp.draft.campaign_id, code).length : 0);
-  function cancelEdit() { if (cp.mode === 'new') { U.closeDrawer(); return; } Object.assign(cp, { mode: 'view', draft: null }); cp.touched.clear(); renderPanel(); }
-  const validate = () => {
-    const r = R.validateCampaign(state(), cp.draft);
-    const pr = R.checkCampaignProducts(state(), cp.draft.campaign_id, cp.draft.products || []);
-    r.errs.push(...pr.errs); r.warns.push(...pr.warns);
-    return r;
-  };
-  const foot = () => `<div class="dr-foot">${!R.canApprove(U.actor()) && cp.draft && R.isApproved(campById(cp.draft.campaign_id)) ? `<div class="hint">${esc(C.approval.askHint)}</div>` : ''}<div class="checks" id="cp_checks"></div><div class="btns"><button type="button" class="btn" data-act="cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-act="save">${esc(C.common.save)}</button></div></div>`;
-  function formCampaignHTML() {
-    const d = cp.draft, isNew = cp.mode === 'new';
-    return `<div class="dr-head"><div class="dr-title"><div class="t"><h2>${esc(isNew ? K.newCampaignTitle : K.editTitle(d.campaign_name || ''))}</h2></div>${closeBtn}</div></div>
-      <div class="dr-body">${sec(K.secDetails, `<div class="fields one">
-        ${field('campaign_name', K.fName, `<input id="f_campaign_name" data-f="campaign_name" value="${esc(d.campaign_name)}" placeholder="${esc(K.namePh)}" autocomplete="off">`, { req: 1 })}
-        ${field('note', K.fNote, `<input id="f_note" data-f="note" value="${esc(d.note || '')}" autocomplete="off">`)}
-        ${R.isApproved(campById(d.campaign_id)) ? `<div class="field"><label>${esc(K.fCampaignBudget)}</label><div class="ro-budget"><b>${R.isBlank(d.budget_kol) ? '—' : R.baht(Number(d.budget_kol))}</b>${KT.budget.pendingTagHTML(d.campaign_id)}` +
-          `${KT.budget.canAdjust() ? ` <button type="button" class="btn small" data-act="adjust">${esc(K.adjustBudget)}</button>` : ''}</div><div class="hint">${esc(C.budget.readOnlyHint)}</div></div>`
-          : field('budget_kol', K.fCampaignBudget, `<input type="number" min="0" step="1" inputmode="numeric" id="f_budget_kol" data-f="budget_kol" value="${esc(d.budget_kol)}">`, { hint: esc(K.campaignBudgetHint) })}
-        ${field('cta', K.fCta, `<select id="f_cta" data-f="cta">${optionsHTML(activeList('cta_list', d.cta), d.cta || '', C.common.none)}</select>`, { hint: esc(K.ctaHint) })}
-        ${isNew ? '' : field('default_payment_term', C.fill.defaultTerm, `<select id="f_default_payment_term" data-f="default_payment_term">${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), d.default_payment_term || '', C.fill.none)}</select>`, { hint: esc(C.fill.defaultTermHint) })}
-        ${field('products', C.planner.fProducts, U.productPickerHTML('cp_products', d.products || [], lockedOf, true), { hint: esc(C.planner.productsHint) })}</div>`)}
-        </div>${foot()}`;
-  }
-  function wireForm() {
-    const box = $('drawer_content');
-    box.querySelectorAll('[data-f]').forEach(el => {
-      const f = el.dataset.f;
-      el.addEventListener('input', () => { cp.draft[f] = el.value; cp.dirty = true; check(); });
-      el.addEventListener('change', () => { cp.draft[f] = el.value; cp.dirty = true; cp.touched.add(f); check(); });
-      el.addEventListener('blur', () => { if (!R.isBlank(el.value)) cp.touched.add(f); check(); });
-    });
-    U.enhanceCombos(box);
-    U.wireProductPicker($('cp_products'), { get: () => cp.draft.products, set: codes => { cp.draft.products = codes; cp.dirty = true; cp.touched.add('products'); check(); }, locked: lockedOf, canNew: can('campaign.edit'), askUsed: true });
-    check();
-    const first = box.querySelector('[data-f]:not([disabled]):not([type=hidden])'); if (first && cp.mode === 'new') first.focus();
-  }
-  function check() {
-    const box = $('drawer_content'), res = validate();
-    /* errors only for the fields touched, or all of them after the first Save */
-    const shown = Object.assign({}, res, { errs: res.errs.filter(e => cp.submitted || cp.touched.has(e.field)) });
-    shown.warns = res.warns.filter(w => w.field !== 'products' || cp.submitted || cp.touched.has('products'));
-    $('cp_checks').innerHTML = checksHTML(shown, res.errs.length ? '' : C.common.ok);
-    box.querySelectorAll('[data-f]').forEach(el => el.classList.toggle('invalid', (cp.submitted || cp.touched.has(el.dataset.f)) && res.errs.some(e => e.field === el.dataset.f)));
-    box.querySelector('[data-act="save"]').disabled = cp.submitted && res.errs.length > 0;
-  }
-  /* the Campaign budget changed and Phases have budgets: keep their % (recalculate) or keep their amounts */
-  function askBudgetSplit() {
-    return new Promise(resolve => {
-      openDialog(`<div class="dlg-h">${esc(K.budgetChangedTitle)}</div><div class="dlg-b">${esc(K.budgetChangedBody)}</div>
-        <div class="dlg-f"><button type="button" class="btn" data-r="">${esc(C.common.cancel)}</button><button type="button" class="btn" data-r="amount">${esc(K.keepAmounts)}</button><button type="button" class="btn primary" data-r="pct">${esc(K.keepPct)}</button></div>`);
-      const dlg = U.dlg, done = v => { dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); }, onClose = () => done('');
-      dlg.addEventListener('close', onClose);
-      dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r)));
-    });
-  }
-  async function save() {
-    if (!guard('campaign.draft')) return;
-    const s = state(), res = validate();
-    if (res.errs.length) { cp.submitted = true; res.errs.forEach(x => cp.touched.add(x.field)); check(); return; }
-    const d = cp.draft, budget = R.isBlank(d.budget_kol) ? null : Number(d.budget_kol);
-    const rec = { campaign_id: d.campaign_id, campaign_name: R.trim(d.campaign_name), note: R.trim(d.note), budget_kol: budget, cta: d.cta || null,
-      default_payment_term: R.isTerm(d.default_payment_term) ? d.default_payment_term : null,   // CR-11 §4.11
-    };   // (CR-19 §4.7: the old pillar target is kept as it is — not on this form any more)
-    const old = campById(rec.campaign_id), was = old.budget_kol, phases = s.phases.filter(p => p.campaign_id === rec.campaign_id && !R.isBlank(p.budget_kol));
-    if (R.isApproved(old)) delete rec.budget_kol;   // CR-18 §4.1: an approved budget changes only with Adjust budget (it may have changed while this form was open)
-    /* CR-17 §4.5 — Staff on an approved Campaign: Budget · Pillar target are asked for (they change after a manager approves) · the rest at once */
-    const split = R.splitChange(old, rec, R.KEY_CAMPAIGN, U.actor()), asked = Object.keys(split.ask).length;
-    if (asked) { R.requestChange(old, split.ask, U.actor(), new Date().toISOString()); KEY_OUT.forEach(k => { delete rec[k]; }); Object.assign(rec, split.now); const ctx = apCtx(); s.campaign_events.push({ event_id: ctx.eventId(), campaign_id: rec.campaign_id, type: 'approval', from: null, to: 'change_requested', phase_id: null, fields: split.ask, changed_at: ctx.now, changed_by: ctx.user, note: null }); }
-    if (!asked && rec.budget_kol !== undefined && was !== budget && !R.isBlank(was) && Number(was) > 0 && budget != null && phases.length && R.canApprove(U.actor())) {
-      const how = await askBudgetSplit(); if (!how) return;
-      if (how === 'pct') phases.forEach(p => { p.budget_kol = R.budgetFromPct(R.pctOfBudget(p.budget_kol, was), budget); });
-    }
-    const oldCta = old.cta || null, productsBefore = R.campaignProductCodes(s, rec.campaign_id);
-    Object.assign(old, rec);
-    if (JSON.stringify(productsBefore) !== JSON.stringify(d.products)) {
-      R.setCampaignProducts(s, rec.campaign_id, d.products);
-      s.campaign_events.push({ event_id: store.newCampaignEventId(), campaign_id: rec.campaign_id, type: 'products', from: { products: productsBefore }, to: { products: d.products.slice() }, changed_at: new Date().toISOString(), changed_by: userId(), note: null });
-    }
-    /* the Campaign CTA changed: offer it to the open deals that still use the old one */
-    const same = oldCta !== rec.cta ? R.dealsWithCta(s, rec.campaign_id, oldCta) : [];
-    if (same.length && await confirmDialog(K.ctaApplyTitle(same.length), K.ctaApplyBody(oldCta || C.common.none, rec.cta || C.common.none, same.length), K.ctaApplyOk)) {
-      const r = R.fieldChanges(same, 'cta', rec.cta, { eventId: store.newEventId(), now: new Date(), user: userId(), note: K.ctaNote });
-      const at = new Map(s.deals.map((x, i) => [x.deal_id, i]));
-      r.deals.forEach(x => { s.deals[at.get(x.deal_id)] = x; }); r.events.forEach(e => s.deal_events.push(e));
-      toast(K.ctaApplied(r.deals.length));
-    }
-    if (!R.isApproved(old)) R.syncInitial(s, rec.campaign_id, userId(), new Date().toISOString());   // CR-18: a waiting Campaign's first budget follows it
-    Object.assign(cp, { mode: 'view', id: rec.campaign_id, draft: null }); cp.touched.clear();
-    commit(asked ? C.approval.changeSent : C.common.savedToast(rec.campaign_name));
-    renderTable(); renderPanel();
   }
   async function del() {
     if (!guard('campaign.edit')) return;
@@ -608,119 +545,56 @@ KT.screens.campaign = (function () {
     if (act === 'editProducts') startProducts();
     else if (act === 'prodSave') saveProducts();
     else if (act === 'prodCancel') { cp.prodEdit = null; renderPanel(); }
-    else if (act === 'edit') startEdit();
-    else if (act === 'cancel') cancelEdit();
-    else if (act === 'save') save();
-    else if (act === 'addPhase') KT.planner.open({ campaignId: cp.id, addRow: true });
-    else if (act === 'applyTerm') { const c = campById(cp.id), list = R.openDealsWithoutTerm(state(), c.campaign_id), t = C.term[c.default_payment_term];
-      applyDefault('payment_term', list, c.default_payment_term, C.fill.applyTermTitle(list.length), C.fill.applyTermBody(t, list.length), n => C.fill.termApplied(n, t)); }
+    else if (act === 'edit') KT.planner.open({ campaignId: campaignIdOfPanel(), opener: b });   // CR-21 §3.7: Edit = the Phase Planner
+    else if (act === 'addPhase') KT.planner.open({ campaignId: cp.id, addRow: true, opener: b });
     else if (act === 'applyPillar') { const p = phaseById(cp.id), list = R.dealsWithoutPillar(state(), p.phase_id);
       applyDefault('pillar', list, p.default_pillar, C.fill.applyPillarTitle(list.length), C.fill.applyPillarBody(p.default_pillar, R.phaseName(state(), p.phase_id), list.length), n => C.fill.pillarApplied(n, p.default_pillar)); }
     else if (act === 'hold' || act === 'cancelCampaign') openStatus(act === 'hold' ? 'on_hold' : 'cancelled');
     else if (act === 'resume') setStatus(null, '');
-    else if (act === 'plan') KT.planner.open({ campaignId: cp.kind === 'campaign' ? cp.id : phaseById(cp.id).campaign_id, focusPhase: cp.kind === 'phase' ? cp.id : null });
+    else if (act === 'plan') KT.planner.open({ campaignId: cp.kind === 'campaign' ? cp.id : phaseById(cp.id).campaign_id, focusPhase: cp.kind === 'phase' ? cp.id : null, opener: b });
     else if (act === 'delete') del();
-    /* CR-17 §4.5 */
-    else if (act === 'apApprove') approveNow();
-    else if (act === 'apReject') rejectNow(b);
-    else if (act === 'apResubmit') resubmitNow();
-    else if (act === 'apCancelReq') cancelRequestNow();
-    else if (act === 'apDelete') deleteRejected();
-    else if (act === 'adjust') { const id = cp.kind === 'phase' ? (phaseById(cp.id) || {}).campaign_id : (cp.draft && cp.draft.campaign_id) || cp.id;
-      KT.budget.open(id, { opener: b, onDone: () => { renderTable(); if (cp.mode === 'edit' && cp.draft) { const c = campById(id); cp.draft.budget_kol = c && c.budget_kol != null ? String(c.budget_kol) : ''; } renderPanel(); } }); }
+    /* CR-21 §3.5–3.6 — a request on this Campaign: Review request (a manager) · Withdraw to draft (the one who sent it) · Edit / Delete draft / Cancel request */
+    else if (act === 'apReview') KT.approvals.review(b.dataset.req, { opener: b, after: afterRequest });
+    else if (act === 'apWithdraw') KT.approvals.withdraw(b.dataset.req, afterRequest);
+    else if (act === 'apEdit') KT.approvals.editDraft(b.dataset.req, b);
+    else if (act === 'apDelete') KT.approvals.deleteDraft(b.dataset.req, afterRequest);
+    else if (act === 'apCancelReq') KT.approvals.cancelReq(b.dataset.req, afterRequest);
+    else if (act === 'adjust') { const id = cp.kind === 'phase' ? (phaseById(cp.id) || {}).campaign_id : cp.id;
+      KT.budget.open(id, { opener: b, onDone: () => { renderTable(); renderPanel(); } }); }
   }
 
-  /* ===================== CR-17 §4.5 — approval: the banner of a Campaign / Phase that waits · Approve / Reject · Resubmit · Cancel request ===================== */
+  /* ===================== CR-21 §3.5–3.6 — the requests of a Campaign in its drawer ===================== */
   const AP = C.approval;
   const approver = () => R.canApprove(U.actor());
-  const drafter = () => R.canDraft(U.actor());
-  const apCtx = () => { let e = 0; const base = store.newCampaignEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }; };
-  const fieldLabel = k => ({ budget_kol: K.colBudget, pillar_target: K.pillarTarget, start_date: AP.fStart, end_date: AP.fEnd, delete: AP.fDelete }[k] || k);
-  const fieldValue = (k, v) => (v == null || v === '' ? C.common.none : k === 'budget_kol' ? R.baht(Number(v)) : k === 'start_date' || k === 'end_date' ? R.dmy(v)
-    : k === 'pillar_target' ? R.PILLARS.filter(p => v[R.PILLAR_KEY[p]] != null).map(p => `${p} ${v[R.PILLAR_KEY[p]]}%`).join(' / ') : k === 'delete' ? AP.removePhase : String(v));
-  /* who / when a record was sent — and decided */
-  const byLine = a => (a && a.submitted_by ? AP.submittedBy(R.changedByName(state(), a.submitted_by), R.dmy(R.dateOfTimestamp(a.submitted_at))) : '');
+  const day = iso => (iso ? R.dmy(R.dateOfTimestamp(iso)) : '—');
+  /* one line a request: Pending approval · Submitted by … · Round n + Review request / Withdraw to draft · a returned draft (its maker / an Admin):
+     Returned by … — reason (a change: Change returned — reason) + Edit · Delete draft / Cancel request */
   function approvalHTML(c) {
-    const s = state(), x = R.pendingOf(s, c.campaign_id); if (!x) return '';
-    const rejected = c.approval_status === 'rejected', rejPhases = x.rejectedPhases, lastRej = rejected ? c.approval : rejPhases.length ? rejPhases[0].approval : null;
-    const changeRej = [c].concat(s.phases.filter(p => p.campaign_id === c.campaign_id)).find(r => r.change_rejected && !r.pending_change);
-    if (!x.waiting && !rejected && !rejPhases.length && !changeRej) return '';
-    const parts = [];
-    if (x.status === 'pending') {
-      const sum = R.campaignSummary(s, c.campaign_id), phases = s.phases.filter(p => p.campaign_id === c.campaign_id), start = phases.map(p => p.start_date).filter(Boolean).sort()[0], end = phases.map(p => p.end_date).filter(Boolean).sort().pop();
-      const same = R.sameTimeBudget(s, c.campaign_id), budget = R.isBlank(c.budget_kol) ? null : Number(c.budget_kol);
-      parts.push(`<div class="kv"><span>${esc(K.colPeriod)}</span><b>${start ? esc(range(start, end)) : '—'}${start ? ` <span class="muted">· ${esc(KT.approvals.timingText(start))}</span>` : ''}</b></div>` + kv(K.colBudget, budget == null ? '' : R.baht(budget)) +
-        kv(AP.phasesN, R.fmtNum(phases.length)) +
-        (budget ? `<div class="apc-imp">${esc(AP.sameTime(R.baht(same.before), R.baht(same.after)))}</div>` : '') +
-        ((c.approval || {}).note ? `<div class="apc-note"><span class="muted small">${esc(AP.noteFrom(R.changedByName(s, c.approval.submitted_by)))}</span><div>${esc(c.approval.note)}</div></div>` : ''));
-    }
-    if (x.status !== 'pending' && x.newPhases.length) parts.push(`<div class="ap-h">${esc(AP.newPhases(x.newPhases.length))}</div>` + x.newPhases.map(p => kv(R.phaseName(s, p.phase_id), `${range(p.start_date, p.end_date)} · ${p.budget_kol == null ? K.noBudget : R.baht(p.budget_kol)}`)).join(''));
-    if (x.budget) { const im = R.budgetChangeImpact(s, x.budget);
-      parts.push(`<div class="ap-h">${esc(AP.types['budget_' + x.budget.type])}</div><div class="apc-big">${esc(AP.budgetLine(im.before == null ? '฿0' : R.baht(im.before), R.baht(im.after), KT.budget.sbaht(im.delta)))}</div>` +
-        `<div class="hint">${esc(C.budget.pendingTip(R.changedByName(s, x.budget.requested_by), R.dmy(R.dateOfTimestamp(x.budget.requested_at)), x.budget.reason || ''))}</div>`); }
-    if (x.changes.length) parts.push(`<div class="ap-h">${esc(AP.changeTitle)}</div><div class="tablewrap"><table class="tbl compact-sm ap-tbl"><thead><tr><th>${esc(AP.colWhat)}</th><th>${esc(AP.colNow)}</th><th>${esc(AP.colAsked)}</th></tr></thead><tbody>` +
-      x.changes.flatMap(ch => ch.fields.map(f => `<tr><td>${esc(ch.kind === 'phase' ? `${R.phaseName(s, ch.id)} · ${fieldLabel(f.key)}` : fieldLabel(f.key))}</td><td>${esc(f.key === 'delete' ? '—' : f.key === 'pillar_target' && f.from == null ? targetText(c) : fieldValue(f.key, f.from))}</td><td><b>${esc(fieldValue(f.key, f.to))}</b></td></tr>`)).join('') + `</tbody></table></div>` +
-      `<div class="hint">${esc(AP.changeBy(R.changedByName(s, x.changes[0].rec.pending_change.requested_by), R.dmy(R.dateOfTimestamp(x.changes[0].rec.pending_change.requested_at))))}</div>`);
-    const head = x.status === 'pending' ? `<span class="st apending">${esc(C.phaseStatus.pending)}</span> <span>${esc(byLine(c.approval))}</span>`
-      : rejected || (rejPhases.length && !x.waiting) ? `<span class="st cancel">${esc(C.phaseStatus.rejected)}</span> <span>${esc(AP.rejectedBy(R.changedByName(s, (lastRej || {}).decided_by), R.dmy(R.dateOfTimestamp((lastRej || {}).decided_at))))}</span>`
-      : x.waiting ? `<span class="st apending">${esc(AP.changePending)}</span>` : `<span class="st cancel">${esc(AP.changeRejected)}</span>`;
-    const reason = (rejected || (rejPhases.length && !x.waiting)) && lastRej && lastRej.reason ? `<div class="check err">✕ <span>${esc(AP.reason(lastRej.reason))}</span></div>`
-      : !x.waiting && changeRej ? `<div class="check err">✕ <span>${esc(AP.changeRejectedReason(changeRej.change_rejected.reason || ''))}</span></div>` : '';
-    const mine = x.changes.some(ch => ch.rec.pending_change.requested_by === userId());
-    const btns = [x.waiting && approver() ? `<button type="button" class="btn" data-act="apReject">${esc(AP.reject)}</button><button type="button" class="btn primary" data-act="apApprove">${esc(AP.approve)}</button>` : '',
-      x.changes.length && (mine || approver()) ? `<button type="button" class="btn" data-act="apCancelReq">${esc(AP.cancelRequest)}</button>` : '',
-      (rejected || rejPhases.length) && !x.waiting && drafter() ? `<button type="button" class="btn primary" data-act="apResubmit">${esc(AP.resubmit)}</button>` : '',
-      rejected && drafter() && !s.deals.some(d => d.campaign_id === c.campaign_id) ? `<button type="button" class="btn danger" data-act="apDelete">${esc(AP.del)}</button>` : ''].join('');
-    return `<section class="sec appr${x.waiting ? ' wait' : ' rej'}"><div class="ap-top">${head}</div>${reason}${parts.join('')}${x.status === 'pending' && !approver() ? `<div class="hint">${esc(AP.waitHint)}</div>` : ''}` +
-      (btns ? `<div class="btns ap-btns">${btns}</div>` : '') + `</section>`;
+    const s = state(), me = U.actor(), uid = userId(), cid = c.campaign_id;
+    const mine = r => R.requestsIn(s, r).filter(x => x.campaign_id === cid);
+    const pend = mine('pending'), drafts = R.draftRequests(s, me).filter(x => x.campaign_id === cid);
+    if (!pend.length && !drafts.length) return '';
+    const what = r => `${AP.types[r.type] || r.type}${r.phase_id && phaseById(r.phase_id) ? ` · ${R.phaseName(s, r.phase_id)}` : ''}`;
+    const line = r => {
+      const sent = r.status === 'pending', who = R.changedByName(s, r.by);
+      const head = sent ? `<span class="st apending">${esc(AP.types[r.type] ? what(r) : C.phaseStatus.pending)}</span> <span>${esc(AP.pendingBar(who, day(r.at), r.round || 1))}</span>`
+        : r.returned ? `<span class="st adraft">${esc(AP.returnedChip)}</span> <span>${esc(r.type === 'change' ? AP.changeReturned(r.returned.reason) : AP.returnedBar(R.changedByName(s, r.returned.by), day(r.returned.at), r.returned.reason))}</span>`
+        : `<span class="st adraft">${esc(AP.draftChip)}</span> <span>${esc(what(r))}</span>`;
+      const del = r.type === 'change' || r.change_id ? `<button type="button" class="btn" data-act="apCancelReq" data-req="${esc(r.id)}">${esc(AP.cancelRequest)}</button>` : `<button type="button" class="btn danger" data-act="apDelete" data-req="${esc(r.id)}">${esc(AP.deleteDraft)}</button>`;
+      const btns = sent ? (approver() ? `<button type="button" class="btn primary" data-act="apReview" data-req="${esc(r.id)}">${esc(AP.reviewRequest)}</button>` : '') +
+          (r.by === uid ? `<button type="button" class="btn" data-act="apWithdraw" data-req="${esc(r.id)}">${esc(AP.withdraw)}</button>` : '')
+        : `<button type="button" class="btn primary" data-act="apEdit" data-req="${esc(r.id)}">${esc(AP.edit)}</button>${del}`;
+      return `<div class="ap-line${sent ? ' wait' : ' rej'}"><div class="ap-top">${head}</div>${btns ? `<div class="btns ap-btns">${btns}</div>` : ''}</div>`;
+    };
+    return `<section class="sec appr${pend.length ? ' wait' : ' rej'}">${pend.concat(drafts).map(line).join('')}${pend.some(r => r.type === 'new_campaign') && !approver() ? `<div class="hint">${esc(AP.waitHint)}</div>` : ''}</section>`;
   }
-  async function approveNow() {
-    if (!guard('campaign.approve')) return;
-    const s = state(), id = campaignIdOfPanel(), c = campById(id); if (!c) return;
-    const snap = R.decisionSnapshot(s, id), evs = R.approveCampaign(s, id, apCtx()); if (!evs.length) return;
-    s.campaign_events.push(...evs); commit(); renderTable(); renderPanel();
-    toastAction(AP.approved(c.campaign_name), C.deal.undo, () => undoDecision(snap, evs), 10000);   // CR-17 v1.2: Undo for 10 s
-  }
-  function rejectNow(opener) {
-    if (!guard('campaign.approve')) return;
-    const id = campaignIdOfPanel(), c = campById(id); if (!c) return;
-    U.createModal({ size: 'S', title: AP.rejectTitle(c.campaign_name), opener, focus: '#ap_reason', foot: [`<div class="checks" id="ap_checks"></div>`, U.cmButtons(AP.reject, 'ap_ok', { danger: true, attrs: ' disabled' })],
-      body: `<p class="hint" style="margin-top:0">${esc(AP.rejectHint)}</p><div class="field"><label for="ap_reason">${esc(AP.reasonL)} <span class="req">*</span></label><textarea id="ap_reason" rows="3"></textarea></div>` });
-    const chk = () => { const r = R.validateDecision($('ap_reason').value); $('ap_ok').disabled = r.errs.length > 0; return r; };
-    $('ap_reason').addEventListener('input', () => { chk(); $('ap_checks').innerHTML = ''; });
-    $('ap_ok').addEventListener('click', () => {
-      const r = chk(); if (r.errs.length) { $('ap_checks').innerHTML = checksHTML(r, ''); return; }
-      if (!guard('campaign.approve')) return;
-      const s = state(), snap = R.decisionSnapshot(s, id), evs = R.rejectCampaign(s, id, $('ap_reason').value, apCtx()); if (!evs || !evs.length) return;
-      s.campaign_events.push(...evs); U.closeModal(); commit(); renderTable(); renderPanel();
-      toastAction(AP.rejected(c.campaign_name), C.deal.undo, () => undoDecision(snap, evs), 10000);
-    });
-  }
-  function undoDecision(snap, evs) { R.restoreSnapshot(state(), snap, evs.map(e => e.event_id)); commit(AP.undone); renderTable(); if (cp.mode === 'view') renderPanel(); }
-  function resubmitNow() {
-    if (!guard('campaign.draft')) return;
-    const s = state(), id = campaignIdOfPanel(), c = campById(id); if (!c) return;
-    const evs = R.resubmitCampaign(s, id, apCtx()); if (!evs.length) return;
-    s.campaign_events.push(...evs); commit(AP.resubmitted(c.campaign_name)); renderTable(); renderPanel();
-  }
-  function cancelRequestNow() {
-    const s = state(), id = campaignIdOfPanel(), x = R.pendingOf(s, id); if (!x) return;
-    const evs = [], ctx = apCtx();
-    x.changes.filter(ch => approver() || ch.rec.pending_change.requested_by === userId()).forEach(ch => evs.push(...R.cancelRequest(s, ch.kind, ch.id, ctx)));
-    if (!evs.length) return;
-    s.campaign_events.push(...evs); commit(AP.requestCancelled); renderTable(); renderPanel();
-  }
-  /* a Rejected Campaign with no deal: the one who made it (or a manager) may delete it with its Phases */
-  async function deleteRejected() {
-    const s = state(), id = campaignIdOfPanel(), c = campById(id); if (!c || c.approval_status !== 'rejected' || !drafter() || s.deals.some(d => d.campaign_id === id)) return;
-    if (!(await confirmDialog(K.deleteCampaign, K.confirmDelete(c.campaign_name), K.delete, true))) return;
-    const ids = new Set(s.phases.filter(p => p.campaign_id === id).map(p => p.phase_id));
-    s.phases = s.phases.filter(p => !ids.has(p.phase_id)); s.deal_posts.forEach(p => { if (ids.has(p.phase_override)) p.phase_override = null; });
-    s.campaigns.splice(s.campaigns.indexOf(c), 1); R.setCampaignProducts(s, id, []); R.dropBudgetChanges(s, id);
-    commit(C.common.deletedToast(c.campaign_name)); U.closeDrawer(); renderTable();
+  /* after a request changed: the table, the drawer (closed when its Campaign went) */
+  function afterRequest() {
+    if (cp.mode === 'view' && !(cp.kind === 'campaign' ? campById(cp.id) : phaseById(cp.id))) U.closeDrawer();
+    if (U.currentTab() !== 'campaign') return;
+    renderTable(); if (cp.mode === 'view') renderPanel();
   }
   const campaignIdOfPanel = () => (cp.kind === 'phase' ? (phaseById(cp.id) || {}).campaign_id : cp.id);
-  const KEY_OUT = R.KEY_CAMPAIGN;
 
   /* ---------- On hold · Cancelled (CR-05 §4.7) ---------- */
   function openStatus(to) {
@@ -758,7 +632,7 @@ KT.screens.campaign = (function () {
     const open = cp.mode === 'view' && (cp.id === id || (cp.kind === 'phase' && phaseById(cp.id) && phaseById(cp.id).campaign_id === id));
     if (cp.kind === 'phase' && !phaseById(cp.id)) Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null });   // that Phase went
     else if (!open) Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null });
-    cp.collapsed.delete(id);
+    prefs(); ['table', 'timeline'].forEach(v => cp.coll[v].delete(id));   // CR-21 §3.1: a new / just planned Campaign shows open
     if (U.currentTab() !== 'campaign') return;
     renderTable(); if (cp.mode === 'view') renderPanel();
     const tr = document.querySelector(`#cp_tbl tr[data-kind="campaign"][data-id="${CSS.escape(id)}"]`);
@@ -767,5 +641,5 @@ KT.screens.campaign = (function () {
   function reset() { Object.assign(cp, { mode: 'none', kind: null, id: null, draft: null, prodEdit: null }); cp.touched.clear(); KT.approvals.reset(); }
   /* "Campaign created · Open" */
   function openCampaign(id) { if (U.currentTab() !== 'campaign') { U.go('campaign'); setTimeout(() => select('campaign', id), 0); return; } select('campaign', id); }
-  return { render, reset, afterPlan, openCampaign };
+  return { render, reset, afterPlan, openCampaign, afterRequest };
 })();

@@ -92,7 +92,8 @@ KT.rules = (function (C) {
 
   /* ===================== costs & payment ===================== */
   const COST_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee'];
-  const totalCost = d => COST_KEYS.reduce((s, k) => s + num(d && d[k]), 0);
+  /* CR-22 §3.3 — + Product purchase (a KOL who buys the product: the amount paid back to them) */
+  const totalCost = d => COST_KEYS.reduce((s, k) => s + num(d && d[k]), 0) + num(d && d.product_purchase_fee);
   const gencodeEndDate = d => (d && isISODate(d.gencode_start_date) && num(d.gencode_period) > 0)
     ? addDays(d.gencode_start_date, Math.round(num(d.gencode_period)) - 1) : null;
   const isCancelled = d => !!d && d.status === 'Cancel';
@@ -365,10 +366,12 @@ KT.rules = (function (C) {
 
   /* CR-02 §4.8 — status from the dates (never typed) */
   const PHASE_STATUSES = ['ongoing', 'not_started', 'complete'];
-  /* CR-17 §4.5 — a Campaign / Phase made by Staff waits for a manager (pending · rejected) · no approval_status (older data) = approved */
+  /* CR-17 §4.5 — a Campaign / Phase made by Staff waits for a manager · no approval_status (older data) = approved ·
+     CR-21: a draft (never sent, returned or withdrawn) is only on its maker's My requests — no Rejected any more */
   const isApproved = x => !x || !x.approval_status || x.approval_status === 'approved';
+  const isDraft = x => !!x && x.approval_status === 'draft';
   function phaseStatus(phase, today) {
-    if (phase && phase.approval_status === 'rejected') return 'rejected';   // CR-17 v1.2: Rejected > Pending approval > the dates
+    if (isDraft(phase)) return 'draft';   // CR-21: Draft > Pending approval > the dates
     if (phase && !isApproved(phase)) return 'pending';   // CR-17: not a Phase yet
     if (!phase || !phase.start_date || today < phase.start_date) return 'not_started';
     if (phase.end_date && today > phase.end_date) return 'complete';
@@ -376,7 +379,7 @@ KT.rules = (function (C) {
   }
   /* any Phase on going → On going · all not started → Not started · all ended → Complete · ended + not started (between Phases) → On going */
   function campaignStatus(phases, today) {
-    const st = phases.map(p => phaseStatus(p, today)).filter(x => x !== 'pending' && x !== 'rejected');   // CR-17: a Phase waiting for approval (or rejected) does not count
+    const st = phases.map(p => phaseStatus(p, today)).filter(x => x !== 'pending' && x !== 'draft');   // CR-17: a Phase waiting for approval (or a draft) does not count
     if (!st.length || st.every(s => s === 'not_started')) return 'not_started';
     if (st.every(s => s === 'complete')) return 'complete';
     return 'ongoing';
@@ -385,12 +388,12 @@ KT.rules = (function (C) {
   const sortPhases = phases => [...phases].sort((a, b) => String(a.start_date || '9999').localeCompare(String(b.start_date || '9999'))
     || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')));
   /* CR-05 §4.7 — a Campaign may be put On hold or Cancelled (status_override); that wins over its dates */
-  /* CR-17 §4.5 — + Pending approval · Rejected (a Campaign Staff made): not in the Dashboard by default · v1.2: the order of the tabs, and which wins —
-     Cancelled > Rejected > Pending approval > On hold > by the dates (Not started · On going · Complete) */
-  const CAMPAIGN_STATUSES = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled'];
+  /* CR-17 §4.5 — + Pending approval (a Campaign Staff made): not in the Dashboard by default · v1.2: the order of the tabs, and which wins ·
+     CR-21: Cancelled > Draft > Pending approval > On hold > by the dates (Not started · On going · Complete) — a Draft is in no status tab */
+  const CAMPAIGN_STATUSES = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   const CAMPAIGN_OVERRIDES = ['on_hold', 'cancelled'];
   const campaignEffectiveStatus = (campaign, phases, today) => (campaign && campaign.status_override === 'cancelled' ? 'cancelled'
-    : campaign && campaign.approval_status === 'rejected' ? 'rejected' : campaign && !isApproved(campaign) ? 'pending'
+    : isDraft(campaign) ? 'draft' : campaign && !isApproved(campaign) ? 'pending'
     : campaign && CAMPAIGN_OVERRIDES.includes(campaign.status_override) ? campaign.status_override : campaignStatus(phases, today));
   /* a Campaign that takes no new deal: On hold · Cancelled → the message, else null */
   function campaignBlocksNew(state, campaignId) {
@@ -406,14 +409,26 @@ KT.rules = (function (C) {
     if (to && !trim(reason)) errs.push(issue('status_reason', M.campaignStatusReason));
     return { errs, warns: [], infos: [] };
   }
-  /* On going (end soonest first) → Not started (start soonest first) → On hold → Complete (latest end first) → Cancelled · ties: start, then name */
-  function sortCampaigns(campaigns, phases, today) {
-    const RANK = { ongoing: 0, not_started: 1, pending: 1.5, on_hold: 2, complete: 3, rejected: 3.5, cancelled: 4 };
+  /* On going (end soonest first) → Not started (start soonest first) → On hold → Complete (latest end first) → Cancelled · ties: start, then name ·
+     CR-21 §3.1 — mode (Campaign & Phase › Sort): 'status' On going → Not started → Pending approval → On hold → Complete → Cancelled, the same status by
+     start date (oldest first) · 'start_asc' Start date · earliest first (ties by name) · 'start_desc' latest first — a Campaign's start = its start_date,
+     else its earliest Phase (a draft Phase of an approved Campaign does not count) · none = last */
+  const SORT_MODES = ['status', 'start_asc', 'start_desc'];
+  const SORT_RANK = { ongoing: 0, not_started: 1, pending: 2, on_hold: 3, complete: 4, cancelled: 5, draft: 6 };
+  function sortCampaigns(campaigns, phases, today, mode) {
+    const RANK = { ongoing: 0, not_started: 1, pending: 1.5, on_hold: 2, complete: 3, draft: 3.5, cancelled: 4 };
     const info = new Map(campaigns.map(c => {
-      const ps = phases.filter(p => p.campaign_id === c.campaign_id);
-      const starts = ps.map(p => p.start_date).filter(Boolean).sort(), ends = ps.map(p => p.end_date).filter(Boolean).sort();
-      return [c.campaign_id, { st: campaignEffectiveStatus(c, ps, today), start: starts[0] || '9999', end: ends[ends.length - 1] || '9999' }];
+      const ps = phases.filter(p => p.campaign_id === c.campaign_id), dated = ps.filter(p => !isDraft(p) || isDraft(c));
+      const starts = dated.map(p => p.start_date).filter(Boolean).sort(), ends = ps.map(p => p.end_date).filter(Boolean).sort();
+      return [c.campaign_id, { st: campaignEffectiveStatus(c, ps, today), start: (isISODate(c.start_date) ? c.start_date : starts[0]) || '9999', end: ends[ends.length - 1] || '9999' }];
     }));
+    const byName = (a, b) => String(a.campaign_name).localeCompare(String(b.campaign_name));
+    if (SORT_MODES.includes(mode)) return [...campaigns].sort((a, b) => {
+      const x = info.get(a.campaign_id), y = info.get(b.campaign_id);
+      if (mode === 'status' && x.st !== y.st) return SORT_RANK[x.st] - SORT_RANK[y.st];
+      const none = (x.start === '9999') - (y.start === '9999'); if (none) return none;
+      return (mode === 'start_desc' ? y.start.localeCompare(x.start) : x.start.localeCompare(y.start)) || byName(a, b);
+    });
     return [...campaigns].sort((a, b) => {
       const x = info.get(a.campaign_id), y = info.get(b.campaign_id);
       if (x.st !== y.st) return RANK[x.st] - RANK[y.st];
@@ -551,6 +566,7 @@ KT.rules = (function (C) {
     cancel_reason: null, remark: null, legacy_job_ids: [], source_record_ids: [], is_legacy: false,
     draft_rounds: 1, payment_term: null, payee_id: null,   // CR-16: payee_id null = the KOL's default payee
     package_id: null, package_units: 1, package_paid: false, script_link: null,   // CR-20 §3
+    product_purchase_fee: null,   // CR-22 §4
   };
   /* a new deal takes the KOL's default payment term (null = not set yet) */
   const kolTerm = (state, kolId) => { const k = kolById(state, kolId); return k && isTerm(k.default_payment_term) ? k.default_payment_term : null; };
@@ -674,7 +690,7 @@ KT.rules = (function (C) {
     nextStep, dueInfo, dueDate, dueStep, stepShort, isOverdue, daysInStep, stepBeforeCancel, planEvent, planLimits, checkPlan, applyPlan,
     validateCampaign, canDeleteCampaign, campaignIdFor, phaseIdFor, defaultPhaseId, defaultCampaignId,
     PHASE_STATUSES, phaseStatus, campaignStatus, sortPhases, sortCampaigns, orderedPhases, kolTerm,
-    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignBlocksNew, isApproved, campaignCancelled, validateCampaignStatus,
+    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignBlocksNew, isApproved, isDraft, campaignCancelled, validateCampaignStatus, SORT_MODES,
     KOL_STATUSES, GENDERS, CONTACT_CHANNELS, ACCOUNT_FIELDS, PRICE_KEYS, kolById, accountsOfKol, dealsOfKol, postsOnAccount, maxFollowers,
     sortQuotes, quotesOfKol, latestQuote, latestPricedQuote, prefillFromQuote, kolDealAverage, kolIndex,
     validateKol, accountComplete, validateQuote, DEAL_TEMPLATE, shortlistStep, openDealsInCampaign, checkAddToCampaign, planShortlist, shortlistDeal,

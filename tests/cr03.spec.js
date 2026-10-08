@@ -246,7 +246,7 @@
       const s = fresh(), d = newDeal(s);
       const no = R.checkMove(s, d, 'Confirm QT', { date: TODAY });
       assert.ok(no.errs.some(e => e.code === 'pillar' && e.msg === C.msg.movePillarRequired));
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration', rateCard: '3000' }).errs, []);   // CR-20 §4.7: the rate card too
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration', rateCard: '3000', cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } }).errs, []);   // CR-20 §4.7: the rate card too · CR-22: the CTA and the samples
       const r = R.applyMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration' }, { logId: 900, eventId: 3 });
       assert.equal(r.deal.pillar, 'Consideration');
       assert.deepEqual(r.events.map(e => [e.event_id, e.type, e.from, e.to]), [[3, 'pillar', null, 'Consideration']]);
@@ -262,8 +262,8 @@
       const s = fresh(), d = deal(s, 'D000302');
       assert.equal(d.is_legacy, true);
       assert.equal(d.pillar, null);
-      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY }).errs.map(e => e.field), ['pillar', 'payment_term']);
-      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY, pillar: 'Awareness', paymentTerm: 'postpaid' }).errs, []);
+      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY }).errs.map(e => e.field), ['cta', 'pillar', 'payment_term'], 'CR-22: + the CTA');
+      assert.deepEqual(R.checkMove(s, d, 'Draft 1', { date: TODAY, pillar: 'Awareness', paymentTerm: 'postpaid', cta: 'TikTok' }).errs, []);
       assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, note: 'redo' }).errs, []);
     });
     test('TC-19: Set pillar on 5 deals → 5 changes, 5 events; Undo restores each one', () => {

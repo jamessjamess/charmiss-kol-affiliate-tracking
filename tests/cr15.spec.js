@@ -77,7 +77,7 @@
       assert.deepEqual(R.stageOrder(s.lookups).map(x => [x.key, x.status]).slice(3, 9), [['Brief', 'Inprocess'], ['Script', 'Inprocess'], ['Draft 1', 'Inprocess'], ['Draft 2', 'Inprocess'], ['Draft 3', 'Inprocess'], ['Approve', 'Inprocess']]);
     });
     test('TC-05: nanomona777 Brief → Draft 1 — "These steps will be marked done on 08/10: Script" · script_date 08/10 · 2 logs (Script auto-completed, Draft 1)', () => {
-      const s = fresh(), d = Object.assign(byKol(s, 'nanomona777'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30 });   // CR-20 §4.7: the term and the Gencode days too
+      const s = fresh(), d = Object.assign(byKol(s, 'nanomona777'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok' });   // CR-20 §4.7: the term and the Gencode days too
       assert.equal(d.sub_status, 'Brief');
       const chk = R.checkMove(s, d, 'Draft 1', { date: TD });
       assert.deepEqual(chk.errs, []);
@@ -91,7 +91,7 @@
       const s = fresh(), d = byKol(s, 'tuckpx');
       assert.deepEqual([d.sub_status, R.planOf(d).drafts], ['Draft 2', 2]);
       assert.deepEqual(R.dropPlan(s, d, 'Approve', TD), { kind: 'dialog' }, 'the seed deal has no pillar: the dialog asks for it (CR-03)');
-      Object.assign(d, { pillar: 'Conversion', payment_term: 'postpaid' });   // CR-20 §4.7: the term too
+      Object.assign(d, { pillar: 'Conversion', payment_term: 'postpaid', cta: 'TikTok' });   // CR-20 §4.7: the term too · CR-22: a CTA
       assert.deepEqual(R.dropPlan(s, d, 'Approve', TD), { kind: 'instant' });
       const r = R.applyMove(s, d, 'Approve', { date: TD, note: '' }, { logId: 771 });
       assert.deepEqual([r.deal.sub_status, r.deal.status, r.deal.approved_date, r.logs.length], ['Approve', 'Inprocess', TD, 1]);
@@ -138,7 +138,7 @@
       assert.equal(C.journey.dateNotRecorded, 'Not recorded');
     });
     test('TC-12: Move to Draft 3 with 1 round → the error of before + "+ Add draft round"', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000287'), { pillar: 'Awareness', payment_term: 'postpaid' });   // Draft 1 of 1 · CR-20 §4.7: the term too
+      const s = fresh(), d = Object.assign(deal(s, 'D000287'), { pillar: 'Awareness', payment_term: 'postpaid', cta: 'TikTok' });   // Draft 1 of 1 · CR-20 §4.7: the term too · CR-22: a CTA
       assert.ok(R.checkMove(s, d, 'Draft 3', { date: TD }).errs.some(e => e.code === 'add_round' && e.msg === C.msg.moveDraftNotInPlan(3, 1)));
       const ok = R.checkMove(s, d, 'Draft 3', { date: TD, addRound: true });
       assert.deepEqual(ok.errs, []);

@@ -239,7 +239,7 @@
       s.campaigns.push({ campaign_id: 'CMP-0001', campaign_name: 'Next Launch', budget_kol: 100, status_override: null });
       s.phases.push({ phase_id: 'PHS-0001', campaign_id: 'CMP-0001', label: 'P1', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 100 });
       assert.deepEqual(R.sortCampaigns(s.campaigns, s.phases, TD).map(c => c.campaign_id), ['CH', 'PH', 'CMP-0001', 'KS', 'AC']);
-      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'rejected', 'cancelled']);   // CR-17 v1.2: + Pending approval · Rejected in the order of the tabs
+      assert.deepEqual(R.CAMPAIGN_STATUSES, ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled']);   // CR-17 v1.2: + Pending approval in the order of the tabs · CR-21: no Rejected (a draft is in no tab)
       const p = R.portfolio(s, '2026-07-08', TD, TD), pAll = R.portfolio(s, '2026-07-08', TD, TD, true);
       assert.equal(p.rows.some(r => r.campaign.campaign_id === 'AC'), false);
       assert.equal(pAll.total.committed - p.total.committed, 7800, 'Include cancelled adds Acne back');

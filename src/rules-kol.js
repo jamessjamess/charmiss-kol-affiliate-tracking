@@ -101,6 +101,17 @@ Object.assign(KT.rules, (function (R, C) {
     }
     return { latest, note: newer ? trim(newer.note) : null, average, freeExcluded: agreed.length - paid.length };
   }
+  /* CR-22 §3.1 — Last rate card: the newest deal of this KOL with a rate card above ฿0 (not this one) — its rate · Campaign · the date it reached
+     Confirm QT (else its first step) · none → null · never an average */
+  function lastRateCard(state, kolId, excludeDealId) {
+    const deals = R.dealsOfKol(state, kolId).filter(d => d.deal_id !== excludeDealId && Number(d.rate_card) > 0); if (!deals.length) return null;
+    const ids = new Set(deals.map(d => d.deal_id)), logs = new Map();
+    (state.deal_status_log || []).forEach(l => { if (ids.has(l.deal_id)) { if (!logs.has(l.deal_id)) logs.set(l.deal_id, []); logs.get(l.deal_id).push(l); } });
+    const dateOf = d => { const ls = logs.get(d.deal_id) || [], qt = ls.filter(l => l.sub_status === 'Confirm QT').map(l => l.effective_date).filter(Boolean).sort()[0];
+      return qt || ls.map(l => l.effective_date).filter(Boolean).sort()[0] || null; };
+    const x = deals.map(d => ({ d, date: dateOf(d) })).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.d.deal_id).localeCompare(String(a.d.deal_id)))[0];
+    return { amount: Number(x.d.rate_card), deal_id: x.d.deal_id, campaign_id: x.d.campaign_id, date: x.date };
+  }
   /* rows to show: Rate card and Total always · the others when either column has a value */
   const costRefRows = ref => COST_KEYS.filter(k => k === 'rate_card' || [ref.latest, ref.average].some(c => c && c.values[k])).concat(['total']);
   const hasCosts = d => COST_KEYS.some(k => !isBlank(d[k]));
@@ -118,6 +129,6 @@ Object.assign(KT.rules, (function (R, C) {
   /* schema 13 — every KOL has contact_id (null · nothing is read from the notes) */
   function migrateV13(obj) { (obj.kol_master || []).forEach(k => { if (k.contact_id === undefined) k.contact_id = null; }); obj.schema_version = 13; return obj; }
 
-  return { migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
+  return { lastRateCard, migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
     kolTypeKeyFor, validateKolType, splitAliases, costReference, costRefRows, hasCosts, costNotSet, zeroCostMove };
 })(KT.rules, KT.content));

@@ -96,7 +96,7 @@ Object.assign(KT.rules, (function (R, C) {
       .concat(codes.map((code, i) => ({ campaign_id: campaignId, tr_code: code, sort_order: i + 1 })));
   }
   /* Campaigns still without products (not cancelled) — Operations queue "Campaign without products" */
-  const campaignsWithoutProducts = (state, campaignId) => state.campaigns.filter(c => (!campaignId || c.campaign_id === campaignId) && c.status_override !== 'cancelled' && !campaignProductCodes(state, c.campaign_id).length);
+  const campaignsWithoutProducts = (state, campaignId) => state.campaigns.filter(c => (!campaignId || c.campaign_id === campaignId) && c.status_override !== 'cancelled' && !R.isDraft(c) && !campaignProductCodes(state, c.campaign_id).length);   // (CR-21: not a draft)
 
   /* ---------- products of a deal ---------- */
   const dealProductList = (state, dealId) => (dealId ? (state.deal_products || []).filter(x => x.deal_id === dealId).map(x => ({ tr_code: x.tr_code, qty: x.qty, note: x.note || null })) : []);

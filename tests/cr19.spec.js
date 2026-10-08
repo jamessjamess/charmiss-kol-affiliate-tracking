@@ -52,8 +52,9 @@
       const s = fresh();
       s.campaigns.push({ campaign_id: 'NX', campaign_name: 'Next Year Glow', budget_kol: 100000, approval_status: 'approved' });
       s.phases.push({ phase_id: 'NX-1', campaign_id: 'NX', start_date: '2026-11-01', end_date: '2026-11-30', budget_kol: 100000, approval_status: 'approved' });
-      const c = { campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }; R.stampNew(c, babe(s), NOW); s.campaigns.push(c);
-      const p = { phase_id: 'TA-1', campaign_id: 'TA', start_date: '2026-10-01', end_date: '2026-10-31' }; R.stampNew(p, babe(s), NOW); s.phases.push(p);
+      s.phases.push(R.stampDraft({ phase_id: 'TA-1', campaign_id: 'TA', start_date: '2026-10-01', end_date: '2026-10-31' }, babe(s), NOW));
+      s.campaigns.push(R.stampDraft({ campaign_id: 'TA', campaign_name: 'Test Approve', budget_kol: 300000 }, babe(s), NOW));
+      R.requestTransition(s, 'campaign:TA', 'pending', { eventId: () => 9000, now: NOW, user: babe(s).user_id });   // (CR-21: a draft is sent)
       const def = R.campaignTimeline(s, ...year(), 'posts', TD, R.DASH_STATUS_DEFAULT);
       assert.deepEqual(ids(def), ['CH', 'KS', 'PH', 'NX', 'AC'], 'a waiting one is not in the default Status');
       const all = R.campaignTimeline(s, ...year(), 'posts', TD, R.DASH_STATUS_DEFAULT.concat(['pending']));

@@ -180,7 +180,7 @@
       assert.equal(R.daysInStep(s, deal(s, 'D000114'), TODAY), R.dayDiff(TODAY, '2026-08-06'));
     });
     test('TC-05 basis: D000044 Brief → Draft 1 fills approved_draft1_date and logs the move', () => {
-      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30 });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
+      const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness', payment_term: 'postpaid', gencode_period: 30, cta: 'TikTok' });   // CR-03: a pillar is needed from Confirm QT on · CR-20 §4.7: the term and the Gencode days too
       const opts = { date: TODAY, note: '' };
       const chk = R.checkMove(s, d, 'Draft 1', opts);
       assert.deepEqual(chk.errs, []);   // (CR-20 §4.15: the "no expected Draft n" info gave way to the Next expected section of Move stage)
@@ -233,8 +233,8 @@
     });
     test('skipping a required step is a warning, not an error', () => {
       const s = fresh();
-      s.deals.push({ deal_id: 'D999997', campaign_id: 'KS', kol_id: 'K0120', status: 'List', sub_status: 'Shortlist', pillar: 'Awareness', payment_term: 'postpaid', rate_card: 3000 });   // CR-10 §4.12: a term is needed into Confirm QT · CR-20 §4.7: a rate card too
-      const r = R.checkMove(s, deal(s, 'D999997'), 'Draft 1', { date: TODAY });
+      s.deals.push({ deal_id: 'D999997', campaign_id: 'KS', kol_id: 'K0120', status: 'List', sub_status: 'Shortlist', pillar: 'Awareness', payment_term: 'postpaid', rate_card: 3000, cta: 'TikTok' });   // CR-10 §4.12: a term is needed into Confirm QT · CR-20 §4.7: a rate card too · CR-22: a CTA
+      const r = R.checkMove(s, deal(s, 'D999997'), 'Draft 1', { date: TODAY, ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } });   // (CR-22 §3.3: past Confirm QT with no shipment → how the samples go)
       assert.deepEqual(r.errs, []);
       assert.ok(r.warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TODAY).slice(0, 5), 'Confirm QT, Brief, Script')), 'CR-15: marked done on the day of the move');
     });
