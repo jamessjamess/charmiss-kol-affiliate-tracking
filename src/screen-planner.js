@@ -30,7 +30,7 @@ KT.planner = (function () {
   const mine = () => !!pl && !!pl.m && !!box();
 
   /* ===================== open ===================== */
-  /* o: {campaignId (none = a new Campaign), addRow, focusPhase, opener} */
+  /* o: {campaignId (none = a new Campaign), addRow, focusPhase, focus ('products' — CR-27 §3.1: the No products chip), opener} */
   function open(o = {}) {
     if (!guard('campaign.draft')) return;   // CR-17: Staff too
     if (U.modalOpen()) U.closeModal();
@@ -61,7 +61,8 @@ KT.planner = (function () {
     if (!pl.rows.length || o.addRow) addRow(false);
     const me2 = pl, fi = o.focusPhase ? pl.rows.findIndex(r => r.phase_id === o.focusPhase) : -1, last = pl.rows.length - 1;
     /* the first thing to fill: a new Campaign's name · New phase: the new row's period (its picker opens on the day after the last Phase) · a Phase: its row */
-    const focusSel = me2.mode === 'new' && !o.addRow ? '[data-c="campaign_name"]' : o.addRow ? `[data-row="${last}"] .drange-t` : fi >= 0 ? `[data-row="${fi}"] [data-k="label"]` : null;
+    const focusSel = o.focus === 'products' ? '#pl_products_q' : me2.mode === 'new' && !o.addRow ? '[data-c="campaign_name"]' : o.addRow ? `[data-row="${last}"] .drange-t` : fi >= 0 ? `[data-row="${fi}"] [data-k="label"]` : null;
+    me2.title = c ? K.editTitle(c.campaign_name) : K.newTitle;
     me2.m = U.createModal({ size: 'L', title: c ? K.editTitle(c.campaign_name) : K.newTitle, sub: K.sub, opener: o.opener, focus: () => focusSel,
       isDirty: () => !!me2.dirty, onClick, redraw: () => { if (pl === me2) render(); }, askClose: canDraftNow() ? askClose : null,
       onClose: () => { if (pl === me2) pl = null; if (U.currentTab() === 'campaign') setHash('campaign'); } });
@@ -243,6 +244,7 @@ KT.planner = (function () {
     if (!mine()) return;
     const v = html();
     pl.m.setBody(v.body, true); pl.m.setFoot(v.left, v.buttons);
+    if ($('cm_title') && pl.title) { $('cm_title').textContent = pl.title; pl.m.setSub(K.sub); }   // CR-27: after a panel (Adjust budget) that took the header
     const b = box();
     setHash(pl.campaignId ? 'campaign/' + pl.campaignId : 'campaign');
     if (pl.moved) { const k = pl.moved; setTimeout(() => { if (pl && pl.moved === k) { pl.moved = null; const tr = box().querySelector('tr.moved'); if (tr) tr.classList.remove('moved'); } }, 1000); }
@@ -275,7 +277,15 @@ KT.planner = (function () {
     /* CR-21 §3.4 — red only after Submit / Create (or Save draft without a name) · before that the full check is a grey hint */
     const warns = res.warns.filter(w => w.field !== 'products' || show('products')).concat(moveWarn());
     const red = !!pl.submitted, shown = Object.assign({}, res, { errs: res.errs.filter(e => red || e === pl.countErr), warns });
-    $('pl_checks').innerHTML = red ? checksHTML(shown, '') : U.checksSoftHTML(Object.assign({}, res, { warns }), '');
+    /* CR-27 §3.1 — what is still missing: one line "4 things to finish ▾" (grey · a click opens the list · an item goes to its field) ·
+       after Submit / Create it turns red and opens by itself */
+    const todo = []; res.errs.forEach(e => { if (!todo.some(t => t.msg === e.msg)) todo.push(e); });
+    if (todo.length && pl.submitted !== 'draft') {
+      const open = pl.todoOpen != null ? pl.todoOpen : red;
+      $('pl_checks').innerHTML = `<div class="pl-todo${red ? ' red' : ''}"><button type="button" class="link pl-todo-b" data-pltodo aria-expanded="${open}" title="${esc(K.todoTip)}">${red ? '✕ ' : ''}${esc(K.todo(todo.length))} <span class="chev">${open ? '▴' : '▾'}</span></button>` +
+        (open ? `<ul class="pl-todo-l">${todo.map(e => `<li><button type="button" class="link" data-plgo="${esc(e.field || '')}">${esc(e.msg)}</button></li>`).join('')}</ul>` : '') + `</div>` +
+        (warns.length ? U.checksSoftHTML({ errs: [], warns, infos: [] }, '') : '');
+    } else $('pl_checks').innerHTML = red ? checksHTML(shown, '') : U.checksSoftHTML(Object.assign({}, res, { warns }), '');
     b.querySelectorAll('[data-key]').forEach(el => {
       const keys = [el.dataset.key, el.dataset.key2].filter(Boolean), bad = red && keys.some(k => res.errs.some(e => e.field === k)), w = el.closest('.dfield') || el;
       w.classList.toggle('invalid', bad); el.classList.toggle('invalid', bad);
@@ -397,6 +407,9 @@ KT.planner = (function () {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     const m = b.closest('details'); if (m) m.open = false;
     if (b.dataset.pladjust != null) { openAdjust(b); return; }
+    /* CR-27 §3.1 — the footer list: open / fold · an item → its field */
+    if (b.dataset.pltodo != null) { const o0 = pl.todoOpen != null ? pl.todoOpen : !!pl.submitted; pl.todoOpen = !o0; refresh(); return; }
+    if (b.dataset.plgo != null) { goField(b.dataset.plgo); return; }
     if (b.dataset.add != null) { pl.countErr = null; addRow(); return; }
     if (b.dataset.dup != null) {
       const r = pl.rows[+b.dataset.dup], days = okRow(r) ? R.dayDiff(r.end_date, r.start_date) : null;
@@ -436,6 +449,15 @@ KT.planner = (function () {
   const ctxOf = () => { let e = 0; const base = store.newCampaignEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }; };
 
   /* CR-18 §4.3 — Adjust budget from the plan: a panel in place · applied at once (a manager) → the plan takes the new budget and Phase amounts */
+  /* a field of the form (a date range → its button · Products → its search) in view and focused */
+  function goField(f) {
+    const b = box(); if (!b) return;
+    let el = f === 'products' ? b.querySelector('#pl_products_q') : b.querySelector(`[data-key="${CSS.escape(f)}"], [data-key2="${CSS.escape(f)}"]`);
+    if (!el && /^row\d+_/.test(f)) el = b.querySelector(`[data-row="${f.match(/^row(\d+)_/)[1]}"] input, [data-row="${f.match(/^row(\d+)_/)[1]}"] .drange-t`);
+    if (el && el.classList.contains('drange')) el = el.querySelector('.drange-t') || el;
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' }); if (el.focus) el.focus({ preventScroll: true });
+  }
   function openAdjust(opener) {
     const me = pl, cid = pl.campaignId; if (!cid) return;
     KT.budget.open(cid, { opener, back: () => { if (pl === me) render(); }, onDone: rec => {
@@ -452,7 +474,7 @@ KT.planner = (function () {
   async function save(how) {
     if (!guard('campaign.draft') || !pl) return;
     const res = validate(how === 'draft' ? 'draft' : 'submit');
-    if (res.errs.length) { pl.submitted = how === 'draft' ? 'draft' : 'submit'; refresh(); return; }
+    if (res.errs.length) { pl.submitted = how === 'draft' ? 'draft' : 'submit'; pl.todoOpen = null; refresh(); return; }
     /* CR-18 §4.2 — Phase budgets short of / over the Campaign budget: asked once (Save anyway · Keep editing keeps everything) */
     const off = how !== 'draft' && res.warns.find(w => w.kind === 'over' || w.kind === 'under');
     if (off) { const t = R.planTotals(campDraft(), planRows()), what = off.kind === 'over' ? K.barOver(R.baht(-t.diff)) : K.unallocated(R.baht(t.diff));

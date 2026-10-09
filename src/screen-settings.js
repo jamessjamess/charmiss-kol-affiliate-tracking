@@ -5,7 +5,7 @@ KT.screens.settings = (function () {
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['cancel_reasons', C.cancel.nav], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['cancel_reasons', C.cancel.nav], ['kol_types', K.navKolTypes], ['partner_types', C.partner.nav], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
   const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive' && x[0] !== 'opsmode');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
@@ -45,7 +45,7 @@ KT.screens.settings = (function () {
       `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'opsmode')) + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7 · CR-17
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : st.section === 'partner_types' ? partnerTypesHTML() : listHTML(st.section);
     if (st.section === 'perf') perfCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
@@ -138,6 +138,13 @@ KT.screens.settings = (function () {
           <label class="tick"><input type="checkbox" data-cra${r.active !== false ? ' checked' : ''}${other ? ` disabled title="${esc(K2.otherFixed)}"` : ''}> ${esc(LS.active)}</label>
           ${own ? `<button type="button" class="link" data-crdel${used ? ` disabled title="${esc(LS.inUse(used))}"` : ''}>${esc(LS.del)}</button>` : ''}</div>`; }).join('') +
       `<div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+  }
+  /* CR-25 §3.1 — Partner types (lookups.partner_types): the 3 keys stay (KOL · Affiliate · Both) · only the words change · a blank word = the default */
+  function partnerTypesHTML() {
+    const PT = C.partner, s = state(), n = R.partnerCounts(s.kol_master);
+    return `<div class="card"><div class="card-head"><h3>${esc(PT.nav)}</h3></div><p class="hint" style="margin-top:0">${esc(PT.hint)}</p>` +
+      R.partnerTypesOf(s.lookups).map(t => `<div class="lrow" data-pt="${esc(t.key)}"><input class="grow" data-ptl value="${esc(t.label)}" aria-label="${esc(PT.label)}" maxlength="40">` +
+        `<span class="muted small pt-n">${esc(t.key)} · ${esc(PT.used(n[t.key]))}</span></div>`).join('') + `<div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
   function openAddCancelReason(opener) {
     if (!U.guard(editAction())) return;
@@ -419,6 +426,12 @@ KT.screens.settings = (function () {
     /* CR-22 §3.3 — the words of a shipment method (blank = the default word) */
     if (t.dataset.smm) { const list = Array.isArray(L.shipment_methods) ? L.shipment_methods : (L.shipment_methods = R.shipMethodsDefault()), x = list.find(m => m.key === t.dataset.smm);
       const v = R.trim(t.value) || C.samples.method[t.dataset.smm]; if (x && x.label !== v) { x.label = v; commit(C.samples.methodsSaved); } return; }
+    const ptr = t.closest('[data-pt]');
+    if (ptr && t.matches('[data-ptl]')) {   // CR-25
+      const key = ptr.dataset.pt, list = R.partnerTypesOf(L), x = list.find(r => r.key === key), v = R.trim(t.value) || C.partner.types[key];
+      if (R.looksSensitive(v)) { t.value = x.label; toast(C.msg.sensitive); return; }
+      if (v !== x.label) { x.label = v; L.partner_types = list; commit(C.partner.saved); } t.value = v; return;
+    }
     const cr = t.closest('[data-cr]');
     if (cr) { const r = crList().find(x => x.key === cr.dataset.cr); if (!r) return;
       if (t.matches('[data-crl]')) { const v = R.trim(t.value) || C.cancel.reasons[r.key] || r.label; if (R.looksSensitive(v)) { t.value = r.label; toast(C.msg.sensitive); return; } if (v !== r.label) { r.label = v; t.value = v; commit(C.cancel.saved); } return; }
@@ -445,7 +458,7 @@ KT.screens.settings = (function () {
   function bodyClick(e) {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     if (KT.golive.settingsClick(e, () => render())) return;   // CR-11 §4.7
-    if (b.dataset.deal) { go('deals', { deal: b.dataset.deal }); return; }
+    if (b.dataset.deal) { KT.screens.deals.openDealModal(b.dataset.deal, { after: () => render(), source: 'settings' }); return; }   // CR-27 §3.3: over Settings
     const act = b.dataset.act;
     if (act === 'backup') { doBackup(); return; }
     const om = e.target.closest('[data-opsm]');

@@ -124,8 +124,13 @@ KT.screens.campaign = (function () {
       /* CR-18 §4.3 — the row ⋯ (Adjust budget) does not open the row */
       const adj = e.target.closest('[data-adjust]'); if (adj) { const m = adj.closest('details'); if (m) m.open = false; KT.budget.open(adj.dataset.adjust, { opener: adj.closest('details').querySelector('summary'), onDone: () => { renderTable(); if (cp.mode === 'view') renderPanel(); } }); return; }
       const ed = e.target.closest('[data-editcamp]'); if (ed) { const m = ed.closest('details'); if (m) m.open = false; KT.planner.open({ campaignId: ed.dataset.editcamp, opener: ed.closest('details').querySelector('summary') }); return; }   // CR-21 §3.7
+      /* CR-27 §3.1 — ⋯ Add phase · Cancel campaign (as the drawer does) */
+      const ap = e.target.closest('[data-addphase]'); if (ap) { const m = ap.closest('details'); if (m) m.open = false; KT.planner.open({ campaignId: ap.dataset.addphase, addRow: true, opener: m ? m.querySelector('summary') : ap }); return; }
+      const cc = e.target.closest('[data-cancelcamp]'); if (cc) { const m = cc.closest('details'); if (m) m.open = false; if (editing()) { toast(C.common.blockWhileEditing); return; } cp.id = cc.dataset.cancelcamp; cp.kind = 'campaign'; openStatus('cancelled'); return; }
       if (e.target.closest('details.rowmenu')) return;
-      const ep = e.target.closest('[data-editprod]'); if (ep) { if (editing()) { toast(C.common.blockWhileEditing); return; } Object.assign(cp, { mode: 'view', kind: 'campaign', id: ep.dataset.editprod }); startProducts(); return; }
+      /* CR-27 §3.1 — No products → Edit (the Phase Planner) at Products · without Edit: the drawer's product list as before */
+      const ep = e.target.closest('[data-editprod]'); if (ep) { if (can('campaign.draft')) { KT.planner.open({ campaignId: ep.dataset.editprod, focus: 'products', opener: ep }); return; }
+        if (editing()) { toast(C.common.blockWhileEditing); return; } Object.assign(cp, { mode: 'view', kind: 'campaign', id: ep.dataset.editprod }); startProducts(); return; }
       const sd = e.target.closest('[data-sortdays]'); if (sd) { cp.sortDays = cp.sortDays === 'asc' ? 'desc' : cp.sortDays === 'desc' ? null : 'asc'; renderTable(); return; }
       const ch = e.target.closest('[data-toggle]');
       if (ch) { const c = ch.dataset.toggle, set = coll(); set.has(c) ? set.delete(c) : set.add(c); saveColl(); renderTable(); return; }
@@ -177,12 +182,19 @@ KT.screens.campaign = (function () {
   const timingLine = start => { const t = R.startTiming(start, today()); if (!t) return '';
     return `<div class="sttime">${esc(t.kind === 'in' ? C.approval.startsOn(dm(start)) : t.kind === 'today' ? C.approval.startsToday : C.approval.startedAgo(t.days))}</div>`; };
   const baseHash = () => (cp.view === 'approvals' ? 'campaign/approvals' : 'campaign');
-  /* CR-18 §4.3 — the row ⋯ of a Campaign: Adjust budget (approved · not cancelled · for those who may) · CR-21 §3.7: Edit (the Phase Planner) */
+  /* CR-18 §4.3 — the row ⋯ of a Campaign: Adjust budget (approved · not cancelled · for those who may) · CR-21 §3.7: Edit (the Phase Planner) ·
+     CR-27 §3.1: one menu for Table and Timeline — Edit · Add phase · Adjust budget · Cancel campaign */
   function rowMenuHTML(c, status) {
+    const live = status !== 'cancelled' && status !== 'complete';
     const items = (can('campaign.draft') ? `<button type="button" class="mi" data-editcamp="${esc(c.campaign_id)}">${esc(K.editIt)}</button>` : '') +
-      (KT.budget.canAdjust() && R.isApproved(c) && status !== 'cancelled' ? `<button type="button" class="mi" data-adjust="${esc(c.campaign_id)}">${esc(K.adjustBudget)}</button>` : '');
+      (can('campaign.draft') && !R.isDraft(c) && status !== 'cancelled' ? `<button type="button" class="mi" data-addphase="${esc(c.campaign_id)}">${esc(K.addPhase)}</button>` : '') +
+      (KT.budget.canAdjust() && R.isApproved(c) && status !== 'cancelled' ? `<button type="button" class="mi" data-adjust="${esc(c.campaign_id)}">${esc(K.adjustBudget)}</button>` : '') +
+      (can('campaign.edit') && R.isApproved(c) && live && !c.status_override ? `<button type="button" class="mi danger" data-cancelcamp="${esc(c.campaign_id)}">${esc(K.cancelCampaign)}</button>` : '');
     return items ? `<details class="menu rowmenu"><summary class="icon-btn" aria-label="${esc(K.rowMenu(c.campaign_name))}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">${items}</div></details>` : '';
   }
+  /* CR-27 §3.1 — No products on a Campaign's name (Table and Timeline): a click → Edit at Products */
+  const noProdChip = c => (can('campaign.draft') || can('campaign.products') ? ` <button type="button" class="nopchip" data-editprod="${esc(c.campaign_id)}" title="${esc(K.addProductsTip)}">${esc(C.products.noProductsChip)}</button>`
+    : ` <span class="nopchip" title="${esc(C.products.noProductsTip)}">${esc(C.products.noProductsChip)}</span>`);
   /* the search found in a name, marked */
   const hl = t => R.highlightParts(t, cp.q).map(x => (x.hit ? `<mark>${esc(x.t)}</mark>` : esc(x.t))).join('');
 
@@ -276,7 +288,7 @@ KT.screens.campaign = (function () {
       const budgetCell = m.budget == null ? `<span class="muted">${esc(K.noBudget)}</span>${pend}` : `<div class="cell2 r" title="${esc(K.allocatedOf(R.baht(al.allocated || 0), R.baht(m.budget)))}"><span>${R.baht(m.budget)}</span>${pend ? `<span>${pend}</span>` : ''}${alChip}</div>`;
       const start = every.map(p => p.start_date).filter(Boolean).sort()[0] || null, end = every.map(p => p.end_date).filter(Boolean).sort().pop() || null;   // the whole Campaign (CR-14 §4.3)
       rows.push(`<tr class="click grp${status === 'cancelled' ? ' cancelled' : ''}" tabindex="0" data-kind="campaign" data-id="${esc(c.campaign_id)}"><td class="nm"><div class="nmw"><button type="button" class="chevbtn${open ? ' open' : ''}" data-toggle="${esc(c.campaign_id)}" aria-label="${esc(open ? K.collapse : K.expand)}" aria-expanded="${open}">${ICON.chevron}</button>` +
-        `<b>${hl(c.campaign_name)}</b>${!open && phases.length ? ` <span class="muted small nph">${esc(K.nPhases(phases.length))}</span>` : ''}${c.cta ? ` <span class="ctachip" title="${esc(K.ctaTip)}">${esc(c.cta)}</span>` : ''}${status !== 'pending' && waits(c) ? ` <span class="st apending ap-chg" title="${esc(C.approval.changePendingTip)}">${esc(C.approval.changePending)}</span>` : ''}${status !== 'cancelled' && !R.campaignProductCodes(s, c.campaign_id).length ? (can('campaign.products') ? ` <button type="button" class="nopchip" data-editprod="${esc(c.campaign_id)}" title="${esc(K.addProductsTip)}">${esc(C.products.noProductsChip)}</button>` : ` <span class="nopchip" title="${esc(C.products.noProductsTip)}">${esc(C.products.noProductsChip)}</span>`) : ''}</div></td><td title="${esc(c.status_reason || '')}">${chip(status)}${status === 'pending' && start ? timingLine(start) : ''}</td>` +
+        `<b>${hl(c.campaign_name)}</b>${!open && phases.length ? ` <span class="muted small nph">${esc(K.nPhases(phases.length))}</span>` : ''}${c.cta ? ` <span class="ctachip" title="${esc(K.ctaTip)}">${esc(c.cta)}</span>` : ''}${status !== 'pending' && waits(c) ? ` <span class="st apending ap-chg" title="${esc(C.approval.changePendingTip)}">${esc(C.approval.changePending)}</span>` : ''}${status !== 'cancelled' && !R.campaignProductCodes(s, c.campaign_id).length ? noProdChip(c) : ''}</div></td><td title="${esc(c.status_reason || '')}">${chip(status)}${status === 'pending' && start ? timingLine(start) : ''}</td>` +
         `<td>${start ? period(start, end) : `<span class="muted">${esc(K.noPhase)}</span>`}</td><td class="num">${daysHTML(R.daysLeft(R.campaignItem(s, c, td), td))}</td><td class="num">${budgetCell}</td>` +
         `<td class="num"><span class="${m.remaining < 0 ? 'late' : ''}">${R.baht(m.committed)}</span></td><td>${usedHTML(m)}</td><td class="num">${remainingHTML(m)}</td><td class="num">${pendingHTML(m.pending)}</td><td class="num">${R.fmtNum(m.deals)}</td>${act ? `<td class="act">${rowMenuHTML(c, status)}</td>` : ''}</tr>`);
       if (!open) return;
@@ -355,7 +367,7 @@ KT.screens.campaign = (function () {
     $('cp_body').innerHTML = `<div class="tablewrap gantt-wrap" id="cp_tl"><table class="tbl gantt" id="cp_tbl"><thead><tr><th class="gn">${esc(K.colName)}</th><th class="gs">${esc(K.colStatus)}</th><th class="gtl" style="min-width:${minW}px"><div class="gt-head">${ticks}</div></th></tr></thead><tbody>` +
       rows.map(r => `<tr class="click ${r.kind === 'campaign' ? 'grp' : 'child'}" tabindex="0" data-kind="${r.kind}" data-id="${esc(r.id)}">` +
         `<td class="gn">${r.kind === 'campaign' ? `<div class="nmw"><button type="button" class="chevbtn${r.folded ? '' : ' open'}" data-toggle="${esc(r.id)}" aria-label="${esc(r.folded ? K.expand : K.collapse)}" aria-expanded="${!r.folded}">${ICON.chevron}</button><b>${hl(r.name)}</b>` +
-          `${r.folded && r.phases.length ? ` <span class="muted small nph">${esc(K.nPhases(r.phases.length))}</span>` : ''}<span class="spacer"></span>${rowMenuHTML(r.camp, r.status)}</div>` : `<span class="pn">${hl(r.name)}</span>`}</td>` +
+          `${r.folded && r.phases.length ? ` <span class="muted small nph">${esc(K.nPhases(r.phases.length))}</span>` : ''}${r.status !== 'cancelled' && !R.campaignProductCodes(s, r.id).length ? noProdChip(r.camp) : ''}<span class="spacer"></span>${rowMenuHTML(r.camp, r.status)}</div>` : `<span class="pn">${hl(r.name)}</span>`}</td>` +
         `<td class="gs">${r.kind === 'phase' && (r.campStatus === 'on_hold' || r.campStatus === 'cancelled') ? chip(r.campStatus, true) : chip(r.status)}</td>` +
         `<td class="gtl"><div class="gt-row">${grid.map(m => `<i class="gt-grid" style="left:${pct(m)}%"></i>`).join('')}${todayLine}${bar(r)}${phaseLines(r)}${hatch(r)}</div></td></tr>`).join('') +
       `</tbody></table></div>` + legendHTML(rows, showToday, hatch);

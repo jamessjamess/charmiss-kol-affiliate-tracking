@@ -32,7 +32,9 @@ KT.screens.shipments = (function () {
   const purposeChip = p => `<span class="chip sh-purpose">${esc(SH.purposes[p] || p)}</span>`;
   /* CR-22 §3.3 — the method of a shipment next to its purpose */
   const methodChip = sh => `<span class="chip sh-method m-${esc(sh.method || 'warehouse')}">${esc(R.shipMethodLabel(state().lookups, sh.method || 'warehouse'))}</span>`;
-  const itemsCell = sh => (sh.items && sh.items.length ? esc(R.itemsText(sh.items)) : ['to_ship', 'problem'].includes(sh.status) ? `<span class="chip warn-chip">${esc(SM.noProducts)}</span>` : '<span class="muted">—</span>');
+  /* CR-27 §3.4 — the product names ("Test 2 ×1, Test 1 ×1") · none chosen yet → Add products (who may edit the shipment) */
+  const itemsCell = sh => (sh.items && sh.items.length ? `<span title="${esc(R.itemsText(sh.items))}">${esc(KT.samples.itemNames(sh.items))}</span>` : ['to_ship', 'problem'].includes(sh.status)
+    ? `<span class="chip warn-chip">${esc(SM.noProducts)}</span>${canEditSh(sh) ? ` <button type="button" class="link small" data-shitems="${esc(sh.shipment_id)}">${esc(SM.addProducts)}</button>` : ''}` : '<span class="muted">—</span>');
   const dash = '<span class="muted">—</span>';
   const campPhase = r => { const s = state(), c = r.campaign_id ? R.campaignName(s, r.campaign_id) : '', idx = sv.idx, ph = r.deal && idx ? R.primaryPhase(idx, r.deal.deal_id) : null;
     const pn = ph && ph !== R.UNSCHEDULED && ph !== R.NEEDS ? R.phaseName(s, ph) : '';
@@ -81,6 +83,7 @@ KT.screens.shipments = (function () {
       sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); });
     $('sh_bulk').addEventListener('click', bulkClick);
     $('sh_body').addEventListener('click', bodyClick);
+    $('sh_body').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-shrow]')) { e.preventDefault(); e.target.click(); } });   // CR-27: Enter on a row = a click
     $('sh_body').addEventListener('change', bodyChange);
     $('sh_newwrap').addEventListener('click', e => { if (e.target.closest('#sh_new')) newShipment({ opener: e.target.closest('#sh_new'), after: draw }); });
     sec.dataset.built = '1';
@@ -253,18 +256,18 @@ KT.screens.shipments = (function () {
       const sbCell = r => { const due = R.shipByDate(r.sh); return due ? `<span class="${r.status === 'overdue' ? 'late' : ''}">${esc(R.dmy(due))}</span>`
         : r.sh.method === 'self_purchase' ? dash   // (KOL buys own: Buy by is optional)
         : `<span class="muted">${esc(SM.shipByNotSet)}</span>${canEditSh(r.sh) ? ` <button type="button" class="link small" data-shact="ship_by" data-sh="${esc(r.sh.shipment_id)}">${esc(SM.setShort)}</button>` : ''}`; };
-      row = r => `<tr class="click${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(sbCell(r))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
+      row = r => `<tr class="click${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" tabindex="0" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(sbCell(r))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
         `<td>${chip(r.status)}${r.status === 'problem' && r.sh.problem_reason ? ` <span class="muted small">${esc(r.sh.problem_reason)}</span>` : ''}</td>${pl(r)}<td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     } else if (sv.tab === 'in-transit') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipped)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th class="num">${esc(T.days)}</th><th>${esc(T.pic)}</th><th></th>`;
       span = pick ? 11 : 10;
       row = r => { const n = R.daysInTransit(r.sh, td), slow = n != null && n > R.TRANSIT_SLOW;
-        return `<tr class="click" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.shipped_date))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
+        return `<tr class="click" tabindex="0" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.shipped_date))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
           `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td><td class="num">${n == null ? dash : `<span class="${slow ? 'sh-slow' : ''}"${slow ? ` title="${esc(SH.slowTip(R.TRANSIT_SLOW))}"` : ''}>${esc(SH.daysN(n))}</span>`}</td><td>${r.pic ? esc(r.pic) : dash}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`; };
     } else {
       head = `<th>${esc(T.delivered)}</th><th class="stk at0">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th>${esc(T.shipped)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th><th></th>`;
       span = 11;
-      row = r => `<tr class="click${old(r) ? ' sm-legacy' : ''}${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}"${tip(r)}>${tdv(d(r.sh.delivered_date))}${kolCell(r).replace(' at0', ' at0')}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
+      row = r => `<tr class="click${old(r) ? ' sm-legacy' : ''}${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" tabindex="0" data-shrow="${esc(r.sh.shipment_id)}"${tip(r)}>${tdv(d(r.sh.delivered_date))}${kolCell(r).replace(' at0', ' at0')}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>` +
         `<td>${r.sh.carrier ? esc(r.sh.carrier) : dash}</td><td>${trackCell(r.sh) || dash}</td>${tdv(d(r.sh.shipped_date))}<td>${r.pic ? esc(r.pic) : dash}</td><td>${chip(r.status)}${r.status === 'not_required' && r.sh.not_required_reason ? ` <span class="muted small">${esc(r.sh.not_required_reason)}</span>` : ''}</td><td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     }
     let body;
@@ -284,9 +287,16 @@ KT.screens.shipments = (function () {
     if (e.target.closest('td.cb')) return;
     const a = e.target.closest('[data-shact]'); if (a) { const m = a.closest('details'); if (m) m.open = false; rowAction(a.dataset.shact, a.dataset.sh, a); return; }
     if (KT.samples.click(e, draw)) return;   // CR-17: Shipped · Delivered · Shipped & delivered · Undo delivered · Change address
-    const dd = e.target.closest('[data-shdeal]'); if (dd) { go('deals', { deal: dd.dataset.shdeal, section: 'shipments' }); return; }
+    const it = e.target.closest('[data-shitems]'); if (it) { itemsDialog(it.dataset.shitems, draw, it); return; }   // CR-27 §3.4
+    const dd = e.target.closest('[data-shdeal]'); if (dd) { openDealHere(dd.dataset.shdeal, dd.closest('[data-shrow]')); return; }
     const p = e.target.closest('[data-shpl]'); if (p) { openPickList(p.dataset.shpl); return; }
-    const r = e.target.closest('[data-shrow]'); if (r) { const sh = shOf(r.dataset.shrow); if (!sh) return; if (sh.deal_id && dealOf(sh.deal_id)) go('deals', { deal: sh.deal_id, section: 'shipments' }); else openShipment(sh.shipment_id); }
+    const r = e.target.closest('[data-shrow]'); if (r) { const sh = shOf(r.dataset.shrow); if (!sh) return; if (sh.deal_id && dealOf(sh.deal_id)) openDealHere(sh.deal_id, r); else openShipment(sh.shipment_id); }
+  }
+  /* CR-27 §3.3 — a deal opens over Shipments (Shipments & posts) · ‹ › the deals of the rows on screen · closed → this page as it was, focus on the row */
+  function openDealHere(id, rowEl) {
+    const nav = [...new Set((sv.rows || []).map(x => x.deal && x.deal.deal_id).filter(Boolean))], shId = rowEl && rowEl.dataset.shrow;
+    KT.screens.deals.openDealModal(id, { tab: 'shipments', nav, source: 'shipments', after: () => { if (U.currentTab() !== 'shipments') return; const y = window.scrollY; draw(); window.scrollTo(0, y);
+      const tr = shId && document.querySelector(`#sh_body [data-shrow="${CSS.escape(shId)}"]`); if (tr) tr.focus({ preventScroll: true }); } });
   }
   function bodyChange() { /* rows are text — nothing to change in place (CR-11 §4.10) */ }
   function rowAction(k, id, opener) {

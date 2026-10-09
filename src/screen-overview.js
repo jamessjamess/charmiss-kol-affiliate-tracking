@@ -3,6 +3,8 @@
                    Campaign portfolio with Days left · a download on each table / chart card and an Export of the whole tab (CR-09 §4.1–4.5)
    By campaign   — one Campaign (and Phase): summary cards · Activity by date · Phase budget · Pillar allocation (CR-19, was Allocation vs target) · Workload by PIC — one full row each (CR-07 §4.2)
    Operations    — one PIC first (CR-07 §4.3), then Campaign / Tier · queue cards · the chosen queue as a table · Active pipeline · Due in next 7 days
+   CR-26 — All campaigns: 4 KPI cards (KOL & Affiliate engaged) → Budget vs Actual by month → portfolio … · By campaign: + Budget vs Actual after Phase budget ·
+   Team workload (R.teamWorkload) in place of Workload by PIC
    Money is said one way everywhere: Budget → Committed → Used % → Remaining → Pending (§4.5). → KT.screens.overview */
 KT.screens.overview = (function () {
   'use strict';
@@ -15,6 +17,7 @@ KT.screens.overview = (function () {
     all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', sort: null }, savedPreset()),
     camp: { campaign: '', phase: '', gran: 'day', measure: 'posts', colorBy: null, colorFor: null, view: 'chart' },
     ops: { pic: null, picFor: null, tile: '', stage: '', camps: null, campsFor: null, waiting: '', waitFor: null, folded: new Set(), foldFor: null, byKey: null, fix: null },   // CR-24
+    bva: { mode: 'monthly', view: 'chart' },   // CR-26 §3.2
   };
   const td = () => today();
   /* CR-07 §4.1: the last preset is remembered (a Custom range with its dates) */
@@ -46,7 +49,7 @@ KT.screens.overview = (function () {
     $('ov_tools').addEventListener('change', onToolsChange);
     $('ov_body').addEventListener('click', onBodyClick);
     /* CR-19 §4.4 — Tab goes through the rows · Enter = a click */
-    $('ov_body').addEventListener('keydown', e => { if (e.key !== 'Enter') return; const tr = e.target.closest('tr[data-gocamp], tr[data-wqrow], tr[data-wqpic]'); if (tr && e.target === tr) tr.click(); });
+    $('ov_body').addEventListener('keydown', e => { if (e.key !== 'Enter') return; const tr = e.target.closest('tr[data-gocamp], tr[data-wqrow], tr[data-wqpic], tr[data-goteam]'); if (tr && e.target === tr) tr.click(); });
     /* CR-06 §4.9: drawn again for the content's new width (menu folded / opened, window resized) — the page stays where it was */
     document.addEventListener('kt:contentresize', () => { if (U.currentTab() !== 'overview') return; const y = window.scrollY; render(null, true); window.scrollTo(0, y); });
     sec.dataset.built = '1';
@@ -90,10 +93,10 @@ KT.screens.overview = (function () {
       `<span class="hidden">${U.rangeHTML('id="ov_crange"', from, to, { label: O.presets.custom })}</span>`;   // CR-10 §4.8: Custom opens the range picker — nothing changes until Apply
     const k = R.portfolioKpis(s, from, to, td(), statusesNow());
     /* CR-13 §4.1 — top to bottom: the totals → each Campaign → when → where the money went (Pillar · Tier) */
-    $('ov_body').innerHTML = `<div class="kpis k5" id="ov_kpis">${kpiCards(k)}</div>` +
+    $('ov_body').innerHTML = `<div class="kpis k4" id="ov_kpis">${kpiCards(k)}</div>` + bvaCard('budgetactual') +   // CR-26 §3.3
       `<div class="card ov-full ov-port"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>` +
       `<div class="ov-r3">${tlCard()}</div><div class="ov-r4">${pillarCard()}${tierCard()}</div>`;
-    renderPortfolio(); renderTl(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
+    renderBva(); renderPortfolio(); renderTl(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
   }
   /* what the export rows of this tab are worked out from (KT.export) — the same as the screen */
   const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), statuses: statusesNow(), measure: ov.all.measure, sort: ov.all.sort }; };
@@ -109,23 +112,25 @@ KT.screens.overview = (function () {
     const [from, to] = allRange(), A = ov.all;
     return { file: KT.export.scopeName(A.preset, from, to), text: `${A.preset === 'custom' ? O.presets.custom : O.presets[A.preset]} · ${R.dmy(from)} – ${R.dmy(to)}` };
   }
-  /* CR-09 §4.1 Row 1 — 5 KPI cards, no buttons (ⓘ only) */
+  /* CR-09 §4.1 Row 1 — KPI cards, no buttons (ⓘ only) · CR-26 §3.1: 4 — Campaigns · Committed · Paid · KOL & Affiliate engaged (no Deals card) */
   function kpiCards(k) {
     const c = k.campaigns, d = k.deals, m = k.money, p = k.paid, PS = C.phaseStatus;
     const card = (label, tip, v, body) => `<div class="kpi"><div class="l">${U.labelInfo(label, tip, label)}</div><div class="v">${v}</div>${body}</div>`;
-    const seg = (n, cls, label) => (n ? `<span class="${cls}" style="flex:${n}" title="${esc(`${label} ${n}`)}"></span>` : '');
     const stLine = ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].filter(st => c.by[st]).map(st => `${PS[st]} ${c.by[st]}`).join(' · ');
     const campaigns = card(O.kCampaigns, O.kCampaignsTip, R.fmtNum(c.n), `<div class="sub">${esc(stLine)}</div>` +
       (c.next ? `<div class="sub muted">${esc(O.nextToEnd(c.next.campaign.campaign_name, KT.export.daysText(c.next.left)))}</div>` : ''));
-    const deals = card(O.deals, O.kDealsTip, R.fmtNum(d.n), `<div class="sbar">${seg(d.list, 'list', C.status.List)}${seg(d.inprocess, 'progress', C.status.Inprocess)}${seg(d.complete, 'done', C.status.Complete)}</div>` +
-      `<div class="slegend"><span><i class="list"></i>${esc(C.status.List)} ${R.fmtNum(d.list)}</span><span><i class="progress"></i>${esc(C.status.Inprocess)} ${R.fmtNum(d.inprocess)}</span><span><i class="done"></i>${esc(C.status.Complete)} ${R.fmtNum(d.complete)}</span></div>`);
     const committed = card(O.committed, MN.committed, `${R.baht(m.committed)} <small>${m.budget == null ? esc(O.noBudget) : esc(O.of(R.baht(m.budget)))}</small>`,
       (m.usedPct != null ? `<div class="bar"><span class="${m.usedPct > 100 ? 'over' : ''}" style="width:${Math.min(100, m.usedPct)}%"></span></div><div class="sub${m.usedPct > 100 ? ' late' : ''}">${esc(O.usedPct(Math.round(m.usedPct)))}</div>` : '') +
       `<div class="sub muted">${esc(m.remaining != null && m.remaining < 0 ? O.overPend(R.baht(-m.remaining), R.baht(m.pending)) : O.remPend(m.remaining == null ? '—' : R.baht(m.remaining), R.baht(m.pending)))}</div>`);
     const paid = card(O.kPaid, O.kPaidTip, R.baht(p.paid), (p.pct != null ? `<div class="bar paidbar" title="${esc(O.paidPctLine(Math.round(p.pct), R.baht(p.outstanding)))}"><span style="width:${Math.min(100, p.pct)}%"></span></div>` : '') +
       `<div class="sub">${esc(O.paidPctLine(p.pct == null ? 0 : Math.round(p.pct), R.baht(p.outstanding)))}</div>`);
-    const kols = card(O.kKols, O.kKolsTip, R.fmtNum(k.kols.n), `<div class="sub">${esc(O.kolsLine(R.fmtNum(k.kols.deals), k.kols.avg == null ? '—' : R.baht(k.kols.avg)))}</div>`);
-    return campaigns + deals + committed + paid + kols;
+    /* partners once (committed deals) · KOL n · Affiliate n · Both n · committed deals · Avg · the deals not committed yet (where 401 vs 278 comes from: ⓘ) */
+    const kk = k.kols, types = R.partnerTypesOf(state().lookups).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · ');
+    const def = O.dealsDef(R.fmtNum(d.n), R.fmtNum(d.list), R.fmtNum(d.inprocess), R.fmtNum(d.complete), R.fmtNum(kk.deals), R.fmtNum(kk.notCommitted));
+    const engaged = card(O.kEngaged, O.kEngagedTip, R.fmtNum(kk.n), `<div class="sub">${esc(types)}</div>` +
+      `<div class="sub">${esc(O.engagedDeals(R.fmtNum(kk.deals), kk.avg == null ? '—' : R.baht(kk.avg)))} ${info(def)}</div>` +
+      (kk.notCommitted ? `<div class="sub muted kpi-nc" title="${esc(def.d)}">${esc(O.notCommittedLine(R.fmtNum(kk.notCommitted)))}</div>` : ''));
+    return campaigns + committed + paid + engaged;
   }
   /* a download button on a table / chart card: Excel or CSV of exactly what the card shows (CR-09 §4.5) */
   const dlMenu = w => `<details class="menu dlmenu"><summary class="icon-btn" title="${esc(O.download)}" aria-label="${esc(O.download)}">${ICON.download}</summary><div class="menu-list right">` +
@@ -152,6 +157,132 @@ KT.screens.overview = (function () {
     U.download(name, KT.xlsx.workbook(tables.map((t, i) => KT.export.sheetOf(t, i ? null : meta))), KT.xlsx.MIME);
     toast(C.io.exported(name, tables.length));
   }
+  /* ===================== CR-26 §3.2 — Budget vs Actual by month (All campaigns after the KPI · By campaign after Phase budget) ===================== */
+  const bvaCard = w => { const B = O.bva;
+    return `<div class="card ov-full bva-card" data-bvaw="${w}"><div class="card-head"><h3>${U.labelInfo(B.title, B.tip, B.title)}</h3><div class="btns ov-ctl">` +
+      `<div class="seg" data-bvamode role="group" aria-label="${esc(B.modeL)}"><button type="button" data-v="monthly">${esc(B.monthly)}</button><button type="button" data-v="cumulative">${esc(B.cumulative)}</button></div>` +
+      `<button type="button" class="icon-btn" data-bvaact="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu(w)}` +
+      `<button type="button" class="icon-btn" data-bvaact="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>` +
+      `<div class="bva-sum" id="bva_sum"></div><div class="legend bva-legend" id="bva_legend"></div>` +
+      `<div class="chartbox bva-box" id="bva_box"><svg id="bva_svg" role="img" aria-label="${esc(B.title)}"></svg><div class="tip" id="bva_tip"></div></div>` +
+      `<div class="tablewrap hidden" id="bva_table" style="max-height:360px"></div><div class="foot-note" id="bva_foot"></div></div>`; };
+  const bvaWidget = () => (ov.tab === 'campaign' ? 'budgetactual_camp' : 'budgetactual');
+  function bvaModel() {
+    if (ov.tab === 'campaign') return R.budgetVsActualByMonth(state(), { campaignId: ov.camp.campaign, phaseId: ov.camp.phase || null, today: td() });
+    const [from, to] = allRange(); return R.budgetVsActualByMonth(state(), { from, to, statuses: statusesNow(), today: td() });
+  }
+  const signBaht = v => (v > 0 ? '+' : v < 0 ? '−' : '') + R.baht(Math.abs(v));
+  const monthLabel = (k, md) => { const short = O.months[Number(k.slice(5, 7)) - 1]; return md.from.slice(0, 4) === md.to.slice(0, 4) ? short : `${short} ${k.slice(2, 4)}`; };
+  function bvaSumHTML(md) {
+    const B = O.bva, st = x => (x && x.status ? ` · <b class="bva-${x.status}">${esc(B[x.status](R.baht(x.amount)))}</b>` : '');
+    const restL = ov.tab === 'campaign' ? B.restCampaign : ov.all.preset === 'this_year' ? B.restYear : B.restPeriod;
+    return [md.toDate ? esc(B.toDate(R.baht(md.toDate.posted), R.baht(md.toDate.planned), md.toDate.pct == null ? '—' : Math.round(md.toDate.pct))) + st(md.toDate) : '',
+      md.rest ? esc(B.rest(restL, R.baht(md.rest.upcoming), R.baht(md.rest.planned))) : ''].filter(Boolean).map(t => `<div>${t}</div>`).join('');
+  }
+  function bvaLegendHTML(mode) {
+    const L = O.bva.legend, sw = (cls, t) => `<span><i class="${cls}"></i>${esc(t)}</span>`;
+    return mode === 'cumulative' ? sw('bl-line ink', L.cumBudget) + sw('bl-area', L.cumPosted) + sw('bl-line dash', L.cumPlus)
+      : sw('bl-posted', L.posted) + sw('bl-up', L.upcoming) + sw('bl-late', L.late) + sw('bl-line ink', L.budget);
+  }
+  function renderBva() {
+    const box = $('bva_box'); if (!box) return;
+    const md = bvaModel(), B = O.bva, V = ov.bva; ov.bvaModel = md;
+    document.querySelectorAll('[data-bvamode] button').forEach(b => { const on = b.dataset.v === V.mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    const tb = document.querySelector('[data-bvaact="table"]'); if (tb) tb.classList.toggle('on', V.view === 'table');
+    $('bva_sum').innerHTML = bvaSumHTML(md);
+    $('bva_legend').innerHTML = bvaLegendHTML(V.mode);
+    const table = V.view === 'table'; box.classList.toggle('hidden', table); $('bva_table').classList.toggle('hidden', !table); $('bva_legend').classList.toggle('hidden', table);
+    if (table) $('bva_table').innerHTML = tableOf(KT.export.rowsFor(bvaWidget(), xOfTab(ov.tab)));
+    else drawBva($('bva_svg'), box, $('bva_tip'), md, V.mode, 300);
+    const ft = [];
+    if (md.noDate.amount > 0) ft.push(`${esc(B.noDate(R.baht(md.noDate.amount)))} · <button type="button" class="link" data-bvaset>${esc(B.setDates)}</button>`);
+    if (md.outside.amount > 0) ft.push(esc(B.outside(R.baht(md.outside.amount), md.outside.deals)));
+    $('bva_foot').innerHTML = ft.map(t => `<div>${t}</div>`).join('');
+  }
+  /* a bar's top end rounded (4px), its foot square on the baseline */
+  const topRound = (x, y, w, h, r) => { const k = Math.min(r, w / 2, h); return `M${x},${y + h}V${y + k}Q${x},${y} ${x + k},${y}H${x + w - k}Q${x + w},${y} ${x + w},${y + k}V${y + h}Z`; };
+  function drawBva(svg, box, tip, md, mode, H) {
+    tip.classList.remove('show');
+    const B = O.bva, cGrid = css('--grid'), cAxis = css('--muted'), cInk = css('--text'), cBlue = css('--st-prog'), cSurf = css('--surface'), cAcc = css('--accent'), cOver = css('--err'), cBehind = css('--warn');
+    const months = md.months, W = Math.max(300, box.clientWidth || 800), m = { l: 58, r: 14, t: 16, b: 46 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+    const t0 = md.total;
+    if (!months.length || !(t0.budget || t0.posted || t0.upcoming || t0.late)) { svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="axis">${esc(B.empty)}</text>`; return; }
+    const band = iw / months.length, bw = Math.max(6, Math.min(40, band * 0.56)), cx = i => m.l + band * i + band / 2;
+    const vals = mode === 'cumulative' ? md.cum.flatMap(c => [c.budget, c.plus]) : months.flatMap(x => [x.budget, x.posted + x.upcoming + x.late]);
+    const maxV = Math.max(1, ...vals), yStep = R.niceStep(maxV / 4), yMax = yStep * Math.max(1, Math.ceil(maxV * 1.08 / yStep)), y = v => m.t + ih - v / yMax * ih;
+    let g = `<defs><pattern id="bvaLate" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${cSurf}"/><rect width="2.5" height="6" fill="${cBlue}"/></pattern></defs>`;
+    for (let v = 0; v <= yMax + 1e-9; v += yStep) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${cGrid}" stroke-width="1"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" class="axis">${esc(bahtShort(v))}</text>`;
+    /* the month names (thinned when narrow) · under each the words Over / Behind (a dot when there is no room) */
+    const every = Math.max(1, Math.ceil(30 / band)), roomy = band >= 64;
+    let labels = '';
+    months.forEach((x, i) => {
+      if (!(i % every)) labels += `<text x="${cx(i)}" y="${H - m.b + 16}" text-anchor="middle" class="axis${x.current ? ' bva-cur' : ''}">${esc(monthLabel(x.key, md))}</text>`;
+      if (!x.status) return;
+      const col = x.status === 'over' ? cOver : cBehind, words = B[x.status](bahtShort(x.amount));
+      labels += roomy ? `<text x="${cx(i)}" y="${H - m.b + 32}" text-anchor="middle" class="axis bva-st" fill="${col}">${esc(words)}</text>`
+        : `<circle cx="${cx(i)}" cy="${H - m.b + 28}" r="3.5" fill="${col}"><title>${esc(words)}</title></circle>`;
+    });
+    let marks = '';
+    if (mode === 'cumulative') {
+      const pts = k => md.cum.map((c, i) => [cx(i), y(c[k])]), line = a => a.map((q, i) => `${i ? 'L' : 'M'}${q[0]},${q[1]}`).join('');
+      const pp = pts('posted'), base = y(0);
+      marks += `<path d="${line(pp)}L${pp[pp.length - 1][0]},${base}L${pp[0][0]},${base}Z" fill="${cBlue}" fill-opacity=".16"/>` +
+        `<path d="${line(pp)}" fill="none" stroke="${cBlue}" stroke-width="2"/>` +
+        `<path d="${line(pts('plus'))}" fill="none" stroke="${cBlue}" stroke-width="2" stroke-dasharray="6 4"/>` +
+        `<path d="${line(pts('budget'))}" fill="none" stroke="${cInk}" stroke-width="2"/>`;
+      ['budget', 'posted'].forEach(k => pts(k).forEach(q => { marks += `<circle cx="${q[0]}" cy="${q[1]}" r="4" fill="${k === 'budget' ? cInk : cBlue}" stroke="${cSurf}" stroke-width="2"/>`; }));
+    } else {
+      months.forEach((x, i) => {
+        const x0 = cx(i) - bw / 2, segs = [['posted', x.posted], ['upcoming', x.upcoming], ['late', x.late]].filter(q => q[1] > 0);
+        let acc = 0;
+        segs.forEach((q, j) => {
+          const y0 = y(acc), y1 = y(acc + q[1]); acc += q[1];
+          const h = Math.max(0, y0 - y1 - (j ? 2 : 0)); if (h <= 0) return;   // 2px surface gap between stacked parts
+          const d = j === segs.length - 1 ? topRound(x0, y1, bw, h, 4) : `M${x0},${y1}h${bw}v${h}h${-bw}Z`;
+          marks += q[0] === 'posted' ? `<path d="${d}" fill="${cBlue}"/>` : q[0] === 'upcoming' ? `<path d="${d}" fill="${cBlue}" fill-opacity=".3" stroke="${cBlue}" stroke-width="1"/>`
+            : `<path d="${d}" fill="url(#bvaLate)" stroke="${cBlue}" stroke-width="1"/>`;
+        });
+        /* Budget: a dark tick across the month (no second bar) */
+        if (x.budget > 0) marks += `<line x1="${x0 - 6}" x2="${x0 + bw + 6}" y1="${y(x.budget)}" y2="${y(x.budget)}" stroke="${cInk}" stroke-width="2.5" stroke-linecap="round"/>`;
+      });
+    }
+    /* Today */
+    let now = '';
+    const ci = months.findIndex(x => x.current);
+    if (ci >= 0) { const x = months[ci], n = R.dayDiff(x.to, x.from) + 1, tx = m.l + band * ci + band * Math.min(1, (R.dayDiff(td(), x.from) + 0.5) / n);
+      now = `<line x1="${tx}" x2="${tx}" y1="${m.t}" y2="${m.t + ih}" stroke="${cAcc}" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${tx + 4}" y="${m.t + 10}" class="axis today-l">${esc(O.today)}</text>`; }
+    const hits = months.map((x, i) => `<rect class="hit" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${ih}" tabindex="0" aria-label="${esc(KT.export.monthName(x.key))}: ${esc(R.baht(x.actual))} / ${esc(R.baht(x.budget))}"/>`).join('');
+    svg.innerHTML = g + `<g>${hits}</g><g style="pointer-events:none">${marks}</g><line x1="${m.l}" x2="${W - m.r}" y1="${m.t + ih}" y2="${m.t + ih}" stroke="${cAxis}" stroke-width="1"/>` + labels + now;
+    const show = i => {
+      const x = months[i], c = md.cum[i], T2 = B.tip2; tip.textContent = '';
+      const add = (cls, text) => { const el = document.createElement('div'); el.className = cls; el.textContent = text; tip.appendChild(el); return el; };
+      const row = (l, v) => { const r = document.createElement('div'); r.className = 'r'; const a = document.createElement('span'); a.textContent = l; const b = document.createElement('b'); b.textContent = v; r.appendChild(a); r.appendChild(b); tip.appendChild(r); };
+      add('d', KT.export.monthName(x.key));
+      row(T2.budget, R.baht(x.budget)); row(T2.posted, R.baht(x.posted)); if (x.upcoming) row(T2.upcoming, R.baht(x.upcoming)); if (x.late) row(T2.late, R.baht(x.late));
+      const v = add('r tot', ''); v.textContent = `${T2.variance} ${signBaht(x.variance)}`;
+      if (x.status) add(`d bva-${x.status}`, B[x.status](R.baht(x.amount)));
+      if (mode === 'cumulative') add('d', `${B.legend.cumBudget} ${R.baht(c.budget)} · ${B.legend.cumPosted} ${R.baht(c.posted)} · ${B.legend.cumPlus} ${R.baht(c.plus)}`);
+      if (x.camps.length) { add('d', T2.top); x.camps.slice(0, 3).forEach(q => row(R.campaignName(state(), q.campaign_id) || q.campaign_id, R.baht(q.amount))); }
+      const rect = box.getBoundingClientRect(), scale = rect.width / W; let left = cx(i) * scale + 12;
+      if (left + 230 > rect.width) left = cx(i) * scale - 240;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px'; tip.classList.add('show');
+    };
+    svg.querySelectorAll('.hit').forEach(h => { const i = +h.dataset.i;
+      h.addEventListener('pointerenter', () => show(i)); h.addEventListener('focus', () => show(i));
+      h.addEventListener('pointerleave', () => tip.classList.remove('show')); h.addEventListener('blur', () => tip.classList.remove('show')); });
+  }
+  function expandBva() {
+    const md = ov.bvaModel || bvaModel(), B = O.bva;
+    openDialog(`<div class="dlg-h">${esc(B.expandTitle(B.title, R.dmy(md.from), R.dmy(md.to)))}</div><div class="dlg-b"><div class="bva-sum">${bvaSumHTML(md)}</div><div class="legend bva-legend">${bvaLegendHTML(ov.bva.mode)}</div>` +
+      `<div class="chartbox bva-box" id="bvax_box"><svg id="bvax_svg" role="img" aria-label="${esc(B.title)}"></svg><div class="tip" id="bvax_tip"></div></div></div>` +
+      `<div class="dlg-f"><button type="button" class="btn" id="bvax_close">${esc(C.common.close)}</button></div>`, true);
+    $('bvax_close').addEventListener('click', closeDialog);
+    drawBva($('bvax_svg'), $('bvax_box'), $('bvax_tip'), md, ov.bva.mode, 460);
+  }
+  /* Set dates → Deals: the committed deals with no Post date and no Post due (the ones off the chart) · this Campaign / every Campaign · any PIC */
+  const goNoDate = () => go('deals', { filter: { campaign: ov.tab === 'campaign' ? ov.camp.campaign : '__all', phaseSel: 'all', noPostDate: true, pic: 'all' } });
+
   /* Campaign portfolio (Row 3) — Days left · Deals · every column sorts (Days left: On going fewest first) */
   const PCOLS = () => [{ k: 'campaign', l: O.colCampaign }, { k: 'status', l: O.colStatus }, { k: 'period', l: O.colPeriod },
     { k: 'days', l: O.colDaysLeft, num: 1, tip: { h: O.colDaysLeft, d: O.daysLeftTip } }, { k: 'budget', l: MN.budget.h, num: 1, tip: MN.budget },
@@ -385,12 +516,13 @@ KT.screens.overview = (function () {
     if (!P.campaign) { $('ov_body').innerHTML = `<div class="card empty"><b>${esc(O.noCampaign)}</b></div>`; return; }
     $('ov_body').innerHTML = `<div class="kpis cards4" id="ov_cards"></div>${activityCard()}
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.phaseBudgetTitle)}</h3><div class="btns ov-ctl">${dlMenu('phasebudget')}</div></div><div id="ov_pbudget"></div></div>
+      ${bvaCard('budgetactual_camp')}
       <div class="card ov-full"><div class="card-head"><h3>${U.labelInfo(O.productsTitle, O.productsTip, O.productsTitle)}</h3><div class="btns ov-ctl">${dlMenu('products')}</div></div><div id="ov_products"></div></div>
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.cancelledTitle)}</h3><div class="btns ov-ctl">${dlMenu('cancelled')}</div></div><div id="ov_cancelled"></div></div>
-      <div class="card ov-full"><div class="card-head"><h3>${esc(O.workloadTitle)}</h3><div class="btns ov-ctl">${dlMenu('workload')}</div></div><div id="ov_cwork"></div></div>`;
+      <div class="card ov-full"><div class="card-head"><h3>${U.labelInfo(O.team.title, O.team.tip, O.team.title)}</h3><div class="btns ov-ctl">${dlMenu('workload')}</div></div><div id="ov_cwork"></div></div>`;
     const scope = campScope();
     if (P.reasonFor !== P.campaign + '|' + P.phase) { P.reason = ''; P.reasonFor = P.campaign + '|' + P.phase; }   // the reason chip is per Campaign / Phase
-    renderCards(s, scope); renderActivity(s, scope); renderPhaseBudget(s); renderProductsGiven(s, scope); renderCancelled(s, scope); renderCampaignWorkload(s, scope);
+    renderCards(s, scope); renderActivity(s, scope); renderPhaseBudget(s); renderBva(); renderProductsGiven(s, scope); renderCancelled(s, scope); renderCampaignWorkload(s, scope);
   }
   const activityCard = () => `<div class="card"><div class="card-head"><h3>${esc(O.activityTitle)}</h3>
       <div class="btns ov-ctl">
@@ -567,7 +699,8 @@ KT.screens.overview = (function () {
       r.budget, r.budgetPct, r.committed, r.shortlist, r.posts, r.phase.phase_id === ov.camp.phase ? 'selected' : '', r.phase.phase_id)).join('') +
       /* CR-18 §4.3 — the Campaign budget no Phase has: a grey row under the last Phase */
       ((un => (un > 0 || R.pendingPhaseDelta(s, cid, R.UNALLOCATED) ? `<tr class="extra unal"><td class="pname"><span>${esc(O.unallocatedRow)}</span></td><td></td><td class="num">${R.baht(Math.max(0, un || 0))}${KT.budget.pendingTagHTML(cid, R.UNALLOCATED) ? `<div>${KT.budget.pendingTagHTML(cid, R.UNALLOCATED)}</div>` : ''}</td><td></td><td></td><td></td><td></td><td></td></tr>` : ''))(R.unallocatedOf(s, cid))) +
-      pb.extra.map(x => `<tr class="click extra${x.key === R.NEEDS ? ' warn' : ''}" data-godeals="${esc(x.key)}"><td class="pname"><span>${esc(x.key === R.NEEDS ? O.needsPhase : O.unscheduled)}</span></td><td></td><td></td><td class="num">${R.baht(x.committed)}</td><td></td><td></td><td></td><td class="num">${x.posts ? R.fmtNum(x.posts) : ''}</td></tr>`).join('');
+      pb.extra.map(x => `<tr class="click extra${x.key === R.NEEDS ? ' warn' : ''}" data-godeals="${esc(x.key)}"><td class="pname"><span>${esc(x.key === R.NEEDS ? O.needsPhase : O.unscheduled)}</span>` +
+        (x.key === R.UNSCHEDULED && x.deals ? `<div class="muted small pb-nodate">${esc(O.unscheduledDeals(x.deals))} · <button type="button" class="link" data-godeals="${esc(x.key)}">${esc(O.setDates)}</button></div>` : '') + `</td><td></td><td></td><td class="num">${R.baht(x.committed)}</td><td></td><td></td><td></td><td class="num">${x.posts ? R.fmtNum(x.posts) : ''}</td></tr>`).join('');
     const t = pb.total;
     $('ov_pbudget').innerHTML = `<div class="tablewrap"><table class="tbl compact-sm pbudget"><thead><tr><th class="pname">${esc(O.colPhase)}</th><th>${esc(O.colPeriod)}</th><th class="num">${esc(MN.budget.h)}</th>` +
       `<th class="num">${esc(MN.committed.h)} ${info(MN.committed)}</th><th>${esc(MN.used.h)} ${info(MN.used)}</th><th class="num">${esc(MN.remaining.h)} ${info(MN.remaining)}</th><th class="num">${esc(MN.pending.h)} ${info(MN.pending)}</th><th class="num">${esc(O.colPosts)}</th></tr></thead><tbody>${rows}` +
@@ -609,13 +742,19 @@ KT.screens.overview = (function () {
           `<td class="nowrap">${r.stage ? esc(r.stage) : dash}</td><td class="nowrap">${r.date ? esc(R.dmy(r.date)) : dash}</td><td>${esc(r.label)}</td><td class="cx-detail"${r.detail ? ` title="${esc(r.detail)}"` : ''}>${r.detail ? esc(r.detail) : dash}</td>` +
           `<td class="num">${r.value == null ? dash : R.baht(r.value)}</td><td>${r.pic ? esc(r.pic) : dash}</td></tr>`; }).join('') + `</tbody></table></div>`;
   }
-  /* CR-07 §4.2 — Workload by PIC of this Campaign (and Phase): most open deals first · Total · your row lit · a row opens Operations on that PIC */
+  /* CR-26 §3.4 — Team workload of this Campaign (and Phase): a row a person (R.teamWorkload — Operations › Team load counts open deals with it) ·
+     most open deals first · Not assigned + Assign · Total · a row → Deals of this Campaign and that person */
   function renderCampaignWorkload(s, scope) {
-    const rows = R.workloadByPic(s, scope, td()), sum = k => rows.reduce((a, r) => a + r[k], 0), mine = R.picName(U.me());
-    $('ov_cwork').innerHTML = !rows.length ? `<div class="hint">${esc(O.noActive)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm wl"><thead><tr><th>${esc(O.picLabel)}</th><th class="num">${esc(O.colOpen)}</th><th class="num">${esc(O.queues.overdue)}</th><th class="num">${esc(O.docsToCollect)}</th><th class="num">${esc(O.colCommittedOpen)} ${info(MN.committed)}</th></tr></thead><tbody>` +
-      rows.map(r => `<tr class="click${r.pic && r.pic === mine ? ' selected' : ''}" tabindex="0" data-gopic="${esc(r.pic || '__none')}" title="${esc(O.workloadTip)}"><td>${r.pic ? `<span class="picplain"><span class="av sm">${esc(initials(r.pic))}</span><span class="nm">${esc(r.pic)}</span></span>` : `<span class="muted">${esc(O.noPic)}</span>`}</td>` +
-        `<td class="num">${R.fmtNum(r.open)}</td><td class="num${r.overdue ? ' late' : ''}">${R.fmtNum(r.overdue)}</td><td class="num">${R.fmtNum(r.docs)}</td><td class="num">${R.baht(r.committed)}</td></tr>`).join('') +
-      `<tr class="total"><td>${esc(O.colTotal)}</td><td class="num">${R.fmtNum(sum('open'))}</td><td class="num">${R.fmtNum(sum('overdue'))}</td><td class="num">${R.fmtNum(sum('docs'))}</td><td class="num">${R.baht(sum('committed'))}</td></tr></tbody></table></div>`;
+    const T = O.team, rows = R.teamWorkload(s, R.scopeDeals(s, scope, R.phaseIndex(s)), td()), t = R.teamWorkloadTotal(rows), mine = R.picName(U.me());
+    const n = (v, cls) => `<td class="num${cls && v ? ' ' + cls : ''}">${v ? R.fmtNum(v) : '<span class="muted">0</span>'}</td>`;
+    const th = (k, num) => `<th${num ? ' class="num"' : ''}${T.colTip[k] ? ` title="${esc(T.colTip[k])}"` : ''}>${esc(T.col[k])}</th>`;
+    const cells = r => n(r.partners) + n(r.open) + n(r.posted) + n(r.postOverdue, 'late') + n(r.noPostDue) + n(r.cancelled) + `<td class="num">${R.baht(r.committed)}</td>` + n(r.docs);
+    $('ov_cwork').innerHTML = !rows.length ? `<div class="hint">${esc(T.empty)}</div>` : `<div class="tablewrap"><table class="tbl compact-sm wl teamwl"><thead><tr>${th('pic')}` +
+      ['partners', 'open', 'posted', 'postOverdue', 'noPostDue', 'cancelled', 'committed', 'docs'].map(k => th(k, 1)).join('') + `</tr></thead><tbody>` +
+      rows.map(r => `<tr class="click${r.pic && r.pic === mine ? ' selected' : ''}" tabindex="0" data-goteam="${esc(r.pic || '__none')}" title="${esc(T.tip)}"><td>` +
+        (r.pic ? `<span class="picplain"><span class="av sm">${esc(initials(r.pic))}</span><span class="nm">${esc(r.pic)}</span></span>`
+          : `<span class="tw-na"><span class="muted">${esc(T.notAssigned)}</span> <button type="button" class="link small" data-goteam="__none" title="${esc(T.assignTip)}">${esc(T.assign)}</button></span>`) + `</td>${cells(r)}</tr>`).join('') +
+      `<tr class="total"><td>${esc(O.colTotal)}</td>${cells(t)}</tr></tbody></table></div>`;
   }
   function expand() {
     if (ov.tab === 'all') { expandTl(); return; }   // CR-19 §4.3: Show all of the Campaign timeline
@@ -676,7 +815,7 @@ KT.screens.overview = (function () {
     const tile = (k, n, sub) => `<button type="button" class="wq-tile t-${k}${t === k ? ' on' : ''}${n ? '' : ' zero'}" data-wqtile="${k}" aria-pressed="${t === k}"><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(W.tiles[k])}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</button>`;
     const usParts = ['shipment', 'payment', 'metrics', 'approval'].filter(k => sum.usBy[k]).map(k => W.usPart[k](sum.usBy[k])).join(' · ');
     const tiles = `<div class="wq-tiles">${tile('overdue', sum.overdue)}${tile('week', sum.week)}${tile('none', sum.none, sum.noneKol ? W.noneKol(sum.noneKol) : '')}${tile('stuck', sum.stuck)}${tile('us', sum.us, usParts)}</div>`;
-    const everyone = !o.person, team = everyone && isManager() ? R.teamLoad(s, all) : null, fix = R.dataToFix(s, o);
+    const everyone = !o.person, team = everyone && isManager() ? R.teamLoad(s, all, o) : null, fix = R.dataToFix(s, o);   // CR-26 §3.4: open deals by R.teamWorkload
     ov.ops.fix = fix;
     const chip = t || stg ? `<span class="wq-fchip">${esc(t ? W.tiles[t] : stg)}<button type="button" class="icon-btn" data-wqclear aria-label="${esc(W.clearFilter)}" title="${esc(W.clearFilter)}">${ICON.close}</button></span>` : '';
     $('ov_body').innerHTML = tiles + `<div class="card wq-card"><div class="card-head"><h3>${esc(W.title)} <span class="muted">${R.fmtNum(rows.length)}</span></h3>${chip}<div class="btns ov-ctl">${dlMenu('workqueue')}</div></div>${queueHTML(s, rows, everyone)}</div>` +
@@ -702,7 +841,8 @@ KT.screens.overview = (function () {
     const setDate = !r.due && r.field && canSet(s, r) ? ` <button type="button" class="link small" data-wqset="${esc(r.key)}">${esc(W.btn.setDate)}</button>` : '';
     const who = r.kind === 'approval' ? `<b class="nm">${esc(W.approval)}</b>` : k ? `<span class="wq-kol">${k.kol_id ? U.avatarHTML(k, 'sm') : ''}<b class="nm">${esc(k.display_name || r.kol_id)}</b></span>` : dash;
     const action = esc(R.workActionText(r)) + (r.kind === 'approval' ? ` <span class="muted small">· ${esc(reqTitle(s, r.ref))}</span>` : '');
-    const inStage = (r.inStage != null ? esc(W.days(r.inStage)) : dash) + (r.stuck ? ` <span class="chip wq-stuck">${esc(W.stuck(r.inStage))}</span>` : '');
+    /* CR-26 §3.5 — Pay KOL / Enter metrics: days since the post (not days in the stage) */
+    const inStage = (r.sincePost != null ? `<span class="wq-sp">${esc(W.sincePost(r.sincePost))}</span>` : r.inStage != null ? esc(W.days(r.inStage)) : dash) + (r.stuck ? ` <span class="chip wq-stuck">${esc(W.stuck(r.inStage))}</span>` : '');
     return `<tr class="click wq-row k-${r.kind}" tabindex="0" data-wqrow="${esc(r.key)}"><td class="nowrap wq-due">${due}${setDate}</td><td class="wq-k">${who}</td><td class="wq-c">${r.campaign_id ? esc(R.campaignName(s, r.campaign_id)) : dash}</td>` +
       `<td class="nowrap wq-st">${r.stage ? esc(r.stage) : dash}</td><td class="wq-a">${action}</td><td class="wq-wc"><span class="chip wq-w w-${r.waiting}">${esc(W.w[r.waiting])}</span></td>` +
       `<td class="num nowrap wq-in">${inStage}</td>${showPic ? `<td class="wq-p">${r.pic ? esc(r.pic) : dash}</td>` : ''}<td class="wq-b">${btnHTML(s, r)}</td></tr>`;
@@ -712,7 +852,8 @@ KT.screens.overview = (function () {
     const W = WQ(), b = (label, on) => (on ? `<button type="button" class="btn small" data-wqact="${esc(r.key)}">${esc(label)}</button>` : '');
     if (r.kind === 'deal') return b(W.btn.move, can('deal.edit') && !R.campaignCancelled(s, r.campaign_id));
     if (r.kind === 'shipment') return b(r.action === 'ship' ? W.btn.shipped : W.btn.delivered, R.canShipWork(U.actor()));
-    if (r.kind === 'payment') return b(W.btn.paid, can('payment.paid'));
+    /* CR-26 §3.5 — Mark paid on the row (the CR-17 popover): who may, as on Payments — Simple mode: Admin · KOL Manager · Accounting · Staff on their own deals */
+    if (r.kind === 'payment') return b(W.btn.paid, R.isSimple(s, 'payments') ? R.canPaySimple(s, U.actor(), r.ref) && r.ref.status !== 'on_hold' : can('payment.paid'));
     if (r.kind === 'metrics') return b(W.btn.metrics, can('deal.edit'));
     return b(W.btn.review, R.canApprove(U.actor()));
   }
@@ -755,7 +896,10 @@ KT.screens.overview = (function () {
     const after = () => { if (U.currentTab() === 'overview' && ov.tab === 'ops') renderOpsBody(); };
     if (r.kind === 'approval') { KT.approvals.review(r.ref.id, { after }); return; }
     if (!r.deal) { if (r.kind === 'shipment') location.hash = '#shipments/' + r.ref.shipment_id; return; }
-    KT.screens.deals.openOver(r.deal.deal_id, { after, tab: r.kind === 'shipment' || r.kind === 'metrics' ? 'ships' : r.kind === 'payment' ? 'costs' : 'overview' });
+    /* CR-28 §3 mapping: Ship samples / metrics → Shipments & posts (no Ship by → that cell) · Pay KOL → Costs & payment · a deal's next date (Set date · Post due) → Timeline */
+    const tab = r.kind === 'shipment' || r.kind === 'metrics' ? 'shipments' : r.kind === 'payment' ? 'costs' : r.kind === 'deal' && r.field ? 'timeline' : 'overview';
+    const focus = r.kind === 'shipment' && !r.due ? 'ship_by' : r.kind === 'deal' && r.field ? r.field : null;
+    KT.screens.deals.openDealModal(r.deal.deal_id, { after, tab, focus, source: 'ops', nav: [...new Set([...document.querySelectorAll('#ov_body tr[data-wqrow]')].map(tr => ((ov.ops.byKey.get(tr.dataset.wqrow) || {}).deal || {}).deal_id).filter(Boolean))] });
   }
   /* "Set date": the date of that step (Script · Draft k · Approve · Post due) or the Ship by — at once, in a small form */
   const fieldLabel = f => (f === 'ship_by_date' ? C.samples.col.shipBy : f === 'expected_script_date' ? C.move.expScript : f === 'expected_approve_date' ? C.move.expApprove : f === 'expected_post_date' ? C.move.postDue : C.move.expDraft(Number(String(f).replace(/\D/g, ''))));
@@ -783,10 +927,10 @@ KT.screens.overview = (function () {
   function wqFix(i) {
     const x = (ov.ops.fix || [])[i]; if (!x) return;
     const after = () => { if (U.currentTab() === 'overview' && ov.tab === 'ops') renderOpsBody(); }, D2 = KT.screens.deals;
-    if (x.kind === 'missing') { D2.openOver(x.deal.deal_id, { after, missing: x.keys[0] }); return; }
+    if (x.kind === 'missing') { D2.openDealModal(x.deal.deal_id, { after, missing: x.keys[0], source: 'ops' }); return; }
     if (x.kind === 'noShipBy') { KT.samples.action('ship_by', [x.shipment.shipment_id], after); return; }
-    if (x.kind === 'postOutside') { D2.openOver(x.deal.deal_id, { after, postfix: { kind: 'date', post: x.index } }); return; }
-    if (x.deal) { D2.openOver(x.deal.deal_id, { after, tab: 'ships' }); return; }
+    if (x.kind === 'postOutside') { D2.openDealModal(x.deal.deal_id, { after, postfix: { kind: 'date', post: x.index }, source: 'ops' }); return; }
+    if (x.deal) { D2.openDealModal(x.deal.deal_id, { after, tab: 'shipments', source: 'ops' }); return; }
     const cid = x.campaign ? x.campaign.campaign_id : x.phase ? x.phase.campaign_id : null; if (cid) go('campaign', { planCampaign: cid });
   }
   /* a fold of a section, remembered */
@@ -836,13 +980,18 @@ KT.screens.overview = (function () {
     const ctl = e.target.closest('[data-ctl] button'); if (ctl) { const k = ctl.closest('[data-ctl]').dataset.ctl; ov.camp[k] = ctl.dataset.v; if (k === 'colorBy') pref.set(colorKey(), ctl.dataset.v); renderCampaign(); return; }
     const act = e.target.closest('[data-act]'); if (act) { const a = act.dataset.act; if (a === 'table') { ov.camp.view = ov.camp.view === 'table' ? 'chart' : 'table'; renderCampaign(); } else if (a === 'expand') expand(); return; }
     const gp = e.target.closest('[data-gopic]'); if (gp) { pref.set(opsPicKey(), gp.dataset.gopic); Object.assign(ov.ops, { pic: gp.dataset.gopic, picFor: U.userId(), tile: '', stage: '' }); ov.tab = 'ops'; render(); window.scrollTo(0, 0); return; }
-    const gd = e.target.closest('[data-godeals]'); if (gd) { go('deals', { filter: { campaign: ov.camp.campaign, phaseSel: gd.dataset.godeals } }); return; }
+    const gd = e.target.closest('[data-godeals]'); if (gd) { go('deals', { filter: { campaign: ov.camp.campaign, phaseSel: gd.dataset.godeals, pic: 'all' } }); return; }   // (CR-26: any PIC)
+    /* CR-26 — Budget vs Actual: Monthly / Cumulative · table view · expand · Set dates · Team workload: a row → Deals of that person (Not assigned → nobody) */
+    const bm = e.target.closest('[data-bvamode] button'); if (bm) { ov.bva.mode = bm.dataset.v; renderBva(); return; }
+    const ba = e.target.closest('[data-bvaact]'); if (ba) { if (ba.dataset.bvaact === 'table') { ov.bva.view = ov.bva.view === 'table' ? 'chart' : 'table'; renderBva(); } else expandBva(); return; }
+    if (e.target.closest('[data-bvaset]')) { goNoDate(); return; }
+    const gt = e.target.closest('[data-goteam]'); if (gt) { go('deals', { filter: { campaign: ov.camp.campaign, phaseSel: ov.camp.phase || 'all', pic: gt.dataset.goteam } }); return; }
     /* CR-23 §3.1 — a product → Shipments of this Campaign (+ Phase) and that product (To ship while some are, else Delivered) */
     const gs = e.target.closest('[data-goship]'); if (gs) { const open = Number(gs.dataset.toship) > 0;
       go('shipments', { tab: open ? 'to-ship' : 'delivered', campaign: ov.camp.campaign, phase: ov.camp.phase || '', product: gs.dataset.goship, pic: 'all', status: '', purpose: '', method: '', q: '', imported: !open }); return; }
     /* CR-23 §3.7 — a reason chip keeps that reason · a row opens the deal */
     const cr = e.target.closest('[data-cxreason]'); if (cr) { ov.camp.reason = ov.camp.reason === cr.dataset.cxreason ? '' : cr.dataset.cxreason; renderCancelled(state(), campScope()); return; }
-    const cd = e.target.closest('[data-cxdeal]'); if (cd) { KT.screens.deals.openOver(cd.dataset.cxdeal, () => renderCampaign()); return; }
+    const cd = e.target.closest('[data-cxdeal]'); if (cd) { KT.screens.deals.openDealModal(cd.dataset.cxdeal, { after: () => renderCampaign(), source: 'dashboard', nav: [...document.querySelectorAll('#ov_cancelled [data-cxdeal]')].map(x => x.dataset.cxdeal) }); return; }
     /* CR-24 — Operations: a tile / a stage keeps those rows · Show all · a section folds · the work of a row · Set date · a row → its deal · a person · Fix */
     const wt = e.target.closest('[data-wqtile]'); if (wt) { ov.ops.tile = ov.ops.tile === wt.dataset.wqtile ? '' : wt.dataset.wqtile; ov.ops.stage = ''; renderOpsBody(); return; }
     if (e.target.closest('[data-wqclear]')) { ov.ops.tile = ''; ov.ops.stage = ''; renderOpsBody(); return; }

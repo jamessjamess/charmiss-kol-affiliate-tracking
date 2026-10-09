@@ -43,11 +43,18 @@ Object.assign(KT.rules, (function (R, C) {
   }
   const canUnpay = user => !!user && user.active !== false && PAY_ALL.includes(user.role);
   const keep = l => ({ status: l.status, paid_date: l.paid_date || null, paid_by: l.paid_by || null, paid_ref: l.paid_ref || null, unpaid_reason: l.unpaid_reason || null, note: l.note || null,
-    run_id: l.run_id || null, sent_at: l.sent_at || null, sent_by: l.sent_by || null });
+    run_id: l.run_id || null, sent_at: l.sent_at || null, sent_by: l.sent_by || null, sent_ref: l.sent_ref || null });
   const FLAGS = ['paid_50', 'paid_50_date', 'paid_full', 'paid_full_date', 'docs_done', 'docs_done_date'];
   const dealFlags = (state, ids) => [...new Set(ids.filter(Boolean))].map(id => { const d = state.deals.find(x => x.deal_id === id); return d ? { deal_id: id, flags: Object.fromEntries(FLAGS.map(k => [k, d[k] === undefined ? null : d[k]])) } : null; }).filter(Boolean);
-  /* a row that has no line yet (worked out from the deal) becomes one — the amounts as CR-08 works them out */
-  const lineFor = (state, x, ctx) => R.newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now });
+  /* a row that has no line yet (worked out from the deal) becomes one — the amounts as CR-08 works them out · CR-27: its docs-only line is used (made full) →
+     { line, prev (the docs-only line as it was, for Undo) | null — a new line is not in state yet } */
+  function lineFor(state, x, ctx) {
+    const o = { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now };
+    if (R.isDocsOnly(x.docsLine)) { const prev = JSON.parse(JSON.stringify(x.docsLine)); return { line: R.promoteDocsLine(state, x, o), prev }; }
+    return { line: R.newLine(state, x, o), prev: null };
+  }
+  /* a line back as it was (a docs-only line that was made full) */
+  const restore = (l, prev) => { Object.keys(l).forEach(k => { delete l[k]; }); Object.assign(l, prev); };
   /* Mark paid (To pay · Sent · Deal drawer · Go-live "outside the app"): each row Paid on o.date with o.ref (and o.note) · a worked-out instalment gets its line first ·
      a line in a run stays in it (the run is Paid once all its lines are) · the deals' flags follow (syncDealPayment) → { events, undo, n } */
   function markItemsPaid(state, items, o, ctx) {
@@ -56,7 +63,7 @@ Object.assign(KT.rules, (function (R, C) {
     items.forEach(x => {
       let l = x.line;
       if (x.status === 'paid' || (l && (l.status === 'paid' || l.status === 'cancelled'))) return;
-      if (!l) { l = lineFor(state, x, ctx); if (o.legacy) l.source = 'legacy'; state.payment_lines.push(l); undo.created.push(l.line_id); }
+      if (!l) { const f = lineFor(state, x, ctx); l = f.line; if (f.prev) undo.lines.push({ line_id: l.line_id, prev: f.prev, full: true }); else { state.payment_lines.push(l); undo.created.push(l.line_id); } if (o.legacy) l.source = 'legacy'; }
       else undo.lines.push({ line_id: l.line_id, prev: keep(l) });
       events.push(payEvent(l, l.status, 'paid', ctx, trim(o.note) || trim(o.ref) || null));
       Object.assign(l, { status: 'paid', paid_date: o.date, paid_by: ctx.user || null, paid_ref: trim(o.ref) || null, unpaid_reason: null });
@@ -76,7 +83,7 @@ Object.assign(KT.rules, (function (R, C) {
     const events = [];
     undo.created.forEach(id => { const l = lineOf(state, id); if (l) events.push(payEvent(l, 'paid', null, ctx, 'undo')); });
     state.payment_lines = state.payment_lines.filter(l => !undo.created.includes(l.line_id));
-    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (!l) return; events.push(payEvent(l, l.status, u.prev.status, ctx, 'undo')); Object.assign(l, u.prev); });
+    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (!l) return; events.push(payEvent(l, l.status, u.prev.status, ctx, 'undo')); if (u.full) restore(l, u.prev); else Object.assign(l, u.prev); });
     undo.runs.forEach(u => { const run = runOf(state, u.run_id); if (run) run.status = u.prev; });
     undo.deals.forEach(u => { const d = state.deals.find(x => x.deal_id === u.deal_id); if (d) Object.assign(d, u.flags); });
     return events;
@@ -99,11 +106,13 @@ Object.assign(KT.rules, (function (R, C) {
     items.forEach(x => {
       let l = x.line;
       if (x.status === 'paid' || x.status === 'on_hold' || x.status === 'submitted' || (l && ['paid', 'cancelled', 'on_hold', 'submitted'].includes(l.status))) return;
-      if (!l) { l = lineFor(state, x, ctx); state.payment_lines.push(l); undo.created.push(l.line_id); }
+      if (!l) { const f = lineFor(state, x, ctx); l = f.line; if (f.prev) undo.lines.push({ line_id: l.line_id, prev: f.prev, full: true }); else { state.payment_lines.push(l); undo.created.push(l.line_id); } }
       else undo.lines.push({ line_id: l.line_id, prev: Object.assign(keep(l), { payee_id: l.payee_id, payee_version_at_submit: l.payee_version_at_submit }) });
-      const p = R.payeeOfLine(state, l);
-      events.push(payEvent(l, l.status, 'submitted', ctx, run.run_id));
-      Object.assign(l, { run_id: run.run_id, status: 'submitted', sent_at: ctx.now, sent_by: ctx.user || null, payee_id: p ? p.payee_id : l.payee_id, payee_version_at_submit: p ? p.details_version || 0 : null });
+      const p = R.payeeOfLine(state, l), ref = trim(o.ref) || null;
+      events.push(payEvent(l, l.status, 'submitted', ctx, [run.run_id, ref].filter(Boolean).join(' · ')));
+      /* CR-27 §3.2 — Send from the row / details / bulk: the day chosen and a ref (the Export keeps today) */
+      const at = isISODate(o.date) && o.date !== String(ctx.now || '').slice(0, 10) ? `${o.date}T00:00:00.000Z` : ctx.now;
+      Object.assign(l, { run_id: run.run_id, status: 'submitted', sent_at: at, sent_by: ctx.user || null, sent_ref: ref, payee_id: p ? p.payee_id : l.payee_id, payee_version_at_submit: p ? p.details_version || 0 : null });
       lines.push(l);
     });
     if (!lines.length) { state.payment_runs = state.payment_runs.filter(r => r !== run); return null; }
@@ -112,14 +121,14 @@ Object.assign(KT.rules, (function (R, C) {
   /* "No" after the download: nothing was sent — every line and the run as they were */
   function undoSend(state, undo) {
     state.payment_lines = state.payment_lines.filter(l => !undo.created.includes(l.line_id));
-    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (l) Object.assign(l, u.prev); });
+    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (l) { if (u.full) restore(l, u.prev); else Object.assign(l, u.prev); } });
     state.payment_runs = state.payment_runs.filter(r => r.run_id !== undo.run_id);
   }
-  /* Sent › Move back to To pay: out of its run (an automatic run left empty goes too) */
+  /* Sent › Move back to To pay: out of its run (an automatic run left empty goes too) · CR-27 §5 U1: a reason is needed */
   function moveBackToPay(state, l, ctx, note) {
-    if (!l || l.status !== 'submitted') return null;
+    if (!l || l.status !== 'submitted' || !trim(note)) return null;
     const run = runOf(state, l.run_id), ev = payEvent(l, 'submitted', 'open', ctx, trim(note) || null);
-    Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_by: null });
+    Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_by: null, sent_ref: null });
     if (run && run.auto && !R.runLines(state, run.run_id).length) state.payment_runs = state.payment_runs.filter(r => r !== run);
     return [ev];
   }
@@ -129,9 +138,72 @@ Object.assign(KT.rules, (function (R, C) {
     const p = x.payee, company = !!p && p.payee_type === 'company', deal = x.deal || null;
     const need = (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(['bank_details']);
     if (deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'))) need.push('post_evidence');
-    const miss = R.docsRequired(state, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to }, p || null);
-    return { need: need.length, have: need.filter(k => !miss.includes(k)).length, missing: miss };
+    const miss = R.docsRequired(state, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to, docs: R.lineDocs(x.docsLine) }, p || null);
+    const own = R.lineDocs(x.line || x.docsLine).filter(d => d.custom);   // CR-27: documents added by hand count too
+    return { need: need.length + own.length, have: need.filter(k => !miss.includes(k)).length + own.filter(d => d.received_at).length, missing: miss };
   }
+
+  /* ===================== CR-27 §3.2 — Payment details › Documents ===================== */
+  /* the checklist of a row: the documents it needs (a payee document on file / posts done = received on its own, "auto") + the ones added by hand ·
+     → [{ key, label, custom, auto, received, received_at, note, link }] */
+  function docsChecklist(state, x) {
+    if (!x || x.pay_to === 'reimburse') return [];
+    const p = x.payee, company = !!p && p.payee_type === 'company', deal = x.deal || null;
+    const need = (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(['bank_details']);
+    if (deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'))) need.push('post_evidence');
+    const auto = R.docsRequired(state, { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to }, p || null), docs = R.lineDocs(x.line || x.docsLine);
+    return need.map(k => { const d = docs.find(y => y.key === k && !y.custom) || {}, a = !auto.includes(k), onFile = a && p && p.docs && isISODate(p.docs[k]) ? p.docs[k] : null;
+      return { key: k, label: R.docLabel(k), custom: false, auto: a, received: a || !!d.received_at, received_at: d.received_at || onFile || null, note: d.note || '', link: d.link || '' }; })
+      .concat(docs.filter(d => d.custom).map(d => ({ key: d.key, label: d.label || '', custom: true, auto: false, received: !!d.received_at, received_at: d.received_at || null, note: d.note || '', link: d.link || '' })));
+  }
+  /* Note / Link: no ID-card, phone or bank-account number (9 or more digits in a row, - and spaces left out) · a link starts with https:// · an own document needs a name */
+  const longDigits = v => /\d{9,}/.test(String(v == null ? '' : v).replace(/[-\s]/g, ''));
+  function validateDocs(entries) {
+    const errs = [];
+    (entries || []).forEach((e, i) => {
+      if (e.custom && !trim(e.label)) errs.push({ field: `doc${i}_label`, msg: C.pay.docs.nameRequired });
+      if (e.custom && (R.looksSensitive(e.label) || longDigits(e.label))) errs.push({ field: `doc${i}_label`, msg: C.msg.sensitive });
+      if (trim(e.note) && (R.looksSensitive(e.note) || longDigits(e.note))) errs.push({ field: `doc${i}_note`, msg: C.pay.docs.noNumbers });
+      if (trim(e.link) && !/^https:\/\/\S+$/i.test(trim(e.link))) errs.push({ field: `doc${i}_link`, msg: C.pay.docs.linkHttps });
+      else if (trim(e.link) && longDigits(e.link)) errs.push({ field: `doc${i}_link`, msg: C.pay.docs.noNumbers });
+      if (e.received_at && !isISODate(e.received_at)) errs.push({ field: `doc${i}_date`, msg: C.msg.dateInvalid(C.pay.docs.received) });
+    });
+    return { errs, warns: [], infos: [] };
+  }
+  const docsText = list => { const n = list.filter(d => d.received).length; return `${n}/${list.length}`; };
+  /* entries = the checklist as edited ({key, label, custom, received_at, note, link}) → the row's line keeps them (a row with no line gets a docs-only one) ·
+     an event 'payment_docs' "2/4 → 3/4" · the deal's Docs done follows · → { line, event, created } | { errs } */
+  function setItemDocs(state, x, entries, ctx) {
+    const v = validateDocs(entries); if (v.errs.length) return { errs: v.errs };
+    const before = docsChecklist(state, x);
+    let l = x.line || x.docsLine, created = false;
+    const keepIt = e => e.custom || e.received_at || trim(e.note) || trim(e.link);
+    const list = (entries || []).filter(keepIt).map((e, i) => ({ key: e.custom ? e.key || `own_${Date.now().toString(36)}_${i}` : e.key, label: e.custom ? trim(e.label) : null, custom: !!e.custom,
+      received_at: e.received_at || null, note: trim(e.note) || null, link: trim(e.link) || null }));
+    if (!l) {
+      if (!list.length) return { line: null, event: null, created: false };
+      l = R.newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now });
+      l.docs_only = true; state.payment_lines.push(l); created = true;
+    }
+    l.docs = list;
+    if (R.isDocsOnly(l) && !list.length) state.payment_lines = state.payment_lines.filter(y => y !== l);   // nothing left to keep
+    const after = docsChecklist(state, Object.assign({}, x, x.line ? { line: l } : { docsLine: l }));
+    const ev = { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payment_docs', from: docsText(before), to: docsText(after), changed_at: ctx.now, changed_by: ctx.user || null,
+      note: after.filter(d => d.received && !before.some(b => b.key === d.key && b.received)).map(d => d.label).join(' · ') || null };
+    if (l.deal_id) syncDocsDone(state, l.deal_id, String(ctx.now || '').slice(0, 10));
+    return { line: l, event: ev, created };
+  }
+  /* Mark all received (a row or many): every document not on file yet → received on date */
+  const allReceived = (state, x, date) => docsChecklist(state, x).map(d => Object.assign({}, d, d.auto || d.received ? {} : { received_at: date }));
+  /* a deal's Docs done: every instalment (not cancelled) has what it needs — set once all are in (the warning "Marked as paid, but documents aren't checked yet" goes) */
+  function syncDocsDone(state, dealId, today) {
+    const d = state.deals.find(y => y.deal_id === dealId); if (!d) return;
+    const items = R.dealPayItems(state, d, today || R.todayISO()).filter(y => y.status !== 'cancelled' && y.pay_to !== 'reimburse');
+    const ok = items.length > 0 && items.every(y => !R.docsRequired(state, y.line || { deal_id: y.deal_id, milestone: y.milestone, pay_to: y.pay_to, docs: R.lineDocs(y.docsLine) }, y.payee || null).length);
+    if (ok && !d.docs_done) Object.assign(d, { docs_done: true, docs_done_date: today || R.todayISO() });
+  }
+  /* the history of a row: the events of its line (status · hold · documents), oldest first */
+  const lineHistory = (state, x) => { const l = x.line || x.docsLine; if (!l) return []; return (state.deal_events || []).filter(e => e.line_id === l.line_id).sort((a, b) => String(a.changed_at).localeCompare(String(b.changed_at))); };
   /* WHT certificate sent on the row (☐ ticks it · unticking clears it) */
   function setWhtSent(l, date) { if (!l || !(l.wht > 0)) return false; l.wht_cert_sent_date = date || null; return true; }
   /* §4.4 Operations — "Payments to confirm": Sent more than 7 days ago and not paid (the PIC / Campaign of the To do filters) */
@@ -187,5 +259,6 @@ Object.assign(KT.rules, (function (R, C) {
 
   return { OPS_KINDS, OPS_MODES, OPS_DEFAULT, opsMode, isSimple, setOpsMode, simpleBucket, sentAt, sentDays, SENT_LATE_DAYS, canPaySimple, canUnpay,
     markItemsPaid, undoMarkPaid, markUnpaid, sendToAccounting, undoSend, moveBackToPay, docsTally, setWhtSent, paymentsToConfirm, simplePayTrack,
+    docsChecklist, validateDocs, setItemDocs, allReceived, syncDocsDone, lineHistory,
     shipQuick, undoDelivered, migrateV16 };
 })(KT.rules, KT.content));

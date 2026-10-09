@@ -35,7 +35,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   /* ===================== Looker / analysis CSVs (§10.1) ===================== */
-  const DEALS_COLS = ['deal_id', 'campaign_id', 'campaign_name', 'primary_phase_id', 'primary_phase_name', 'phase_ids', 'legacy_phase_id', 'kol_id', 'kol_name', 'kol_tier', 'tier_followers', 'pillar', 'status', 'sub_status', 'journey_sort',
+  const DEALS_COLS = ['deal_id', 'campaign_id', 'campaign_name', 'primary_phase_id', 'primary_phase_name', 'phase_ids', 'legacy_phase_id', 'kol_id', 'kol_name', 'partner_type', 'kol_tier', 'tier_followers', 'pillar', 'status', 'sub_status', 'journey_sort',
     'draft_rounds', 'payment_term', 'commit_type', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date', 'payment_state', 'pic', 'rate_card', 'gencode_expense', 'gencode_period',
     'gencode_start_date', 'gencode_end_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'total_cost', 'delivered', 'delivery_date', 'products', 'brief_date', 'expected_script_date', 'script_date',
     'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_approve_date', 'approved_date', 'expected_post_date',
@@ -44,7 +44,7 @@ Object.assign(KT.rules, (function (R, C) {
   const POSTS_COLS = ['post_id', 'deal_id', 'campaign_id', 'campaign_name', 'phase_id', 'phase_name', 'phase_seq', 'phase_label', 'phase_source', 'phase_override', 'post_share', 'kol_id', 'kol_name', 'account_id', 'platform', 'handle', 'followers', 'tier', 'expected_post_date',
     'post_date', 'post_link', 'gencode_code', 'views', 'likes', 'comments', 'saves', 'shares', 'metrics_updated_at', 'deal_status', 'deal_sub_status'];
   const LOG_COLS = ['log_id', 'deal_id', 'campaign_id', 'campaign_name', 'kol_name', 'from_sub_status', 'status', 'sub_status', 'effective_date', 'changed_at', 'source', 'note'];
-  const KOL_COLS = ['kol_id', 'display_name', 'kol_category', 'kol_type', 'gender', 'pic', 'kol_status', 'status_reason', 'contact_channel', 'contact_id', 'account_count', 'platforms',
+  const KOL_COLS = ['kol_id', 'display_name', 'partner_type', 'kol_category', 'kol_type', 'gender', 'pic', 'kol_status', 'status_reason', 'contact_channel', 'contact_id', 'account_count', 'platforms',
     'max_followers', 'tier', 'deal_count', 'latest_quote_total', 'latest_quote_source', 'last_worked', 'last_campaign', 'sources', 'note'];
   const ACCOUNT_COLS = ['account_id', 'kol_id', 'kol_name', 'platform', 'handle', 'profile_link', 'followers', 'tier', 'post_count', 'is_legacy'];
   const QUOTE_COLS = ['quote_id', 'kol_id', 'kol_name', 'account_id', 'platform', 'handle', 'quoted_at', 'source', 'source_row', 'rate_card', 'gencode_expense',
@@ -58,7 +58,7 @@ Object.assign(KT.rules, (function (R, C) {
       const sum = R.dealPostSummary(ctx, d.deal_id), nx = R.nextStep(state.lookups, d).step;
       return Object.assign({}, d, {
         campaign_id: d.campaign_id, campaign_name: c.campaign_name, primary_phase_id: p.phase_id || null, primary_phase_name: p.phase_id ? R.phaseName(state, p.phase_id) : null, products: R.dealProductsCsv(state, d.deal_id),
-        phase_ids: [...info.keys].filter(x => ctx.phases.has(x)), kol_name: k.display_name, journey_sort: step.sort_order,
+        phase_ids: [...info.keys].filter(x => ctx.phases.has(x)), kol_name: k.display_name, partner_type: R.partnerTypeLabel(state.lookups, R.partnerTypeOf(k)), journey_sort: step.sort_order,   // CR-25
         kol_tier: (ctx.tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER, tier_followers: (ctx.tiers.get(d.deal_id) || {}).followers ?? null,
         commit_type: d.status === 'Cancel' ? 'cancelled' : R.isShortlist(state.lookups, d) ? 'shortlist' : 'committed',
         payment_state: R.paymentState(d, today), gencode_end_date: R.gencodeEndDate(d), total_cost: totalCost(d),
@@ -101,7 +101,7 @@ Object.assign(KT.rules, (function (R, C) {
     const ix = R.kolIndex(state), rules = state.lookups.tier_rules || [], pidx = R.perfIndex(state);
     return kols.map(k => {
       const accs = ix.accounts.get(k.kol_id) || [], mf = R.maxFollowers(accs), q = (ix.quotes.get(k.kol_id) || [])[0], last = R.lastWorkedInfo(state, k.kol_id, pidx);
-      return Object.assign({}, k, { kol_type: R.kolTypeLabel(state.lookups, k.kol_type) || null, contact_id: k.contact_id || null, account_count: accs.length, platforms: [...new Set(accs.map(a => a.platform))], max_followers: mf, tier: R.tierOf(mf, rules),
+      return Object.assign({}, k, { kol_type: R.kolTypeLabel(state.lookups, k.kol_type) || null, partner_type: R.partnerTypeLabel(state.lookups, R.partnerTypeOf(k)), contact_id: k.contact_id || null, account_count: accs.length, platforms: [...new Set(accs.map(a => a.platform))], max_followers: mf, tier: R.tierOf(mf, rules),
         deal_count: (ix.deals.get(k.kol_id) || []).length, latest_quote_total: q ? totalCost(q) || null : null, latest_quote_source: q ? q.source : null,
         last_worked: last ? last.date : null, last_campaign: last ? R.campaignName(state, last.campaignId) || null : null });   // CR-14 §4.4 — the same as the screen
     });
@@ -122,8 +122,9 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   /* ===================== KOL import (§7.4 · CR-14 §4.6) ===================== */
-  /* the template of today (KOL_Master_Import_Template · sheet KOL_Import): 10 columns in this order — the first 4 are required */
-  const TEMPLATE_COLS = ['display_name', 'platform', 'profile_link', 'followers', 'kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id'];
+  /* the template of today (KOL_Master_Import_Template · sheet KOL_Import): 11 columns in this order — the first 4 are required ·
+     CR-25: + partner_type (optional: KOL · Affiliate · Both, any case · blank = KOL · anything else = an error for the row) */
+  const TEMPLATE_COLS = ['display_name', 'platform', 'profile_link', 'followers', 'kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id', 'partner_type'];
   const IMPORT_REQUIRED = ['display_name', 'platform', 'profile_link', 'followers'];
   /* every column read (any order · no case · spaces cut): the template + the old file's prices and note (16 columns) */
   const IMPORT_COLS = TEMPLATE_COLS.concat(['rate_card', 'gencode_expense', 'gencode_period', 'basket_fee', 'asset_fee', 'expediting_fee', 'note']);
@@ -177,6 +178,9 @@ Object.assign(KT.rules, (function (R, C) {
       if (oldType) warns.push(C.kolTypes.importUnknown(oldType));
       const clean = { kol_category: row.kol_category || null, kol_type: typeKey, kol_type_legacy: isBlank(row.kol_type) ? null : row.kol_type, oldType, note: row.note || null };
       if (R.looksSensitive(clean.note)) { clean.note = null; warns.push(M.importSensitive('note')); }   // CR-08 §4.4
+      /* CR-25 — partner_type: blank = KOL · a word that is not KOL / Affiliate / Both → the row is not imported */
+      clean.partner_type = R.parsePartnerType(row.partner_type, L); clean.partnerGiven = !isBlank(row.partner_type);
+      if (!clean.partner_type) { clean.partner_type = 'kol'; errs.push(C.partner.importBad(row.partner_type)); }
       /* CR-14 §4.5 — a phone number in contact_id: the row is not imported · longer than 120: left out */
       clean.contact_id = row.contact_id || null;
       const cp = R.contactIdProblem(clean.contact_id);
@@ -226,6 +230,7 @@ Object.assign(KT.rules, (function (R, C) {
     const fill = (k, clean) => {
       const hadType = !isBlank(k.kol_type);
       ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id', 'note'].forEach(f => { if (isBlank(k[f]) && !isBlank(clean[f])) k[f] = clean[f]; });
+      if (isBlank(k.partner_type) && clean.partnerGiven) k.partner_type = clean.partner_type;   // CR-25: a KOL with none (= KOL) takes the file's · one already set stays
       if (!hadType && clean.oldType) k.note = R.withOldType(k.note, clean.oldType);
     };
     const addSource = k => { if (!k.sources.includes(fileName)) k.sources.push(fileName); };
@@ -251,7 +256,7 @@ Object.assign(KT.rules, (function (R, C) {
       else {
         k = { kol_id: nextIdIn('K', kols, 'kol_id', 4), display_name: r.name, kol_category: r.clean.kol_category, kol_type: r.clean.kol_type, kol_type_legacy: r.clean.kol_type_legacy, gender: r.clean.gender,
           pic: r.clean.pic, kol_status: 'Active', status_reason: null, contact_channel: r.clean.contact_channel, contact_id: r.clean.contact_id || null,
-          note: r.clean.oldType ? R.withOldType(r.clean.note, r.clean.oldType) : r.clean.note, sources: [] };
+          note: r.clean.oldType ? R.withOldType(r.clean.note, r.clean.oldType) : r.clean.note, sources: [], partner_type: r.clean.partner_type };
         kols.push(k); made.set(r.name.toLowerCase(), k);
       }
       addSource(k);

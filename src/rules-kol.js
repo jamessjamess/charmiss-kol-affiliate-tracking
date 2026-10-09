@@ -79,6 +79,33 @@ Object.assign(KT.rules, (function (R, C) {
   }
   const splitAliases = text => [...new Set(String(text || '').split(/[\n,]+/).map(trim).filter(Boolean))];
 
+  /* ===================== CR-25 — Partner type: kols.partner_type (kol · affiliate · both · null = KOL, no migration) ===================== */
+  /* the three keys never change · the words live in lookups.partner_types (Settings › Lists) */
+  const PARTNER_TYPES = ['kol', 'affiliate', 'both'];
+  const partnerTypesDefault = () => PARTNER_TYPES.map(key => ({ key, label: C.partner.types[key] }));
+  /* blank (old data) or anything else = KOL */
+  const partnerTypeOf = k => (k && PARTNER_TYPES.includes(k.partner_type) ? k.partner_type : 'kol');
+  /* the list with its words (a blank word = the default one) */
+  function partnerTypesOf(L) {
+    const l = L && Array.isArray(L.partner_types) ? L.partner_types : [];
+    return PARTNER_TYPES.map(key => { const x = l.find(r => r && r.key === key); return { key, label: (x && trim(x.label)) || C.partner.types[key] }; });
+  }
+  const partnerTypeLabel = (L, key) => partnerTypesOf(L).find(x => x.key === (PARTNER_TYPES.includes(key) ? key : 'kol')).label;
+  /* the filter: '' = all · KOL = KOL + Both · Affiliate = Affiliate + Both · Both = Both only (§3.1: Both counts in KOL and in Affiliate) */
+  const partnerMatch = (k, f) => { if (!f) return true; const t = partnerTypeOf(k); return t === f || t === 'both'; };
+  /* KOL Master header: how many of each (each KOL once) */
+  function partnerCounts(kols) {
+    const n = { kol: 0, affiliate: 0, both: 0 };
+    (kols || []).forEach(k => { n[partnerTypeOf(k)]++; });
+    return n;
+  }
+  /* a cell of an import: blank = KOL · the key or the word (any case · default or the Settings word) · anything else = null (an error for the row) */
+  function parsePartnerType(text, L) {
+    const v = trim(text).toLowerCase(); if (!v) return 'kol';
+    const hit = partnerTypesOf(L).find(x => x.key === v || trim(x.label).toLowerCase() === v || trim(C.partner.types[x.key]).toLowerCase() === v);
+    return hit ? hit.key : null;
+  }
+
   /* ===================== Price reference (§4.5) ===================== */
   const COST_KEYS = R.COST_KEYS;   // Rate card · Gencode · Basket fee · Asset fee · Expediting fee
   const costsOf = o => Object.fromEntries(COST_KEYS.map(k => [k, isBlank(o[k]) || isNaN(o[k]) ? 0 : Number(o[k])]));
@@ -129,6 +156,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* schema 13 — every KOL has contact_id (null · nothing is read from the notes) */
   function migrateV13(obj) { (obj.kol_master || []).forEach(k => { if (k.contact_id === undefined) k.contact_id = null; }); obj.schema_version = 13; return obj; }
 
-  return { lastRateCard, migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
+  return { PARTNER_TYPES, partnerTypesDefault, partnerTypeOf, partnerTypesOf, partnerTypeLabel, partnerMatch, partnerCounts, parsePartnerType,
+    lastRateCard, migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
     kolTypeKeyFor, validateKolType, splitAliases, costReference, costRefRows, hasCosts, costNotSet, zeroCostMove };
 })(KT.rules, KT.content));

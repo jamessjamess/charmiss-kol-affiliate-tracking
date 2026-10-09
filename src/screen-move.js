@@ -375,7 +375,7 @@ KT.move = (function () {
       if (act === 'newPackage') { newPackagePanel(d); return; }
       /* CR-22 §3.1 — the last rate card into the box (only when clicked) */
       if (act === 'useLast') { mv.f.rateCard = a.dataset.amount; mv.dirty = true; const el = $('mv_root').querySelector('[data-mv="rateCard"]'); if (el) el.value = fmtMoney(a.dataset.amount); live(); return; }
-      if (act === 'editShip') { const id = mv.id; mv.applied = false; U.closeModal(); KT.screens.deals.openOver(id, { tab: 'ships' }); return; }
+      if (act === 'editShip') { const id = mv.id; mv.applied = false; U.closeModal(); KT.screens.deals.openDealModal(id, { tab: 'shipments', focus: 'ship_by', source: 'move' }); return; }   // CR-28
       /* CR-23 §3.4 — the suggested Ship by into the box (only when clicked) */
       if (act === 'useSuggest') { mv.f.ship.ship_by = a.dataset.date; mv.dirty = true; setDate($('mv_root').querySelector('input[type=hidden][data-mv="ship.ship_by"]'), a.dataset.date); live(); return; }
     }

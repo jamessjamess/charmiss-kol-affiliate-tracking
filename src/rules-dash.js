@@ -35,7 +35,9 @@ Object.assign(KT.rules, (function (R, C) {
       deals: { n: deals.length, list: count('List'), inprocess: count('Inprocess'), complete: count('Complete') },
       money: { budget: t.budget, committed: t.committed, usedPct: t.usedPct, remaining: t.remaining, pending: t.pending },
       paid: { paid: t.paid, pct: t.committed ? t.paid / t.committed * 100 : null, outstanding: round2(t.committed - t.paid) },
-      kols: { n: new Set(committedDeals.map(d => d.kol_id)).size, deals: committedDeals.length, avg: committedDeals.length ? Math.round(t.committed / committedDeals.length) : null },
+      kols: { n: new Set(committedDeals.map(d => d.kol_id)).size, deals: committedDeals.length, avg: committedDeals.length ? Math.round(t.committed / committedDeals.length) : null,
+        byType: R.partnerCounts([...new Set(committedDeals.map(d => d.kol_id))].map(id => R.kolById(state, id) || { kol_id: id })),   // CR-26 §3.1: partners once, by Partner type
+        notCommitted: deals.length - committedDeals.length },   // Shortlist / Contacted — in the 401, not in the 278
     };
   }
 
@@ -173,5 +175,136 @@ Object.assign(KT.rules, (function (R, C) {
     return from && to ? { from: addDays(from, -7), to: addDays(to, 7) } : null;
   }
 
-  return { campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
+  /* ===================== CR-26 §3.2 — Budget vs Actual by month (Post date, not the day it was paid) ===================== */
+  const monthKey = iso => iso.slice(0, 7);
+  const monthEnd = key => { const [y, m] = key.split('-').map(Number); return `${key}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`; };
+  const nextMonth = key => { const [y, m] = key.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
+  const daysIn = (a, z) => (a > z ? 0 : dayDiff(z, a) + 1);
+  const addMonths = (iso, n) => { const [y, m] = iso.split('-').map(Number), t = y * 12 + (m - 1) + n; return `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}-01`; };
+  /* the part of an amount spread evenly over the days [start, end] that falls in [a, z] */
+  const shareIn = (x, a, z) => { const n = daysIn(x.start, x.end), d = daysIn(x.start > a ? x.start : a, x.end < z ? x.end : z); return n && d ? x.amount * d / n : 0; };
+  /* Post due: the earliest expected date of a post not posted yet · else the deal's own */
+  const postDueOf = (state, d) => R.postsOf(state, d.deal_id).filter(p => R.isBlank(p.post_date)).map(p => p.expected_post_date).filter(R.isISODate).sort()[0] || (R.isISODate(d.expected_post_date) ? d.expected_post_date : null);
+  const firstPostDate = (state, d) => R.postsOf(state, d.deal_id).map(p => p.post_date).filter(R.isISODate).sort()[0] || null;
+  /* the plan: each Phase's budget over its days · the Campaign budget no Phase has (all of it when no Phase has one) over the Campaign's days ·
+     a Phase chosen → that Phase only */
+  function budgetItems(state, camps, phaseId) {
+    const out = [];
+    camps.forEach(c => {
+      const phs = R.phasesOfCampaign(state, c.campaign_id).filter(p => R.isISODate(p.start_date) && R.isISODate(p.end_date) && p.end_date >= p.start_date);
+      const money = p => (R.isBlank(p.budget_kol) ? 0 : Number(p.budget_kol) || 0);
+      if (phaseId) { const p = phs.find(x => x.phase_id === phaseId); if (p && money(p) > 0) out.push({ amount: money(p), start: p.start_date, end: p.end_date, campaign_id: c.campaign_id }); return; }
+      let allocated = 0;
+      phs.forEach(p => { if (money(p) > 0) { allocated += money(p); out.push({ amount: money(p), start: p.start_date, end: p.end_date, campaign_id: c.campaign_id }); } });
+      const total = R.isBlank(c.budget_kol) ? 0 : Number(c.budget_kol) || 0, [a, z] = R.campaignRange(state, c.campaign_id);
+      if (total - allocated > 0 && R.isISODate(a) && R.isISODate(z)) out.push({ amount: total - allocated, start: a, end: z, campaign_id: c.campaign_id, unallocated: true });
+    });
+    return out;
+  }
+  const OVER = 1.05, BEHIND = 0.85;   // §6 #3
+  /* the words of a month (or of "to date"): Over > 105% of the plan · Behind < 85% (months that have passed) · in between nothing */
+  function bvaStatus(actual, budget, past) {
+    if (actual > budget * OVER && actual - budget >= 1) return { status: 'over', amount: round2(actual - budget) };
+    if (past && budget > 0 && actual < budget * BEHIND) return { status: 'behind', amount: round2(budget - actual) };
+    return { status: null, amount: 0 };
+  }
+  /* o = { from, to, statuses, today, campaignId?, phaseId? } → { months [{ key, from, to, budget, posted, upcoming, late, actual, variance, pct, status, amount,
+     past, current, camps [{campaign_id, amount}] (most first) }], cum [{ key, budget, posted, plus }], total, noDate {amount, deals}, outside, toDate, rest }
+     Budget = the plan (budgetItems) · Posted = the Total cost of a committed deal in the month of its first Post date · not posted yet → the month of its
+     Post due: Upcoming, or Late once that day has passed · neither date → No post date (not on the chart) · Variance: a month that has passed = Posted − Budget,
+     this month and later = Posted + Upcoming + Late − Budget */
+  function budgetVsActualByMonth(state, o) {
+    const today = o.today || R.todayISO(), L = state.lookups;
+    let camps = o.campaignId ? [R.campaignOf(state, o.campaignId)].filter(Boolean) : R.campaignsInRange(state, o.from, o.to, today, o.statuses);
+    camps = camps.filter(c => R.isApproved(c));
+    const ids = new Set(camps.map(c => c.campaign_id)), items = budgetItems(state, camps, o.phaseId || null);
+    const idx = o.phaseId ? R.phaseIndex(state) : null;
+    const deals = state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(L, d) && (!o.phaseId || R.primaryPhase(idx, d.deal_id) === o.phaseId));
+    /* each committed deal: where it sits */
+    const placed = deals.map(d => { const first = firstPostDate(state, d), due = first ? null : postDueOf(state, d);
+      return { d, amount: totalCost(d), date: first || due, kind: first ? 'posted' : !due ? 'none' : due < today ? 'late' : 'upcoming' }; });
+    /* the months: the range given · By campaign (no range given) = the Campaign's / Phase's own months, widened to the months its deals sit in */
+    let from = o.from, to = o.to;
+    if (!from || !to) {
+      const [a, z] = o.phaseId ? (() => { const p = state.phases.find(x => x.phase_id === o.phaseId) || {}; return [p.start_date, p.end_date]; })() : R.campaignRange(state, o.campaignId);
+      /* a date more than 3 months before / after (a typo, an old import) stays off the chart and is counted in outside */
+      const lo = R.isISODate(a) ? addMonths(a, -3) : null, hi = R.isISODate(z) ? addMonths(z, 3) : null;
+      const ds = placed.filter(x => x.date && (!lo || x.date >= lo) && (!hi || x.date <= hi)).map(x => x.date).concat([a, z].filter(R.isISODate)).sort();
+      from = ds.length ? ds[0].slice(0, 7) + '-01' : today.slice(0, 7) + '-01'; to = ds.length ? monthEnd(monthKey(ds[ds.length - 1])) : monthEnd(monthKey(today));
+    }
+    const months = [], cur = monthKey(today);
+    for (let k = monthKey(from); k <= monthKey(to) && months.length < 60; k = nextMonth(k)) {
+      const a = `${k}-01` < from ? from : `${k}-01`, z = monthEnd(k) > to ? to : monthEnd(k);
+      months.push({ key: k, from: a, to: z, budget: 0, posted: 0, upcoming: 0, late: 0, past: k < cur, current: k === cur, campBy: new Map() });
+    }
+    const at = new Map(months.map(m => [m.key, m]));
+    items.forEach(x => months.forEach(m => { m.budget += shareIn(x, m.from, m.to); }));
+    const noDate = { amount: 0, deals: 0 }, outside = { amount: 0, deals: 0 };
+    placed.forEach(x => {
+      if (x.kind === 'none') { noDate.amount += x.amount; noDate.deals++; return; }
+      const m = x.date >= from && x.date <= to ? at.get(monthKey(x.date)) : null;
+      if (!m) { outside.amount += x.amount; outside.deals++; return; }
+      m[x.kind] += x.amount; m.campBy.set(x.d.campaign_id, (m.campBy.get(x.d.campaign_id) || 0) + x.amount);
+    });
+    let cb = 0, cp = 0, cx = 0;
+    const cum = [];
+    months.forEach(m => {
+      ['budget', 'posted', 'upcoming', 'late'].forEach(k2 => { m[k2] = round2(m[k2]); });
+      m.actual = round2(m.past ? m.posted : m.posted + m.upcoming + m.late);
+      m.variance = round2(m.actual - m.budget);
+      m.pct = m.budget ? m.actual / m.budget * 100 : null;
+      Object.assign(m, bvaStatus(m.actual, m.budget, m.past));
+      m.camps = [...m.campBy.entries()].map(([campaign_id, amount]) => ({ campaign_id, amount: round2(amount) })).sort((a, b) => b.amount - a.amount);
+      delete m.campBy;
+      cb += m.budget; cp += m.posted; cx += m.posted + m.upcoming + m.late;
+      cum.push({ key: m.key, budget: round2(cb), posted: round2(cp), plus: round2(cx) });
+    });
+    const sum = k2 => round2(months.reduce((a, m) => a + m[k2], 0));
+    const total = { budget: sum('budget'), posted: sum('posted'), upcoming: sum('upcoming'), late: sum('late') };
+    /* To date: the plan up to today (by the day) vs what was posted by today · Rest: the plan after today vs the committed upcoming */
+    let toDate = null, rest = null;
+    if (today >= from) {
+      const end = today < to ? today : to, planned = round2(items.reduce((a, x) => a + shareIn(x, from, end), 0));
+      const posted = round2(placed.filter(x => x.kind === 'posted' && x.date >= from && x.date <= end).reduce((a, x) => a + x.amount, 0));
+      toDate = Object.assign({ planned, posted, pct: planned ? posted / planned * 100 : null }, bvaStatus(posted, planned, true));
+    }
+    if (today < to) {
+      const start = today >= from ? addDays(today, 1) : from;
+      rest = { planned: round2(items.reduce((a, x) => a + shareIn(x, start, to), 0)), upcoming: total.upcoming };
+    }
+    return { from, to, months, cum, total, noDate: { amount: round2(noDate.amount), deals: noDate.deals }, outside: { amount: round2(outside.amount), deals: outside.deals }, toDate, rest,
+      campaigns: camps.map(c => c.campaign_id) };
+  }
+
+  /* ===================== CR-26 §3.4 — Team workload: a row a person (By campaign · Operations › Team load count open deals with it) ===================== */
+  /* deals → [{ pic (null = Not assigned), partners (KOLs once, not cancelled), open (List / In process), posted (Complete), postOverdue (open · Post due before
+     today), noPostDue (open · no Post due), cancelled, committed (committed money, not cancelled), docs (Docs to collect) }] · most open deals first */
+  function teamWorkload(state, deals, today) {
+    const by = new Map(), docs = R.docsByDeal(state, today), L = state.lookups;
+    const at = k => by.get(k) || (by.set(k, { pic: k || null, kols: new Set(), open: 0, posted: 0, postOverdue: 0, noPostDue: 0, cancelled: 0, committed: 0, docs: 0 }), by.get(k));
+    deals.forEach(d => {
+      const w = at(d.pic || '');
+      if (isCancelled(d)) { w.cancelled++; return; }
+      w.kols.add(d.kol_id);
+      if (!R.isShortlist(L, d)) w.committed += totalCost(d);
+      if (docs.has(d.deal_id)) w.docs++;
+      if (d.status === 'Complete') { w.posted++; return; }
+      if (!R.isOpenDeal(d)) return;
+      w.open++;
+      const due = postDueOf(state, d);
+      if (!due) w.noPostDue++; else if (due < today) w.postOverdue++;
+    });
+    return [...by.values()].map(w => Object.assign(w, { partners: w.kols.size, kolIds: w.kols, committed: round2(w.committed) }))
+      .sort((a, b) => b.open - a.open || (a.pic ? 0 : 1) - (b.pic ? 0 : 1) || String(a.pic || '').localeCompare(String(b.pic || ''), 'th'));
+  }
+  /* the Total row (partners once across people) */
+  function teamWorkloadTotal(rows) {
+    const t = { partners: new Set(rows.flatMap(r => [...r.kolIds])).size };
+    ['open', 'posted', 'postOverdue', 'noPostDue', 'cancelled', 'docs'].forEach(k => { t[k] = rows.reduce((a, r) => a + r[k], 0); });
+    t.committed = round2(rows.reduce((a, r) => a + r.committed, 0));
+    return t;
+  }
+
+  return { budgetVsActualByMonth, budgetItems, postDueOf, firstPostDate, BVA_OVER: OVER, BVA_BEHIND: BEHIND, bvaStatus, teamWorkload, teamWorkloadTotal,
+    campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

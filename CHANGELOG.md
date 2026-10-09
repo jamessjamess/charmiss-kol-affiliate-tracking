@@ -2,6 +2,33 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-28 v1.1 · 09/10/2026 — Deal modal: tab bar เสมอ · ทางเปิดเดียว `openDealModal`
+schema **คงที่ 21** · tests **670**
+- **บั๊ก:** tab bar เป็น scroll container ใน flex column → ถูกบีบเหลือ 7–10px เมื่อมีแถบ Missing / คำเตือน (ภาพ "ไม่มี tab" = บั๊กเดียวกัน) · แก้: ไม่หด · min-height 44 · sticky ใต้ header · พื้นทึบ · แถบเตือนอยู่ใน flow · modal ขนาดคงที่
+- **`openDealModal(id, {tab, focus, source})`** ใช้ทุกที่ (Shipments · Payments · Payment details · Operations · Data to fix · Dashboard · KOL modal · Settings · Move stage) · ลิงก์เจาะจงส่วน = เลือก tab + focus ช่อง (highlight 1.5 วินาที)
+- **ลบโฟลเดอร์ `tests/`** (unit tests 670 ข้อ · test.html) ตามที่ผู้ใช้สั่ง 09/10/2026 — แอปไม่ได้ใช้ · CR ต่อไปตรวจด้วย script ภายนอกโปรเจกต์
+
+## CR-27 v1.1 · 09/10/2026 — Payment details + เอกสาร · Send to accounting จากแถว · Deal modal ซ้อนหน้าเดิม · Campaign & Phase เก็บงาน
+schema **คงที่ 21** (+ `payment_lines.docs` · `docs_only` · `sent_ref`) · tests **670**
+- **Payments:** คลิกแถว = **Payment details** (Amount · Pay to · Status To pay → Sent → Paid + ปุ่ม · **Documents** checklist: Received + วันที่ · Note · Link · + Add document · Mark all received · ไม่มีอัปโหลดไฟล์ · เลขยาวไม่ให้บันทึก · History · ‹ ›) · Docs n/m ทุก tab เปิดที่ Documents · แถว To pay: Mark paid + **Send** · bulk Send to accounting · Mark docs received · Move back ต้องมีเหตุผล · คำเตือน paid แต่ยังไม่เช็กเอกสาร → Check documents
+- **Deal modal ซ้อนหน้าเดิม** จาก Shipments · Payments · KOL modal · Settings (+ Dashboard / Operations เดิม) · ‹ › ตามแถวของหน้านั้น · ปิดแล้วอยู่ที่เดิม · ลิงก์ Open in Deals
+- **Shipments:** Items เป็นชื่อสินค้า · No products selected → Add products
+- **Campaign & Phase:** chip No products → Edit ที่ Products · ⋯ ชุดเดียวกัน (Edit · Add phase · Adjust budget · Cancel campaign) · Adjust budget หัวเดียว · footer "n things to finish ▾" · Staff: View
+
+## CR-26 v1.0 · 09/10/2026 — Dashboard: Budget vs Actual by month · KPI 4 ใบ · Team workload · Operations เก็บตก (ปิด module Dashboard)
+schema **คงที่ 21** · tests **664**
+- **All campaigns:** KPI 4 ใบ (ตัดการ์ด Deals) · **KOL & Affiliate engaged** = partner ที่มี committed deal · KOL / Affiliate / Both · committed deals + Avg + ⓘ ที่มาของจำนวน deal · "+n in List, not committed yet"
+- **Budget vs Actual by month** (All campaigns ต่อจาก KPI · By campaign ต่อจาก Phase budget): แผน = งบ Phase เกลี่ยตามวัน · Actual = เดือนของ Post date แรก · Upcoming / Late ตาม Post due · Monthly (แท่ง + เส้นขีด Budget · Over / Behind) / Cumulative · To date / Rest · table · Export sheet · Set dates → Deals ตัวกรอง "Committed · no post date"
+- **By campaign:** **Team workload** (Partners · Open · Posted · Post overdue · No post due · Cancelled · Committed · Docs) แทน Workload by PIC · Not assigned + Assign · Unscheduled "n deals have no post date · Set dates"
+- **Operations:** Pay KOL มีปุ่ม Mark paid (สิทธิ์เดียวกับ Payments) · Ship samples ไม่มี Ship by มี Set date · Pay KOL / Enter metrics แสดง "since post n d" · Team load นับ Open ด้วย `R.teamWorkload`
+
+## CR-25 v1.0 · 09/10/2026 — Partner type (KOL · Affiliate · Both) · New deal ตัวกรองพับได้
+schema **คงที่ 21** (+ `kols.partner_type` null = KOL · `lookups.partner_types`) · tests **654**
+- **Partner type** ของ KOL: New KOL (KOL Master · New deal › New KOL · Shipments) ปุ่ม 3 อัน default KOL · KOL modal › Overview แก้ได้ · KOL Master เลือกหลายคน › **Set partner type…** · Settings › Lists › Partner types (แก้คำ · key คงที่)
+- **KOL Master:** คอลัมน์ Partner · dropdown All partners · header "911 partners (KOL · Affiliate · Both) · 928 accounts" · chip **AFF / KOL+AFF** ในตาราง New deal · การ์ด Pipeline · หัว Deal modal · Deals › Filters + Partner type (Both อยู่ทั้งใน KOL และ Affiliate)
+- **New deal:** แถวด่วน Search · Partner type · All tiers · Not in this campaign yet · **Filters (n)** พับ / กาง (จำต่อผู้ใช้ · default พับ) · chip × ของตัวกรองที่พับ (เกิน 4 → +n more) · ตาราง ☐ · KOL · Platform · Followers · Tier · Type · KOL owner · Last campaign · Performance (ตัด Latest rate · เห็น 10 แถวที่ 1440×900)
+- **Import / Export:** template + `partner_type` (optional · ว่าง = KOL · ค่าอื่น = error แถว) · Export KOL Master / Deals + Partner type
+
 ## CR-24 v1.0 · 08/10/2026 — Operations = Work queue · ตัด Pillar allocation
 schema **คงที่ 21** (+ `lookups.ops_stuck_days`) · tests **645**
 - **Operations** ใหม่ทั้งหน้า: ตัวกรอง Assigned to · Campaigns (multi · default ไม่ Complete) · Waiting on (All / Us / KOL) · Summary 5 ช่องกดกรอง (Overdue · Due this week · No due date · Stuck · Waiting on us)

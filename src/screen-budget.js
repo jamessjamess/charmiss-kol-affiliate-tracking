@@ -53,7 +53,7 @@ KT.budget = (function () {
     ab = { cid, changeId: d ? d.change_id : null, type: d ? d.type : 'increase', amount: d ? String(d.amount || '') : '', allocs: d ? Object.fromEntries((d.allocations || []).map(a => [a.phase_id, String(a.amount)])) : {},
       reason: d ? d.reason || '' : '', note: d ? d.note || '' : '', touched: new Set(), submitted: false, dirty: false, o, inPanel: U.modalOpen() };
     const body = bodyHTML(), btns = buttonsHTML();
-    if (ab.inPanel) U.modalPanel({ title: B.title(c.campaign_name), body, left: `<div class="checks" id="ab_checks"></div>`, buttons: btns, back: o.back });
+    if (ab.inPanel) U.modalPanel({ title: B.title(c.campaign_name), replaceHeader: true, body, left: `<div class="checks" id="ab_checks"></div>`, buttons: btns, back: o.back });   // CR-27 §3.1: one header
     else U.createModal({ size: 'M', title: B.title(c.campaign_name), opener: o.opener, focus: '[data-ab="amount"]', body, foot: [`<div class="checks" id="ab_checks"></div>`, btns],
       onClick: onClick, onClose: () => { ab = null; }, isDirty: () => !!(ab && ab.dirty), askClose: ask() ? askClose : null });
     wire();

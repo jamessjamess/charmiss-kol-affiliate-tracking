@@ -85,19 +85,33 @@ KT.export = (function (R, C) {
       rows: m.keys.map((k, i) => [dmy(k)].concat(m.lanes.map(l => v(l.bins[i].total)), [v(m.lanes.reduce((a, l) => a + l.bins[i].total, 0))])),
       total: [O.colTotal].concat(m.lanes.map(l => v(l.posted + l.planned)), [v(m.lanes.reduce((a, l) => a + l.posted + l.planned, 0))]) };
   }
-  /* the 5 KPI cards as Card · Metric · Value */
+  /* the 4 KPI cards as Card · Metric · Value (CR-26 §3.1: no Deals card — its numbers sit under KOL & Affiliate engaged) */
   function summary(x) {
     const k = R.portfolioKpis(x.state, x.from, x.to, x.today, stOf(x)), rows = [];
     const add = (card, metric, value) => rows.push([card, metric, value]);
     add(O.kCampaigns, O.kCampaigns, k.campaigns.n);
     ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].forEach(st => { if (k.campaigns.by[st]) add(O.kCampaigns, statusLabel(st), k.campaigns.by[st]); });
     if (k.campaigns.next) add(O.kCampaigns, O.nextToEndL, `${k.campaigns.next.campaign.campaign_name} · ${daysText(k.campaigns.next.left)}`);
-    add(O.deals, O.deals, k.deals.n); add(O.deals, C.status.List, k.deals.list); add(O.deals, C.status.Inprocess, k.deals.inprocess); add(O.deals, C.status.Complete, k.deals.complete);
     add(O.committed, MN.committed.h, r2(k.money.committed)); add(O.committed, MN.budget.h, k.money.budget); add(O.committed, MN.used.h, dec(k.money.usedPct));
     add(O.committed, MN.remaining.h, r2(k.money.remaining)); add(O.committed, MN.pending.h, r2(k.money.pending));
     add(O.kPaid, O.kPaid, r2(k.paid.paid)); add(O.kPaid, O.pctOfCommitted, dec(k.paid.pct)); add(O.kPaid, O.outstanding, r2(k.paid.outstanding));
-    add(O.kKols, O.kKols, k.kols.n); add(O.kKols, O.committedDeals, k.kols.deals); add(O.kKols, O.avgPerDeal, k.kols.avg);
+    const E = O.kEngaged;
+    add(E, O.partnersL, k.kols.n); R.partnerTypesOf(x.state.lookups).forEach(t => add(E, t.label, k.kols.byType[t.key]));
+    add(E, O.committedDeals, k.kols.deals); add(E, O.avgPerDeal, k.kols.avg); add(E, O.notCommitted, k.kols.notCommitted);
+    add(E, O.allDealsL, k.deals.n); add(E, C.status.List, k.deals.list); add(E, C.status.Inprocess, k.deals.inprocess); add(E, C.status.Complete, k.deals.complete);
     return { key: 'summary', name: O.sheet.summary, header: [O.colCard, O.colMetric, O.colValue], rows, total: null };
+  }
+
+  /* CR-26 §3.2 — Budget vs Actual by month (R.budgetVsActualByMonth, the same as the card): Month · Budget · Posted · Upcoming · Late · Variance · Actual % · Status */
+  const monthName = k => `${O.months[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}`;
+  const bvaOf = x => (x.campaignId ? R.budgetVsActualByMonth(x.state, { campaignId: x.campaignId, phaseId: x.phaseId || null, today: x.today })
+    : R.budgetVsActualByMonth(x.state, { from: x.from, to: x.to, statuses: stOf(x), today: x.today }));
+  function budgetActual(x) {
+    const b = bvaOf(x), B = O.bva, t = b.total, act = t.posted + t.upcoming + t.late;
+    return { key: x.campaignId ? 'budgetactual_camp' : 'budgetactual', name: O.sheet.budgetactual,
+      header: [B.col.month, B.col.budget, B.col.posted, B.col.upcoming, B.col.late, B.col.variance, B.col.pct, B.col.status],
+      rows: b.months.map(m => [monthName(m.key), r2(m.budget), r2(m.posted), r2(m.upcoming), r2(m.late), r2(m.variance), dec(m.pct), m.status ? `${B.statusWord[m.status]} ${R.fmtNum(Math.round(m.amount))}` : '']),
+      total: [O.colTotal, r2(t.budget), r2(t.posted), r2(t.upcoming), r2(t.late), r2(act - t.budget), t.budget ? dec(act / t.budget * 100) : null, ''] };
   }
 
   /* ===================== By campaign (§4.4–4.5) ===================== */
@@ -133,10 +147,11 @@ KT.export = (function (R, C) {
       header: [O.colPhase, O.colFrom, O.colTo, MN.budget.h, MN.committed.h, MN.used.h, MN.remaining.h, MN.pending.h, O.colPosts],
       rows, total: [O.campaignTotal, '', '', t.budget, r2(t.committed), dec(mt.usedPct), r2(mt.remaining), r2(t.shortlist), t.posts] };
   }
+  /* CR-26 §3.4 — Team workload (R.teamWorkload, the same as the card) */
   function workload(x) {
-    const rows = R.workloadByPic(x.state, campScope(x), x.today), sum = k => rows.reduce((a, r) => a + r[k], 0);
-    return { key: 'workload', name: O.sheet.workload, header: [O.picLabel, O.colOpen, O.queues.overdue, O.docsToCollect, O.colCommittedOpen],
-      rows: rows.map(r => [r.pic || O.noPic, r.open, r.overdue, r.docs, r2(r.committed)]), total: [O.colTotal, sum('open'), sum('overdue'), sum('docs'), r2(sum('committed'))] };
+    const T = O.team, rows = R.teamWorkload(x.state, R.scopeDeals(x.state, campScope(x), R.phaseIndex(x.state)), x.today), t = R.teamWorkloadTotal(rows), K = ['partners', 'open', 'posted', 'postOverdue', 'noPostDue', 'cancelled'];
+    return { key: 'workload', name: O.sheet.workload, header: [T.col.pic].concat(K.map(k => T.col[k]), [T.col.committed, T.col.docs]),
+      rows: rows.map(r => [r.pic || T.notAssigned].concat(K.map(k => r[k]), [r2(r.committed), r.docs])), total: [O.colTotal].concat(K.map(k => t[k]), [r2(t.committed), t.docs]) };
   }
 
   /* CR-23 §3.1 — Products given (the same numbers as the card: R.productsGiven) · no personal data */
@@ -170,7 +185,7 @@ KT.export = (function (R, C) {
     const s = x.state, W = O.wq, rows = R.workQueue(s, x.opts);
     return { key: 'workqueue', name: O.sheet.workqueue, header: [W.col.bucket, W.col.due, W.col.kol, W.col.campaign, W.col.stage, W.col.action, W.col.waiting, W.col.inStage, W.col.stuck, W.col.pic],
       rows: rows.map(r => [W.sec[r.bucket], dmy(r.due), r.kind === 'approval' ? W.approval : (R.kolById(s, r.kol_id) || {}).display_name || r.kol_id || '', r.campaign_id ? R.campaignName(s, r.campaign_id) : '',
-        r.stage || '', R.workActionText(r), W.w[r.waiting], r.inStage, r.stuck ? W.tiles.stuck : '', r.pic || '']), total: null };
+        r.stage || '', R.workActionText(r), W.w[r.waiting], r.sincePost != null ? W.sincePost(r.sincePost) : r.inStage, r.stuck ? W.tiles.stuck : '', r.pic || '']), total: null };   // CR-26 §3.5
   }
 
   /* ===================== Deals › Performance (CR-10 §4.7) ===================== */
@@ -210,14 +225,14 @@ KT.export = (function (R, C) {
     return { key: 'draftnotes', name: NT.sheet, header: NT.exportCols, rows, total: null };
   }
 
-  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload,
+  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
     summary_ops: summaryOps, workqueue: workQueue };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
   /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
   /* CR-19 §4.5: Campaign timeline in place of Activity */
   /* CR-20: + Packages · Draft notes (counts) at the end */
-  const TABS = { all: ['summary', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-24: no Pillar allocation · Operations = Work queue
+  const TABS = { all: ['summary', 'budgetactual', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'budgetactual_camp', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-24: no Pillar allocation · Operations = Work queue · CR-26: + Budget vs Actual (after the KPI · after Phase budget)
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */
@@ -235,5 +250,5 @@ KT.export = (function (R, C) {
   const safeName = t => String(t || '').replace(/[^\p{L}\p{N}\p{M}]+/gu, '-').replace(/^-+|-+$/g, '') || 'All';
   const fileName = (card, scope, today, ext) => `${card}_${scope}_${today}.${ext}`;
 
-  return { rowsFor, tabTables, TABS, portfolioModel, sheetOf, csvOf, scopeName, safeName, fileName, daysText, followers };
+  return { rowsFor, tabTables, TABS, portfolioModel, monthName, sheetOf, csvOf, scopeName, safeName, fileName, daysText, followers };
 })(KT.rules, KT.content);

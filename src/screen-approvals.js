@@ -88,7 +88,8 @@ KT.approvals = (function () {
       foot = `${del}<span class="spacer"></span><button type="button" class="btn small primary" data-apedit="${esc(r.id)}">${esc(AP.edit)}</button>`;
     } else {
       body = summaryHTML(r) + (r.note ? `<div class="apc-note"><span class="muted small">${esc(AP.noteFrom(who(r.by)))}</span><div>${esc(r.note)}</div></div>` : '');
-      foot = `${!isMgr ? `<span class="muted small">${esc(AP.waitingFor)}</span>` : ''}<span class="spacer"></span><button type="button" class="btn small${isMgr ? ' primary' : ''}" data-apreview="${esc(r.id)}">${esc(AP.review)}</button>`;
+      /* CR-27 §3.1 — Staff on their own request: View (Review means deciding it) */
+      foot = `${!isMgr ? `<span class="muted small">${esc(AP.waitingFor)}</span>` : ''}<span class="spacer"></span><button type="button" class="btn small${isMgr ? ' primary' : ''}" data-apreview="${esc(r.id)}">${esc(isMgr ? AP.review : AP.view)}</button>`;
     }
     return `<article class="card apc${decided ? ' done' : ''}${draft && r.returned ? ' back' : ''}" data-apcard="${esc(r.id)}">${head}${body ? `<div class="apc-b">${body}</div>` : ''}<div class="apc-f">${foot}</div></article>`;
   }

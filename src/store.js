@@ -121,7 +121,9 @@
    (CR-23, schema stays 21 · nothing migrated) sample_shipments + ship_by_date (null = Ship by not set — the date a person set; ship_by is the old
                          sum and only a hint now) · deals + cancel_reason_key (null = Other · cancel_reason = its Detail) · lookups.cancel_reasons
                          [{ key, label, active }] — the default list is put in at load when there is none
-   (CR-24, schema stays 21) lookups.ops_stuck_days (7 at load when there is none — Settings › Operations mode) */
+   (CR-24, schema stays 21) lookups.ops_stuck_days (7 at load when there is none — Settings › Operations mode)
+   (CR-25, schema stays 21) kols.partner_type kol · affiliate · both (null = KOL · nothing migrated) · lookups.partner_types [{ key, label }]
+                         (put in at load when there is none — Settings › Lists › Partner types) */
 
 KT.store = (function (R) {
   'use strict';
@@ -347,6 +349,7 @@ KT.store = (function (R) {
     if (obj.schema_version === 20) toV21(obj);
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
+    if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }

@@ -27,15 +27,16 @@ Object.assign(KT.rules, (function (R, C) {
     const kol = k || (a && R.kolById(state, a.kol_id)); if (!kol) return null;
     return { kol, handle: (a && a.handle) || handlesOf(state, kol.kol_id)[0] || '' };
   }
-  /* the Create KOL form from what was typed: the name and handle without the @ in front · TikTok · PIC = you */
+  /* the Create KOL form from what was typed: the name and handle without the @ in front · TikTok · PIC = you · Partner type KOL (CR-25) */
   const createKolDraft = (text, user) => { const t = trim(text).replace(/^@+/, ''); return { display_name: t, platform: 'TikTok', handle: t.replace(/\s+/g, ''), followers: '', profile_link: '',
-    kol_type: '', kol_category: '', gender: '', contact_channel: '', contact_id: '', pic: R.picName(user) || '', default_payment_term: '' }; };
+    kol_type: '', kol_category: '', gender: '', contact_channel: '', contact_id: '', pic: R.picName(user) || '', default_payment_term: '', partner_type: 'kol' }; };
 
   /* §4.10 — Create KOL from New deal: Name and PIC are needed · a handle without spaces or @ · followers ≥ 0 · a link that is a link */
   function validateCreateKol(state, x) {
     const errs = [], h = trim(x.handle);
     if (!trim(x.display_name)) errs.push({ field: 'ck_display_name', msg: M.kolNameRequired });
     if (!trim(x.pic)) errs.push({ field: 'ck_pic', msg: M.ckPicRequired });
+    if (!R.PARTNER_TYPES.includes(x.partner_type == null ? 'kol' : x.partner_type)) errs.push({ field: 'ck_partner_type', msg: C.partner.required });   // CR-25 §3.1
     if (h && (/\s/.test(h) || h.startsWith('@'))) errs.push({ field: 'ck_handle', msg: M.accHandleFormat(1) });
     if (h && !x.platform) errs.push({ field: 'ck_platform', msg: M.accPlatform(1) });
     if (!isBlank(x.followers) && (isNaN(x.followers) || Number(x.followers) < 0)) errs.push({ field: 'ck_followers', msg: M.accFollowersFormat(1) });
@@ -50,7 +51,7 @@ Object.assign(KT.rules, (function (R, C) {
     const v = t => trim(t) || null;
     const kol = { kol_id: ids.kolId, display_name: trim(x.display_name), kol_category: v(x.kol_category), kol_type: v(x.kol_type), gender: x.gender || null, pic: v(x.pic),
       kol_status: 'Active', status_reason: null, contact_channel: x.contact_channel || null, contact_id: v(x.contact_id), note: null, sources: ['manual'],
-      default_payment_term: isTerm(x.default_payment_term) ? x.default_payment_term : null, kol_type_legacy: null };
+      default_payment_term: isTerm(x.default_payment_term) ? x.default_payment_term : null, kol_type_legacy: null, partner_type: R.partnerTypeOf(x) };
     const account = trim(x.handle) ? { account_id: ids.accountId, kol_id: ids.kolId, platform: x.platform, handle: trim(x.handle), profile_link: v(x.profile_link),
       followers: isBlank(x.followers) ? null : Number(x.followers), is_legacy: false } : null;
     return { kol, account };
@@ -106,12 +107,13 @@ Object.assign(KT.rules, (function (R, C) {
       if (q && ![k.display_name].concat(accs.map(a => a.handle)).some(v => normKey(v).includes(q))) return null;
       if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.tier && tier !== f.tier) || (f.type && (k.kol_type || '') !== f.type) || (f.category && k.kol_category !== f.category) ||
         (f.owner && (k.pic || '') !== (f.owner === '__none' ? '' : f.owner)) || (f.status && (k.kol_status || 'Active') !== f.status) || (f.lastWorked && pf.bucket !== f.lastWorked) ||
-        (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id)) || (worked && !worked.has(k.kol_id))) return null;
+        (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id)) || (worked && !worked.has(k.kol_id)) ||
+        (f.partner && !R.partnerMatch(k, f.partner))) return null;   // CR-25: Partner type (Both is in KOL and in Affiliate)
       return { k, accs, mf, tier, pf, inCamp: inCamp.has(k.kol_id) };
     }).filter(Boolean).sort((a, b) => a.k.display_name.localeCompare(b.k.display_name, 'th'));
   }
   /* the filters that count for Clear all filters (Not in this campaign yet is one too) */
-  const PICKER_KEYS = ['q', 'platform', 'tier', 'type', 'category', 'owner', 'status', 'lastWorked', 'perf', 'workedIn', 'postedOnly', 'notIn'];
+  const PICKER_KEYS = ['q', 'partner', 'platform', 'tier', 'type', 'category', 'owner', 'status', 'lastWorked', 'perf', 'workedIn', 'postedOnly', 'notIn'];
   const pickerActive = f => PICKER_KEYS.filter(k => (Array.isArray(f[k]) ? f[k].length > 0 : k === 'q' ? !!trim(f.q) : !!f[k]));
   /* §4.12 — Set details: only the fields ticked (PIC · Pillar · Payment term · Phase · CTA) · one event a deal for what really changed
      fields = {pic?, pillar?, payment_term?, cta?} (Phase is set on the deal's posts by the caller) → [{deal (new), changes [{field, from, to}]}] */

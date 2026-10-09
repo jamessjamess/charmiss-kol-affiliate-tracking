@@ -191,8 +191,10 @@ Object.assign(KT.rules, (function (R, C) {
     if (l && (l.run_id || ['paid', 'cancelled', 'on_hold'].includes(l.status))) return null;
     const from = item.status;
     if (!l) {
-      l = R.newLine(state, item, { lineId: ctx.lineId(), agreed_amount: item.agreed, price_basis: item.price_basis, wht_rate: item.tax.wht_rate, pay_to: item.pay_to, user: ctx.user, now: ctx.now });
-      l.hold_created = true; state.payment_lines.push(l);
+      const o = { lineId: ctx.lineId(), agreed_amount: item.agreed, price_basis: item.price_basis, wht_rate: item.tax.wht_rate, pay_to: item.pay_to, user: ctx.user, now: ctx.now };
+      if (R.isDocsOnly(item.docsLine)) l = R.promoteDocsLine(state, item, o);   // CR-27: the line that keeps its documents
+      else { l = R.newLine(state, item, o); state.payment_lines.push(l); }
+      l.hold_created = true;
     }
     Object.assign(l, { status: 'on_hold', hold_reason: trim(reason), hold_by: ctx.user || null, hold_at: ctx.now });
     return { line: l, event: { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payment_hold', from, to: 'on_hold', changed_at: ctx.now, changed_by: ctx.user || null, note: trim(reason) } };
@@ -201,7 +203,9 @@ Object.assign(KT.rules, (function (R, C) {
   function releaseLine(state, line, today, ctx) {
     if (!line || line.status !== 'on_hold') return null;
     const reason = line.hold_reason;
-    if (line.hold_created) state.payment_lines = state.payment_lines.filter(x => x !== line);
+    /* CR-27: a line made by Hold that has documents goes back to keeping only them */
+    if (line.hold_created && R.lineDocs(line).length) { Object.assign(line, { status: 'open', hold_reason: null, hold_by: null, hold_at: null, docs_only: true }); delete line.hold_created; }
+    else if (line.hold_created) state.payment_lines = state.payment_lines.filter(x => x !== line);
     else Object.assign(line, { status: 'open', hold_reason: null, hold_by: null, hold_at: null });
     const to = line.hold_created ? 'released' : R.lineStatus(state, line, today);
     return { event_id: ctx.eventId(), deal_id: line.deal_id || null, line_id: line.line_id, type: 'payment_hold', from: 'on_hold', to, changed_at: ctx.now, changed_by: ctx.user || null, note: reason || null };

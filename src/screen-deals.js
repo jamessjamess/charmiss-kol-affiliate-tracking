@@ -21,7 +21,7 @@ KT.screens.deals = (function () {
   /* phaseSel: 'all' (default) · 'ongoing' · one phase_id of the Campaign · '__needs' / '__unscheduled' only when a link asks for it (CR-03) */
   const blankFilter = R.blankDealFilter;
   const myPic = () => R.picName(U.me());
-  const POP_KEYS = ['sub', 'pillar', 'cta', 'term', 'sample', 'noImported'];
+  const POP_KEYS = ['sub', 'pillar', 'cta', 'term', 'partner', 'sample', 'noImported'];   // CR-25: + Partner type
   const VIEWS = ['table', 'pipeline', 'performance'];   // CR-08: the Payments view moved to its own page · CR-10: Performance (screen-perf.js) · CR-11 §4.10: Samples → the Shipments page
   const readSet = k => { try { return new Set(JSON.parse(pref.get(k, '[]'))); } catch (e) { return new Set(); } };
   const dl = {
@@ -129,8 +129,9 @@ KT.screens.deals = (function () {
       if (p.filter) {
         /* a link opens on All (CR-13) · old links: Needs phase / overdue → that chip · unpaid → Docs to collect (§4.5) · a PIC → the PIC box */
         const { scope, overdue, unpaid, pic, ...rest } = p.filter;
+        const allCamps = rest.campaign === '__all'; if (allCamps) rest.campaign = '';   // CR-26: a link for every Campaign of the Year
         tabSel(); dl.f = Object.assign(blankFilter(), fromScope(scope), rest); dl.tab = 'all'; dl.reason = '';
-        if (dl.f.campaign) yearFor(dl.f.campaign); else dl.campInit = false;   // CR-21 §3.2: the Year of the Campaign the link names (none: the usual one)
+        if (dl.f.campaign) yearFor(dl.f.campaign); else if (allCamps) { dl.campInit = true; pref.set('dealcamp', '__all'); } else dl.campInit = false;   // CR-21 §3.2: the Year of the Campaign the link names (none: the usual one)
         if (dl.f.phaseSel === R.NEEDS) { dl.f.phaseSel = 'all'; dl.reason = 'needsPhase'; }
         if (overdue) dl.reason = 'overdue';
         if (unpaid) dl.reason = 'docs';
@@ -306,6 +307,7 @@ KT.screens.deals = (function () {
 
   /* ===================== left: toolbar state, table, pipeline ===================== */
   function renderLeft() {
+    if (!$('dl_new')) return;   // CR-27 §3.3: the Deal modal opened over another page before Deals was ever drawn
     const s = state(), ctx = R.dealContext(s), td = today();
     /* CR-04 §4.4: what this person may not do is not shown */
     const edit = can('deal.edit');
@@ -397,6 +399,7 @@ KT.screens.deals = (function () {
       sel('pillar', D.pillar, (L.pillar_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.pillarNotSet }])) +
       sel('cta', F.cta, (L.cta_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.ctaNotSet }])) +
       sel('term', D.term, R.PAYMENT_TERMS.concat(['none']).map(v => ({ value: v, label: C.term[v] }))) +
+      sel('partner', C.partner.field, R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label }))) +   // CR-25: the KOL's Partner type (Both is in KOL and in Affiliate)
       sel('sub', D.subStatus, R.stepsOf(L).map(st => ({ value: st.sub_status, label: st.sub_status }))) +
       sel('sample', C.samples.filter, R.SAMPLE_STATUSES.map(k => ({ value: k, label: C.samples.status[k] }))) +
       `<label class="tick"><input type="checkbox" data-ffimp${f.noImported ? '' : ' checked'}> ${esc(D.includeImported)}</label>` +
@@ -407,11 +410,13 @@ KT.screens.deals = (function () {
     if (f.pillar) chips.push(['pillar', `${D.pillar}: ${f.pillar === '__none' ? D.pillarNotSet : f.pillar}`]);
     if (f.cta) chips.push(['cta', `${F.cta}: ${f.cta === '__none' ? D.ctaNotSet : f.cta}`]);
     if (f.term) chips.push(['term', `${D.term}: ${C.term[f.term]}`]);
+    if (f.partner) chips.push(['partner', `${C.partner.field}: ${R.partnerTypeLabel(L, f.partner)}`]);
     if (f.sample) chips.push(['sample', `${C.samples.filter}: ${C.samples.status[f.sample]}`]);
     if (f.noImported) chips.push(['noImported', D.chipNoImported]);
     if (f.payState) chips.push(['payState', `${D.payState}: ${C.payState[f.payState]}`]);
     if (f.open) chips.push(['open', D.chipOpen]);
     if (f.noDate) chips.push(['noDate', D.chipNoDate]);
+    if (f.noPostDate) chips.push(['noPostDate', D.chipNoPostDate]);   // CR-26 (Dashboard › Set dates)
     if (f.outside) chips.push(['outside', D.chipOutside(R.dmy(f.outside.from), R.dmy(f.outside.to))]);
     const n = POP_KEYS.filter(k => f[k]).length + (f.tiers ? 1 : 0);
     $('dl_fbadge').textContent = `· ${n}`; $('dl_fbadge').classList.toggle('hidden', !n);
@@ -700,7 +705,7 @@ KT.screens.deals = (function () {
       const k = ctx.kols.get(d.kol_id) || {}, name = k.display_name || d.kol_id, due = R.dueDate(s, d), late = R.isOverdue(s, d, td), mv = movable(d), tier = (ctx.tiers.get(d.deal_id) || {}).tier;
       const notSet = R.costNotSet(d), total = R.totalCost(d);
       return `<div class="dcard${mv ? ' drag' : ''}" role="button" tabindex="0" data-id="${esc(d.deal_id)}" title="${esc(name)}"${mv ? ' draggable="true"' : ''}>
-        <div class="r1"><b class="nm">${U.nameHTML(name)}</b><span class="amt${notSet ? ' muted' : ''}"${notSet ? ` title="${esc(C.priceRef.costNotSet)}"` : ''}>${notSet ? '฿—' : esc(R.baht(total))}</span>${mv ? `<button type="button" class="icon-btn cmenu" data-cardmenu="${esc(d.deal_id)}" aria-label="${esc(D.cardMenu)}" title="${esc(D.moveToMenu)}">⋯</button>` : ''}</div>
+        <div class="r1"><b class="nm">${U.nameHTML(name)}${U.partnerChipHTML(k)}</b><span class="amt${notSet ? ' muted' : ''}"${notSet ? ` title="${esc(C.priceRef.costNotSet)}"` : ''}>${notSet ? '฿—' : esc(R.baht(total))}</span>${mv ? `<button type="button" class="icon-btn cmenu" data-cardmenu="${esc(d.deal_id)}" aria-label="${esc(D.cardMenu)}" title="${esc(D.moveToMenu)}">⋯</button>` : ''}</div>
         <div class="r2"><span class="l">${platformsHTML(ctx, d)}${d.pic ? `<span class="av sm" title="${esc(d.pic)}">${esc(initials(d.pic))}</span>` : ''}${tier ? `<span class="tier">${esc(tier)}</span>` : ''}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${KT.samples.iconHTML(d)}</span>
           <span class="${late ? 'late' : 'muted'}">${due ? esc(dmShort(due, td)) : ''}</span></div></div>`;
     };
@@ -1016,7 +1021,28 @@ KT.screens.deals = (function () {
     onSuspend: () => { dl.over = null; if (!editing()) Object.assign(dl, { mode: 'none', id: null }); },
   };
   /* a deal opened from elsewhere (Payments · Shipments · Dashboard · the KOL modal): the Deal modal over that page (the page and the address stay) ·
-     o = after() | { after (on close), backKol {kolId, tab, name} (CR-20 §4.6: it took the KOL modal's place — "‹ Back to <KOL>") } */
+     o = after() | { after (on close), backKol {kolId, tab, name} (CR-20 §4.6: it took the KOL modal's place — "‹ Back to <KOL>") ·
+     CR-27 §3.3: nav [deal ids] (‹ › the rows of that page) · "Open in Deals" in the header } */
+  /* CR-28 — the one way to open the Deal modal from anywhere (Shipments · Payments · Payment details · Dashboard · Operations · KOL modal · Settings ·
+     Move stage …): the same modal every time — header → Missing / warnings → Journey → the tab bar → the tab · a link to one part = that tab (never the part alone) ·
+     o = { tab: overview | costs | timeline | shipments | history (none = the last one used) · focus (a field to scroll to and light up 1.5 s: post_due · ship_by ·
+     rate_card · expected_… ) · source (the page it came from) · nav [deal ids] (‹ › that page's rows) · after () (on close) · backKol · missing · postfix } */
+  const TAB_ALIAS = { overview: 'overview', costs: 'costs', timeline: 'timeline', shipments: 'ships', ships: 'ships', history: 'history' };
+  function openDealModal(id, o) {
+    const x = typeof o === 'function' ? { after: o } : Object.assign({}, o || {});
+    x.tab = TAB_ALIAS[x.tab] || null;
+    openOver(id, x);
+    if (x.focus && dl.id === id) setTimeout(() => focusField(x.focus), 80);
+  }
+  /* §3 — focus: the field in view and lit up for 1.5 s (Post due · Ship by · Rate card · any field of the view) */
+  function focusField(key) {
+    const box = $('drawer_content'); if (!box || dl.mode !== 'view') return;
+    const k = key === 'post_due' ? 'expected_post_date' : key;
+    let el = k === 'ship_by' ? box.querySelector('[data-smact="ship_by"]') || box.querySelector('[data-secbox="ships"], .sm-sec') : box.querySelector(`[data-fk="${CSS.escape(k)}"]`);
+    if (el && k === 'ship_by') el = el.closest('tr') || el;
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' }); el.classList.add('dm-focus'); setTimeout(() => el.classList.remove('dm-focus'), 1500);
+  }
   function openOver(id, o) {
     if (!dealById(id)) return;
     if (editing() && dl.id !== id) { toast(C.common.blockWhileEditing); return; }
@@ -1024,7 +1050,7 @@ KT.screens.deals = (function () {
     const x = typeof o === 'function' ? { after: o } : o || {};
     if (x.tab) chooseDealTab(x.tab);   // CR-22 §3.6
     dl.over = x.after || (() => {});
-    dl.backKol = x.backKol || null; dl.nav = null;
+    dl.backKol = x.backKol || null; dl.nav = Array.isArray(x.nav) && x.nav.length > 1 && x.nav.includes(id) ? x.nav.filter(v => dealById(v)) : null;
     if (!(dl.id === id && editing())) Object.assign(dl, { mode: 'view', id, sec: null });
     renderPanel();
     /* CR-24 §4.6 — Operations › Data to fix: straight to the field (a word of Missing · a post's date) */
@@ -1209,7 +1235,7 @@ KT.screens.deals = (function () {
     if (fe.reason === C.lock.viewOnly) return '';
     return ` <span class="lock" title="${esc(fe.reason)}" aria-label="${esc(fe.reason)}">${LOCK}</span>`;
   }
-  const kvF = (d, f, value, label, post) => `<div class="kv"><span>${esc(label || F[f])}</span><b>${R.isBlank(value) ? `<span class="muted">${C.common.none}</span>` : esc(value)}${lockMark(lockOf(d, f, post))}</b></div>`;
+  const kvF = (d, f, value, label, post) => `<div class="kv" data-fk="${f}"><span>${esc(label || F[f])}</span><b>${R.isBlank(value) ? `<span class="muted">${C.common.none}</span>` : esc(value)}${lockMark(lockOf(d, f, post))}</b></div>`;
   const kvAuto = (label, value, cls) => `<div class="kv${cls ? ' ' + cls : ''}"><span>${esc(label)}</span><b>${value}${lockMark({ editable: false, auto: true })}</b></div>`;
   const secFoot = () => `<div class="sec-foot"><div class="checks" id="dl_checks"></div><div class="btns"><button type="button" class="btn" data-act="secCancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-act="secSave">${esc(C.common.save)}</button></div></div>`;
   function penBtn(d, key, title) {
@@ -1261,13 +1287,15 @@ KT.screens.deals = (function () {
       return `<span class="dm-nav"><button type="button" class="icon-btn" data-dmnav="-1"${i > 0 ? '' : ' disabled'} aria-label="${esc(D.prevDeal)}" title="${esc(D.prevDeal)}">‹</button>` +
         `<span class="muted small">${esc(D.navOf(i + 1, dl.nav.length))}</span><button type="button" class="icon-btn" data-dmnav="1"${i < dl.nav.length - 1 ? '' : ' disabled'} aria-label="${esc(D.nextDeal)}" title="${esc(D.nextDeal)}">›</button></span>`; })();
     const moveBtn = can('deal.edit') && !R.campaignCancelled(s, d.campaign_id) ? `<button type="button" class="btn primary" data-act="move">${esc(D.move)}</button>` : '';
+    /* CR-27 §3.3 — over another page: a small link to the Deals page itself */
+    const pageLink = dl.over && U.currentTab() !== 'deals' ? `<button type="button" class="link small dm-openpage" data-dmopenpage title="${esc(D.openInDealsTip)}">${esc(D.openInDeals)} ↗</button>` : '';
     return `<div class="dr-head">
         ${dl.backKol ? `<button type="button" class="link backkol" data-backkol>${esc(D.backToKol(dl.backKol.name || dl.backKol.kolId))}</button>` : ''}
-        <div class="dr-title">${k.kol_id ? U.avatarHTML(k, 'md') : ''}<div class="t"><h2><button type="button" data-kol="${esc(d.kol_id)}" title="${esc(D.openKol)}">${esc(k.display_name || d.kol_id)}</button>${U.copyBtnHTML(k.display_name || d.kol_id)}${lockMark(lockOf(d, 'kol_id'))}</h2>
+        <div class="dr-title">${k.kol_id ? U.avatarHTML(k, 'md') : ''}<div class="t"><h2><button type="button" data-kol="${esc(d.kol_id)}" title="${esc(D.openKol)}">${esc(k.display_name || d.kol_id)}</button>${U.copyBtnHTML(k.display_name || d.kol_id)}${lockMark(lockOf(d, 'kol_id'))}${U.partnerChipHTML(k)}</h2>
           ${dl.backTo ? `<button type="button" class="link backstage" data-backstage>${esc(D.backTo(dl.backTo))}</button>` : ''}
           <div class="dr-sub"><span class="chip dm-tier" title="${esc(D.tier)}">${esc(tier.tier || R.UNKNOWN_TIER)}</span><span>${esc(d.deal_id)}${lockMark(lockOf(d, 'deal_id'))} · ${esc(camp.campaign_name || '')}${campFe.editable ? penBtn(d, 'header', F.campaign_id) : lockMark(campFe)}${p.phase_id ? ` · ${esc(R.phaseName(s, p.phase_id))}` : ''}</span>${stageChip(d)}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${d.is_legacy ? `<span class="badge-legacy" title="${esc(D.legacyTip)}">${esc(D.legacy)}</span>` : ''}` +
           `<span class="dm-pic">${esc(F.pic)} ${d.pic ? `<b>${esc(d.pic)}</b>` : `<span class="late">${esc(C.common.none)}</span>`}</span></div></div>
-          <div class="dm-acts">${moveBtn}${nav}${closeBtn}</div></div>
+          <div class="dm-acts">${pageLink}${moveBtn}${nav}${closeBtn}</div></div>
         ${head}
       </div>
       <div class="dr-body">
@@ -1290,8 +1318,10 @@ KT.screens.deals = (function () {
     const fix = w => w.kind === 'post_outside' || w.kind === 'post_due_outside', ok = can('deal.edit');
     const btns = w => (!ok ? '' : w.kind === 'post_due_outside' ? ` <button type="button" class="link" data-postfix="due">${esc(D.changeDate)}</button>`
       : ` <button type="button" class="link" data-postfix="date" data-post="${w.post}">${esc(D.changeDate)}</button> · <button type="button" class="link" data-postfix="phase" data-post="${w.post}">${esc(D.pickPhase)}</button>`);
-    return checksHTML({ errs: issues.errs, warns: issues.warns.filter(w => !fix(w)), infos: issues.infos || [] }, '') +
-      issues.warns.filter(fix).map(w => `<div class="check warn dm-datewarn">! <span>${esc(w.msg)}${btns(w)}</span></div>`).join('');
+    const docs = w => w.field === 'docs_done' && R.isSimple(state(), 'payments');   // CR-27 §3.2: the link to the checklist
+    return checksHTML({ errs: issues.errs, warns: issues.warns.filter(w => !fix(w) && !docs(w)), infos: issues.infos || [] }, '') +
+      issues.warns.filter(fix).map(w => `<div class="check warn dm-datewarn">! <span>${esc(w.msg)}${btns(w)}</span></div>`).join('') +
+      issues.warns.filter(docs).map(w => `<div class="check warn">! <span>${esc(w.msg)} <button type="button" class="link" data-dmdocs>${esc(C.pay.docs.checkDocs)}</button></span></div>`).join('');
   }
   async function goPostFix(kind, i) {
     const sec = kind === 'due' ? 'timeline' : 'posts';
@@ -1343,11 +1373,12 @@ KT.screens.deals = (function () {
     const notes = k => { const n = R.stepNoteOf(s, d.deal_id, R.draftKey(k)), c = R.noteCounts ? R.noteCounts(n) : { links: 0, images: 0 };
       return `<button type="button" class="link small" data-notes="${k}">${esc(C.notes.counts(c.links, c.images) || C.notes.edit)}</button>`; };
     const steps = R.stepsOf(s.lookups), nm = (f, dflt) => ((steps.find(f) || {}).sub_status || dflt);
-    const rows = [[nm(x => x.date_field === 'brief_date', 'Brief'), null, d.brief_date, link(d.link_brief, F.link_brief)], [nm(R.isScriptStep, 'Script'), d.expected_script_date, d.script_date, link(d.script_link, F.script_link)]]
-      .concat(Array.from({ length: plan.drafts }, (_, i) => [nm(x => R.draftNo(x) === i + 1, `Draft ${i + 1}`), d[`expected_draft${i + 1}_date`], d[`approved_draft${i + 1}_date`], notes(i + 1)]))
-      .concat([[nm(R.isApproveStep, 'Approve'), d.expected_approve_date, d.approved_date, ''], [nm(R.isPostStep, 'Post'), d.expected_post_date, done, '']]);
+    /* (CR-28: each row says its field — openDealModal({focus}) finds it) */
+    const rows = [[nm(x => x.date_field === 'brief_date', 'Brief'), null, d.brief_date, link(d.link_brief, F.link_brief), 'brief_date'], [nm(R.isScriptStep, 'Script'), d.expected_script_date, d.script_date, link(d.script_link, F.script_link), 'expected_script_date']]
+      .concat(Array.from({ length: plan.drafts }, (_, i) => [nm(x => R.draftNo(x) === i + 1, `Draft ${i + 1}`), d[`expected_draft${i + 1}_date`], d[`approved_draft${i + 1}_date`], notes(i + 1), `expected_draft${i + 1}_date`]))
+      .concat([[nm(R.isApproveStep, 'Approve'), d.expected_approve_date, d.approved_date, '', 'expected_approve_date'], [nm(R.isPostStep, 'Post'), d.expected_post_date, done, '', 'expected_post_date']]);
     return `<div class="tablewrap"><table class="tbl compact-sm dm-steps"><thead><tr><th>${esc(D.colStep)}</th><th>${esc(D.colExpected)}</th><th>${esc(D.colDone)}</th><th>${esc(D.colLinks)}</th></tr></thead><tbody>` +
-      rows.map(([n, e, x, l]) => `<tr><td>${esc(n)}</td><td class="nowrap">${e ? esc(R.dmy(e)) : '<span class="muted">—</span>'}</td><td class="nowrap">${x ? `✓ ${esc(R.dmy(x))}` : '<span class="muted">—</span>'}</td><td>${l || ''}</td></tr>`).join('') +
+      rows.map(([n, e, x, l, fk]) => `<tr data-fk="${fk}"><td>${esc(n)}</td><td class="nowrap">${e ? esc(R.dmy(e)) : '<span class="muted">—</span>'}</td><td class="nowrap">${x ? `✓ ${esc(R.dmy(x))}` : '<span class="muted">—</span>'}</td><td>${l || ''}</td></tr>`).join('') +
       `</tbody></table></div>`;
   }
   /* ---------- the open section's form: inputs for open fields, the value + 🔒 for locked ones ---------- */
@@ -1656,6 +1687,12 @@ KT.screens.deals = (function () {
     if (e.target.closest('[data-backstage]')) { if (dl.backTo) openStagePop(dl.backTo, true); return; }
     /* CR-20 §4.6 — ‹ › · ‹ Back to <KOL> (the KOL modal again, on its tab) · a Draft step of the Journey → its notes (§4.13) */
     const nv = e.target.closest('[data-dmnav]'); if (nv) { if (!nv.disabled) navStep(+nv.dataset.dmnav); return; }
+    if (e.target.closest('[data-dmopenpage]')) { const id = dl.id; U.requestCloseDrawer().then(ok => { if (ok) go('deals', { deal: id }); }); return; }   // CR-27 §3.3
+    /* CR-27 §3.2 — "Marked as paid, but documents aren't checked yet" › Check documents → Payment details at Documents */
+    if (e.target.closest('[data-dmdocs]')) { const s = state(), d = dealById(dl.id), id = dl.id; if (!d) return;
+      const items = R.dealPayItems(s, d, today()).filter(x => x.status !== 'cancelled' && x.pay_to !== 'reimburse'), miss = x => R.docsRequired(s, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to, docs: R.lineDocs(x.docsLine) }, x.payee || null).length > 0;
+      const x = items.find(y => y.status === 'paid' && miss(y)) || items.find(miss) || items[0]; if (!x) return;
+      KT.screens.payments.openDetails(x.key, { section: 'docs', after: () => { if (dl.id === id && dl.mode === 'view') renderPanel(); } }); return; }
     if (e.target.closest('[data-backkol]')) { const b = dl.backKol; U.requestCloseDrawer().then(ok => { if (ok && b) KT.profile.open(b.kolId, { tab: b.tab }); }); return; }
     const nt = e.target.closest('[data-notes]'); if (nt && dl.mode === 'view') { KT.move.openNotes(dl.id, +nt.dataset.notes, { opener: nt, after: () => { if (dl.mode === 'view') renderPanel(); } }); return; }
     if (dl.mode === 'view' && KT.samples.click(e, () => { renderLeft(); renderPanel(); })) return;   // CR-10 §4.14
@@ -1794,6 +1831,6 @@ KT.screens.deals = (function () {
       setTimeout(() => document.querySelectorAll('#dl_body .flash').forEach(el => el.classList.remove('flash')), 5000); }, 300);
   }
 
-  return { render, reset, onSuspend: owner.onSuspend, openOver, isOver: () => !!dl.over, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails,
+  return { render, reset, onSuspend: owner.onSuspend, openOver: openDealModal, isOver: () => !!dl.over, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails, openDealModal,
     openMove, currentCampaign: () => dl.f.campaign || '' };
 })();

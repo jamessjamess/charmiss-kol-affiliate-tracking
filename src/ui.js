@@ -501,6 +501,26 @@ KT.ui = (function () {
     return `<span class="rel rel-${p.badge}" title="${esc(tip)}">${esc(p.badge === 'none' || short || pct == null ? b : PF.badgeLine(b, pct))}</span>`;
   }
 
+  /* ===================== CR-25 — Partner type (KOL · Affiliate · Both) ===================== */
+  /* the small chip beside a name (New deal · Pipeline card · Deal modal): AFF · KOL+AFF · nothing for a KOL (§6 #6) */
+  function partnerChipHTML(k) {
+    const t = R.partnerTypeOf(k); if (t === 'kol') return '';
+    return `<span class="ptc ptc-${t}" title="${esc(C.partner.chipTip(R.partnerTypeLabel(state().lookups, t)))}">${esc(C.partner.chip[t])}</span>`;
+  }
+  /* KOL Master › Partner: the word (KOL grey · Affiliate · Both) */
+  const partnerTagHTML = k => { const t = R.partnerTypeOf(k); return `<span class="ptag ptag-${t}">${esc(R.partnerTypeLabel(state().lookups, t))}</span>`; };
+  /* the buttons of Partner type: KOL · Affiliate · Both (forms) · o.all → All first ('' — filters) · o.keys → only these */
+  function partnerSegHTML(attr, value, o = {}) {
+    const items = (o.all ? [{ key: '', label: C.partner.all }] : []).concat(R.partnerTypesOf(state().lookups).filter(t => !o.keys || o.keys.includes(t.key))), v = value || '';
+    return `<div class="seg ptseg"${o.id ? ` id="${o.id}"` : ''} role="radiogroup" aria-label="${esc(C.partner.field)}">` +
+      items.map(t => `<button type="button" role="radio" ${attr}="${esc(t.key)}" class="${t.key === v ? 'on' : ''}" aria-checked="${t.key === v}">${esc(t.label)}</button>`).join('') + `</div>`;
+  }
+  /* one press: that button on, the others off → its key */
+  function partnerSegPick(btn, attr) {
+    btn.parentElement.querySelectorAll('button').forEach(b => { const on = b === btn; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    return btn.getAttribute(attr) || '';
+  }
+
   /* ===================== product picker (CR-06 §4.3) ===================== */
   /* several products of the catalog, searched by TR code or name (active products only) · chips with × (a product that deals
      use cannot be taken off: locked(code) → number of deals) · "+ New product" adds to the catalog right away (canNew) */
@@ -602,6 +622,7 @@ KT.ui = (function () {
     const types = (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label }));
     return `<div id="ck_dup"></div><div class="fields">
         ${field('ck_display_name', CK.name, inp('display_name'), { req: 1, wide: 1 })}
+        ${field('ck_partner_type', C.partner.field, partnerSegHTML('data-ckpt', x.partner_type || 'kol', { id: 'f_ck_partner_type' }), { req: 1, wide: 1 })}
         ${field('ck_platform', CK.platform, sel('platform', (L.platform_list || []).map(v => ({ value: v, label: v })), CK.choose))}${field('ck_handle', CK.handle, inp('handle'), { hint: esc(CK.handleHint) })}
         ${field('ck_followers', CK.followers, inp('followers', 'number'))}${field('ck_profile_link', CK.profileLink, inp('profile_link', 'url'))}
         ${field('ck_kol_type', CK.type, sel('kol_type', types, CK.notSet))}${field('ck_kol_category', CK.category, inp('kol_category'))}
@@ -634,7 +655,10 @@ KT.ui = (function () {
       el.addEventListener('input', h); el.addEventListener('change', () => { c.touched.add(el.dataset.key); h(); }); el.addEventListener('blur', () => { c.touched.add(el.dataset.key); after(); });
     });
     root._ck = { c, after };
-    if (!root.dataset.ckWired) { root.dataset.ckWired = '1'; root.addEventListener('change', e => { if (e.target.matches('[data-ckanyway]') && root._ck) { root._ck.c.anyway = e.target.checked; root._ck.after(); } }); }
+    if (!root.dataset.ckWired) {
+      root.dataset.ckWired = '1'; root.addEventListener('change', e => { if (e.target.matches('[data-ckanyway]') && root._ck) { root._ck.c.anyway = e.target.checked; root._ck.after(); } });
+      root.addEventListener('click', e => { const b = e.target.closest('[data-ckpt]'); if (b && root._ck) { root._ck.c.draft.partner_type = partnerSegPick(b, 'data-ckpt'); root._ck.after(); } });   // CR-25
+    }
   }
   /* Add account (New deal panel · KOL drawer › + Add account): platform · handle · followers · profile link — the KOL Master checks (R.validateAddAccount) */
   function accountFieldsHTML(x) {
@@ -720,7 +744,13 @@ KT.ui = (function () {
   function modalPanel(o) {
     if (!cm.open || !cmo) return false;
     const h = cmHandle();
-    h.setBody(`<button type="button" class="link nd-back" data-cmback>← ${esc(o.backLabel || C.common.back)}</button><h3 class="nd-ph">${esc(o.title)}</h3>${o.sub ? `<p class="muted small nd-psub">${esc(o.sub)}</p>` : ''}${o.body}`);
+    /* CR-27 §3.1 — o.replaceHeader: the panel's title takes the modal's header (no stacked "Edit … · Phase Planner · …") — Back puts it back */
+    if (o.replaceHeader) {
+      const t = $('cm_title'), sub = $('cm_sub'), keep = { t: t ? t.textContent : '', s: sub && !sub.classList.contains('hidden') ? sub.textContent : '' }, back0 = o.back || cmo.redraw || null;
+      if (t) t.textContent = o.title; h.setSub('');
+      o = Object.assign({}, o, { back: () => { if ($('cm_title')) $('cm_title').textContent = keep.t; h.setSub(keep.s); if (back0) back0(); } });
+    }
+    h.setBody(`<button type="button" class="link nd-back" data-cmback>← ${esc(o.backLabel || C.common.back)}</button>${o.replaceHeader ? '' : `<h3 class="nd-ph">${esc(o.title)}</h3>`}${o.sub ? `<p class="muted small nd-psub">${esc(o.sub)}</p>` : ''}${o.body}`);
     h.setFoot(o.left || '', o.buttons || '');
     cmo.back = o.back || cmo.redraw || null;
     setTimeout(focusFirstInModal, 0);
@@ -1049,6 +1079,13 @@ KT.ui = (function () {
   const toRoute = h => { const [k, ...rest] = String(h || '').split('/'), t = C.tabs.find(x => x.key === k); return [t ? t.route : k].concat(rest).join('/'); };
   const setHash = h => { const r = toRoute(h); if (location.hash.slice(1) !== r) history.replaceState(null, '', '#' + r); };
 
+  /* CR-25 — a popover that would run past the window opens toward the left (KOL Master's Filters sits further right with Partner type) */
+  document.addEventListener('toggle', e => {
+    const d = e.target; if (!d || !d.matches || !d.matches('details.menu') || !d.open) return;
+    const p = d.querySelector(':scope > .popover'); if (!p) return;
+    p.style.left = ''; p.style.right = '';
+    if (getComputedStyle(p).position !== 'fixed' && p.getBoundingClientRect().right > innerWidth - 8) { p.style.left = 'auto'; p.style.right = '0'; }
+  }, true);
   /* close any open menu / popover when clicking elsewhere */
   document.addEventListener('click', e => {
     document.querySelectorAll('details.menu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
@@ -1178,6 +1215,7 @@ KT.ui = (function () {
     ganttAxis, pillarVar, pillarChipHTML, shortNum, bahtShort, dm, initials, avatarHTML, nameHTML, PHASE_RAMP, phaseColor, phaseColorAt, phaseVar, phaseVarAt, ppText, info, labelInfo, isFormulaInfo, infoObj, tipText, ICON, pfIcon, tierRules, distinct, stepLabel, stepTitle, optionsHTML, activeList, phaseOptionsHTML, campaignOptionsHTML, narrow, sortBy,
     dateHTML, setDate, setDateDisabled, parseDmy,
     multiSelect, msLabel, enhanceCombo, enhanceCombos, phaseOptionHTML, popForm, closePopForm, popFormError, productPickerHTML, productChipsHTML, wireProductPicker, openNewProduct, readText, reliabilityChip,
+    partnerChipHTML, partnerTagHTML, partnerSegHTML, partnerSegPick,
     kolCreateHTML, kolCreateCheck, wireKolCreate, accountFieldsHTML, accountCheck, wireAccount,
     dlg, openDialog, closeDialog, confirmDialog, choiceDialog, createModal, modalOpen: () => cm.open, closeModal, requestCloseModal, modalPanel, cmButtons, openDrawer, fillDrawer, closeDrawer, suspendDrawer, requestCloseDrawer, drawerOwner: () => drawer.owner, setHash, toRoute,
     renderBanners, doBackup, openRestore, openReset, exportAll, go, takeParams, linkParams,

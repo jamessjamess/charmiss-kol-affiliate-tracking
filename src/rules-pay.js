@@ -188,12 +188,18 @@ Object.assign(KT.rules, (function (R, C) {
   const payeeOfLine = (state, l) => (l.payee_id ? payeeById(state, l.payee_id) : null) || (l.deal_id && dealOf(state, l.deal_id) ? R.payeeOfDeal(state, dealOf(state, l.deal_id)) : null) || (l.kol_id ? payeeOfKol(state, l.kol_id) : null);
   /* post evidence: every post planned for the deal has a link and a post date */
   const postEvidence = (state, dealId) => { const ps = R.postsOf(state, dealId); return ps.length > 0 && ps.every(R.postDone); };
-  /* what a line still needs (§4.4): the payee's documents and bank details · post evidence for the Final / Full instalment of a deal (not prepaid) · nothing when it reimburses staff */
+  /* CR-27 §3.2 — the documents kept on a payment line: [{ key, label (own ones), received_at, note, link, custom }] · a document ticked there counts as received */
+  const lineDocs = l => (l && Array.isArray(l.docs) ? l.docs : []);
+  /* a line kept only for the documents of a row nobody has sent / paid / held yet: its amounts are still worked out from the deal */
+  const isDocsOnly = l => !!l && !!l.docs_only && l.status === 'open' && !l.run_id;
+  /* what a line still needs (§4.4): the payee's documents and bank details · post evidence for the Final / Full instalment of a deal (not prepaid) · nothing when it reimburses staff ·
+     CR-27: less what the line's own checklist says was received */
   function docsRequired(state, line, payee) {
     if (line.pay_to === 'reimburse') return [];
     const miss = payeeDocsMissing(payee === undefined ? payeeOfLine(state, line) : payee), deal = dealOf(state, line.deal_id);
     if (deal && (line.milestone === 'final' || (line.milestone === 'full' && termOf(deal) !== 'prepaid')) && !postEvidence(state, deal.deal_id)) miss.push('post_evidence');
-    return miss;
+    const got = new Set(lineDocs(line).filter(d => !d.custom && d.received_at).map(d => d.key));
+    return miss.filter(k => !got.has(k));
   }
   /* the status on screen: Paid · Cancelled · In run (a Draft run) · Submitted · else Not due (due date ahead) · Missing docs · Ready */
   function lineStatus(state, line, today) {
@@ -222,8 +228,9 @@ Object.assign(KT.rules, (function (R, C) {
     const l = o.line, deal = o.deal || dealOf(state, l && l.deal_id), pkg = o.pkg ? R.packagePayBase(state, o.pkg) : null;
     /* CR-20 §4.8 — a package's row: its payee, else the KOL's default */
     const payee = l ? payeeOfLine(state, l) : pkg ? (pkg.payee_id ? payeeById(state, pkg.payee_id) : null) || payeeOfKol(state, pkg.kol_id) : deal ? R.payeeOfDeal(state, deal) : null;   // CR-16: the deal's payee
-    const base = l || pkg || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
+    const base0 = l || pkg || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
       price_basis: null, wht_rate: null, pay_to: 'payee', status: 'open' };
+    const base = !l && o.docsLine ? Object.assign({}, base0, { docs: o.docsLine.docs }) : base0;   // CR-27: the documents of a row not sent yet
     const tax = l ? { gross: l.gross, vat: l.vat, wht: l.wht, net: l.net, wht_rate: l.wht_rate } : taxOf(state, base, payee);
     const status = l ? lineStatus(state, l, today) : !pkg && !o.inst.reached ? 'not_due' : docsRequired(state, base, payee).length ? 'missing_docs' : 'ready';
     const kol = base.kol_id ? R.kolById(state, base.kol_id) : null;
@@ -234,19 +241,22 @@ Object.assign(KT.rules, (function (R, C) {
       pic: picOfLine(state, base, deal), agreed: base.agreed_amount, price_basis: base.price_basis || (payee && payee.price_basis) || 'gross', tax, band: bandOf(tax.gross, paySettings(state.lookups)),
       due_date: base.due_date || null, status, missing: status === 'missing_docs' || status === 'not_due' || status === 'in_run' ? docsRequired(state, base, payee) : [],
       term_not_set: !!deal && !termOf(deal), overdue: !!deal && status !== 'paid' && R.paymentState(deal, today) === 'overdue', run_id: (l && l.run_id) || null,
-      paid_date: (l && l.paid_date) || (o.inst && o.inst.paid_date) || null, pay_to: base.pay_to || 'payee', reimburse_user: (l && l.reimburse_user) || null };
+      paid_date: (l && l.paid_date) || (o.inst && o.inst.paid_date) || null, pay_to: base.pay_to || 'payee', reimburse_user: (l && l.reimburse_user) || null,
+      docsLine: !l ? o.docsLine || null : null };
   }
   /* §4.5 To pay — every instalment owed or coming (one per deal + milestone: a stored line wins over the worked-out one, a cancelled line too) + manual lines ·
      paid / cancelled ones are left out · checks = ฿0 deals that are owed something and payments made on cancelled deals */
   function payQueue(state, today) {
-    const lines = state.payment_lines || [], taken = new Set(lines.filter(l => l.deal_id).map(l => `${l.deal_id}:${l.milestone}`));
+    /* CR-27: a docs-only line is not a row of its own — it rides on the worked-out row it keeps the documents of */
+    const all = state.payment_lines || [], lines = all.filter(l => !isDocsOnly(l)), docsBy = new Map(all.filter(isDocsOnly).map(l => [l.package_id && !l.deal_id ? `${l.package_id}:package` : `${l.deal_id}:${l.milestone}`, l]));
+    const taken = new Set(lines.filter(l => l.deal_id).map(l => `${l.deal_id}:${l.milestone}`));
     const items = [], checks = [];
     lines.forEach(l => { if (l.status !== 'paid' && l.status !== 'cancelled') items.push(payItem(state, today, { line: l })); });
     /* CR-20 §4.8 — a package is one row (its full price) until it is paid · archived ones without a line are left out */
     const pkgTaken = new Set(lines.filter(l => l.package_id).map(l => l.package_id));
-    (state.kol_packages || []).forEach(p => { if (!p.archived && !pkgTaken.has(p.package_id) && Number(p.price_total) > 0) items.push(payItem(state, today, { pkg: p })); });
+    (state.kol_packages || []).forEach(p => { if (!p.archived && !pkgTaken.has(p.package_id) && Number(p.price_total) > 0) items.push(payItem(state, today, { pkg: p, docsLine: docsBy.get(`${p.package_id}:package`) })); });
     state.deals.forEach(d => {
-      dueLines(state, d, today).forEach(inst => { if (!inst.paid && !taken.has(`${d.deal_id}:${inst.milestone}`)) items.push(payItem(state, today, { deal: d, inst })); });
+      dueLines(state, d, today).forEach(inst => { if (!inst.paid && !taken.has(`${d.deal_id}:${inst.milestone}`)) items.push(payItem(state, today, { deal: d, inst, docsLine: docsBy.get(`${d.deal_id}:${inst.milestone}`) })); });
       if (d.status !== 'Cancel' && termOf(d) !== 'free' && totalCost(d) <= 0 && !d.paid_full && zeroOwed(state, d)) checks.push({ kind: 'zero', deal: d });
     });
     lines.forEach(l => { const d = dealOf(state, l.deal_id); if (l.status === 'paid' && d && d.status === 'Cancel') checks.push({ kind: 'paid_cancelled', deal: d, line: l }); });
@@ -280,6 +290,13 @@ Object.assign(KT.rules, (function (R, C) {
       docs_check: Object.fromEntries(['id_copy', 'bank_book', 'company_cert', 'vat_cert', 'post_evidence'].map(k => [k, !miss.includes(k)])),
       status: 'open', run_id: null, printed: false, paid_date: null, wht_cert_sent_date: null, cancel_reason: null, note: trim(o.note) || null, created_by: o.user || null, created_at: o.now || null };
   }
+  /* CR-27 — a row with a docs-only line becomes a full line (Send · Mark paid · Hold): today's amounts, its documents kept */
+  function promoteDocsLine(state, item, o) {
+    const l = item.docsLine; if (!isDocsOnly(l)) return null;
+    const fresh = newLine(state, item, Object.assign({}, o, { lineId: l.line_id }));
+    Object.assign(l, fresh, { docs: lineDocs(l), created_by: l.created_by, created_at: l.created_at }); delete l.docs_only;
+    return l;
+  }
   function validateRequest(state, o) {
     const errs = [];
     if (isBlank(o.agreed_amount) || isNaN(o.agreed_amount) || Number(o.agreed_amount) <= 0) errs.push(issue('agreed_amount', M.payAmountPositive));
@@ -291,8 +308,9 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* every instalment of one deal for the Deal drawer (paid ones too): stored lines first, then the worked-out ones */
   function dealPayItems(state, deal, today) {
-    const lines = (state.payment_lines || []).filter(l => l.deal_id === deal.deal_id), taken = new Set(lines.map(l => l.milestone));
-    return lines.map(l => payItem(state, today, { line: l })).concat(dueLines(state, deal, today).filter(i => !taken.has(i.milestone)).map(inst => Object.assign(payItem(state, today, { deal, inst }), inst.paid ? { status: 'paid' } : {})));
+    const mine = (state.payment_lines || []).filter(l => l.deal_id === deal.deal_id), lines = mine.filter(l => !isDocsOnly(l)), taken = new Set(lines.map(l => l.milestone));
+    const docsOf = m => mine.find(l => isDocsOnly(l) && l.milestone === m);   // CR-27
+    return lines.map(l => payItem(state, today, { line: l })).concat(dueLines(state, deal, today).filter(i => !taken.has(i.milestone)).map(inst => Object.assign(payItem(state, today, { deal, inst, docsLine: docsOf(inst.milestone) }), inst.paid ? { status: 'paid' } : {})));
   }
 
   /* ===================== payment runs (§4.6) ===================== */
@@ -560,7 +578,7 @@ Object.assign(KT.rules, (function (R, C) {
   return { PAYMENT_SETTINGS_DEFAULT, paymentSettingsDefault, paySettings, validatePaymentSettings, round2, calcPaymentTax, bandOf, reachedDates, dueLines,
     PAYEE_TYPES, PRICE_BASES, PAYEE_DOCS, BANK_FIELDS, payeeOfKol, payeeById, mainHandle, blankPayee, payeeDocsMissing, last4, validatePayee, validateBankDetails, bankRecord,
     payeeHasPaid, canEditPayee, PAYEE_CSV_COLS, normHandle, planPayeeImport, scrubSensitive,
-    LINE_STATUSES, payeeOfLine, postEvidence, docsRequired, lineStatus, taxOf, expectedDue, payItem, payQueue, payCards, canRequest, newLine, validateRequest, dealPayItems,
+    LINE_STATUSES, payeeOfLine, postEvidence, docsRequired, lineDocs, isDocsOnly, promoteDocsLine, docLabel, lineStatus, taxOf, expectedDue, payItem, payQueue, payCards, canRequest, newLine, validateRequest, dealPayItems,
     RUN_STATUSES, nextRunDate, runIdFor, newRun, runLines, runTotals, runChecks, addToRun, removeFromRun, submitRun, syncDealPayment, syncDeals, markPaid, undoPaid, reopenRun, editLineAmount,
     amountLabels, runStatusKey, runStatusLabel, returnRun, prFileName, prSheets, resetVault, paidLines, whtNotSent, markWhtSent, whtSummary, WHT_SUMMARY_COLS, validateManual, newManualLine, markPaidOutside, cancelLines, cancelDealLines };
 })(KT.rules, KT.content));

@@ -141,7 +141,7 @@ KT.newDeal = (function () {
   /* ===================== tab New KOL (§4.4) ===================== */
   const blankAccount = () => ({ profile_link: '', platform: '', handle: '', followers: '' });
   function newKolState() {
-    return { kol: { display_name: '', accounts: [blankAccount()], kol_category: '', kol_type: '', gender: '', pic: nd.h.assign, contact_channel: '', contact_id: '' },
+    return { kol: { display_name: '', partner_type: 'kol', accounts: [blankAccount()], kol_category: '', kol_type: '', gender: '', pic: nd.h.assign, contact_channel: '', contact_id: '' },
       deal: { payment_term: '', pkg_units: '', pkg_price: '', package_units: '1', rate_card: '', gencode_expense: '', gencode_period: '', gencode_start_date: '', basket_fee: '', asset_fee: '', expediting_fee: '',
         brief_date: '', expected_script_date: '', expected_draft1_date: '', expected_draft2_date: '', expected_draft3_date: '', expected_post_date: '', link_brief: '', remark: '' },
       showD23: false, touched: new Set(), submitted: false, dirty: false, ownerAuto: true, anyway: false };
@@ -159,7 +159,8 @@ KT.newDeal = (function () {
       field(`acc${i}_followers`, B.colFollowers, inp(`accounts.${i}.followers`, `acc${i}_followers`, a.followers, 'number'), { req: 1 }) +
       `<div class="field"><label>${esc(B.tierAuto)}</label><input readonly tabindex="-1" data-nktier="${i}" value="${esc(R.tierOf(a.followers, rules))}"></div></div></div>`).join('');
     const left = `<section class="sec"><div class="sec-h"><span>${esc(B.secKol)} <span class="muted small">${esc(B.secKolSub)}</span></span></div><div id="nk_dup"></div><div class="fields">` +
-      field('display_name', C.bulk.ck.name, inp('display_name', 'display_name', k.display_name, '', ` placeholder="${esc(T.namePh)}"`), { req: 1, wide: 1 }) + `</div>${accs}` +
+      field('display_name', C.bulk.ck.name, inp('display_name', 'display_name', k.display_name, '', ` placeholder="${esc(T.namePh)}"`), { req: 1, wide: 1 }) +
+      field('partner_type', C.partner.field, U.partnerSegHTML('data-nkpt', k.partner_type || 'kol', { id: 'f_nk_partner_type' }), { req: 1, wide: 1 }) + `</div>${accs}` +   // CR-25 §3.1
       `<button type="button" class="link" data-nkaddacc>${esc(B.addAnotherAccount)}</button><div class="fields">` +
       field('kol_category', T.category, inp('kol_category', 'kol_category', k.kol_category, '', ' list="nk_dl_cat"')) + field('kol_type', T.type, sel('kol_type', 'kol_type', types, k.kol_type, C.bulk.ck.notSet)) +
       field('gender', T.gender, sel('gender', 'gender', R.GENDERS.map(v => ({ value: v, label: v })), k.gender, C.bulk.ck.notSet)) +
@@ -275,6 +276,7 @@ KT.newDeal = (function () {
     if (e.target.closest('[data-nkaddacc]')) { x.kol.accounts.push(blankAccount()); x.dirty = true; drawNewKol(); const rows = document.querySelectorAll('.nk-acc'); const last = rows[rows.length - 1]; if (last) { last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus(); } return; }
     const da = e.target.closest('[data-nkdelacc]'); if (da) { x.kol.accounts.splice(+da.dataset.nkdelacc, 1); x.dirty = true; drawNewKol(); return; }
     if (e.target.closest('[data-nkd23]')) { x.showD23 = true; drawNewKol(); return; }
+    const pt = e.target.closest('[data-nkpt]'); if (pt) { x.kol.partner_type = U.partnerSegPick(pt, 'data-nkpt'); x.dirty = true; return; }   // CR-25
     const use = e.target.closest('[data-nkuse]'); if (use) { useKol(use.dataset.nkuse); return; }
     const cr = e.target.closest('[data-nkcreate]'); if (cr) create(cr.dataset.nkcreate === 'next');
   }
@@ -293,7 +295,8 @@ KT.newDeal = (function () {
     /* the KOL + its accounts (KOL owner = Assign to unless changed) */
     const kolId = store.newId('kol'), v = t => R.trim(t) || null;
     const kol = { kol_id: kolId, display_name: R.trim(k.display_name), kol_category: v(k.kol_category), kol_type: v(k.kol_type), gender: k.gender || null, pic: v(k.pic), kol_status: 'Active', status_reason: null,
-      contact_channel: k.contact_channel || null, contact_id: v(k.contact_id), note: null, sources: ['manual'], default_payment_term: R.BASIC_TERMS.includes(mdl.deal.payment_term) ? mdl.deal.payment_term : null, kol_type_legacy: null };
+      contact_channel: k.contact_channel || null, contact_id: v(k.contact_id), note: null, sources: ['manual'], default_payment_term: R.BASIC_TERMS.includes(mdl.deal.payment_term) ? mdl.deal.payment_term : null, kol_type_legacy: null,
+      partner_type: R.partnerTypeOf(k) };   // CR-25
     s.kol_master.push(kol);
     const accIds = k.accounts.map(a => { const id = store.newId('account'); s.kol_accounts.push(R.newAccountRecord(kolId, a, id)); return id; });
     /* a package made with it (Payment term Package) */

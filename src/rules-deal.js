@@ -431,11 +431,14 @@ Object.assign(KT.rules, (function (R, C) {
       if (f.cta && (f.cta === '__none' ? !isBlank(d.cta) : d.cta !== f.cta)) return false;
       if (f.noImported && R.isImported(d)) return false;   // CR-11 §4.6: Include imported off
       if (f.tiers && f.tiers.length && !f.tiers.includes((ctx.tiers.get(d.deal_id) || {}).tier || UNKNOWN_TIER)) return false;
+      if (f.partner && !R.partnerMatch(ctx.kols.get(d.kol_id), f.partner)) return false;   // CR-25: the KOL's Partner type (Both is in KOL and in Affiliate)
       if (f.payment && R.paymentProgress(d) !== f.payment) return false;
       if (f.overdue && !R.isOverdue(state, d, today)) return false;
       if (f.unpaid && !isUnpaid(d)) return false;
       /* "Needs attention" on the Overview: posted deals with a post that has no date · posts dated outside a window */
       if (f.noDate && !(d.status === 'Complete' && postsOfCtx(ctx, d.deal_id).some(p => !p.post_date))) return false;
+      /* CR-26 §3.2 — the committed deals Budget vs Actual cannot place: no Post date and no Post due */
+      if (f.noPostDate && !(!R.isCancelled(d) && !R.isShortlist(state.lookups, d) && !R.firstPostDate(state, d) && !R.postDueOf(state, d))) return false;
       if (f.outside && !(d.status !== 'Cancel' && postsOfCtx(ctx, d.deal_id).some(p => p.post_date && (p.post_date < f.outside.from || p.post_date > f.outside.to)))) return false;
       if (q) {
         const k = ctx.kols.get(d.kol_id) || {};
@@ -727,7 +730,7 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ===================== CR-07 §4.4 — filters in use · Clear all filters ===================== */
   /* Deals: the Campaign (always one), View, Group by, state tab and sort are never filters */
-  function blankDealFilter() { return { campaign: '', phaseSel: 'all', q: '', sub: '', pillar: '', cta: '', payState: '', term: '', open: false, noDate: false, outside: null, tiers: null }; }
+  function blankDealFilter() { return { campaign: '', phaseSel: 'all', q: '', sub: '', pillar: '', cta: '', payState: '', term: '', partner: '', open: false, noDate: false, noPostDate: false, outside: null, tiers: null }; }
   /* f = the Deals filter + pic ('all' · 'me' · a name · '__none') + reason (an attention chip, CR-13 §4.5) → the keys that differ from empty */
   function activeFilters(f) {
     const out = [];
@@ -735,13 +738,13 @@ Object.assign(KT.rules, (function (R, C) {
     if (f.pic && f.pic !== 'all') out.push('pic');
     if (trim(f.q)) out.push('q');
     if (f.tiers && f.tiers.length) out.push('tiers');
-    ['sub', 'pillar', 'cta', 'term', 'payState', 'open', 'noDate', 'outside', 'reason', 'noImported'].forEach(k => { if (f[k]) out.push(k); });
+    ['sub', 'pillar', 'cta', 'term', 'partner', 'payState', 'open', 'noDate', 'noPostDate', 'outside', 'reason', 'noImported'].forEach(k => { if (f[k]) out.push(k); });
     return out;
   }
   /* all of them back to empty at once — the Campaign stays · PIC = All PICs */
   function clearFilters(f) { return Object.assign(blankDealFilter(), { campaign: (f && f.campaign) || '', pic: 'all', reason: '' }); }
   /* KOL Master: the same rule (it has no Campaign) */
-  const KOL_FILTER_KEYS = ['q', 'platform', 'tier', 'lastWorked', 'category', 'type', 'pic', 'status', 'term', 'history', 'source'];
+  const KOL_FILTER_KEYS = ['q', 'platform', 'tier', 'partner', 'lastWorked', 'category', 'type', 'pic', 'status', 'term', 'history', 'source'];   // CR-25: + Partner type
   const activeKolFilters = f => KOL_FILTER_KEYS.filter(k => (k === 'q' ? !!trim(f.q) : Array.isArray(f[k]) ? f[k].length > 0 : !!f[k]));
 
   /* the wide drawers (CR-07 §4.7, CR-09 §4.12 / §4.17): KOL clamp(720px, 60% of the window, 1200px) · Deal clamp(680px, 50%, 1100px) ·

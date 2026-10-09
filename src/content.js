@@ -519,7 +519,7 @@ KT.content = (function () {
       picChanged: (p, n) => (n > 1 ? `เปลี่ยน PIC ของ ${n} deals เป็น ${p} แล้ว` : `PIC changed to ${p}`), picUndone: 'ยกเลิกการเปลี่ยน PIC แล้ว', undo: 'Undo',
       filters: 'Filters', any: 'Any', subStatus: 'Sub-status', pic: 'Assigned to', pillar: 'Pillar', payment: 'Payment', payState: 'Payment status', term: 'Payment term',
       clearAll: 'Clear all', remove: 'Remove',
-      chipOpen: 'Open deals', chipNoDate: 'Posted without date', includeImported: 'Include imported', chipNoImported: 'Imported: hidden', chipOutside: (a, b) => `Post date outside ${a} – ${b}`,
+      chipOpen: 'Open deals', chipNoDate: 'Posted without date', chipNoPostDate: 'Committed · no post date',  includeImported: 'Include imported', chipNoImported: 'Imported: hidden', chipOutside: (a, b) => `Post date outside ${a} – ${b}`,
       export: 'Export', exportDeals: 'Deals CSV', exportPosts: 'Posts CSV', exportTemplate: 'Template layout',
       newDeal: '+ New deal', all: 'All',
       committed: 'Committed', noBudget: 'no budget', paidEst: 'Paid (est.)', overdue: 'Overdue',
@@ -621,6 +621,19 @@ KT.content = (function () {
     },
 
     kolOptions: { gender: { Female: 'Female', Male: 'Male', Other: 'Other' } },
+
+    /* CR-25 — Partner type of a KOL (KOL · Affiliate · Both) · the words can change in Settings › Lists (lookups.partner_types) */
+    partner: {
+      field: 'Partner type', col: 'Partner', nav: 'Partner types', all: 'All', allPartners: 'All partners',
+      types: { kol: 'KOL', affiliate: 'Affiliate', both: 'Both' },
+      chip: { affiliate: 'AFF', both: 'KOL+AFF' }, chipTip: l => `Partner type: ${l}`,
+      count: (n, parts, a) => `${n} partners (${parts}) · ${a} accounts`,
+      setBulk: 'Set partner type…', setTitle: n => `Set partner type · ${n} KOL${n === 1 ? '' : 's'}`, setOk: 'Set',
+      setDone: (n, l) => `ตั้ง Partner type ของ ${n} คนเป็น ${l} แล้ว`, setSame: 'ทุกคนที่เลือกเป็นค่านี้อยู่แล้ว',
+      hint: 'The words can change. The three types stay: KOL · Affiliate · Both (does both — counts in the KOL and the Affiliate filters).',
+      label: 'Label', saved: 'บันทึก Partner types แล้ว', used: n => `${n} KOL${n === 1 ? '' : 's'}`,
+      importBad: v => `partner_type “${v}” — use KOL, Affiliate or Both (blank = KOL)`, required: 'Choose a partner type',
+    },
 
     campaign: {
       /* CR-11 §4.13 #5 — the Timeline legend */
@@ -744,6 +757,8 @@ KT.content = (function () {
       clearSel: 'Clear selection', selectedN: n => `Selected ${n}`, noneSelected: 'Tick KOLs on the left', remove: n => `Remove ${n}`,
       willAdd: n => `Will add ${n}`, willSkip: n => `Skip ${n}`, maxPerBatch: n => `Max ${n} per batch`,
       pageOf: (a, b, n) => `Page ${a} of ${b} · ${n} KOLs`,
+      /* CR-25 §3.2 — the quick row + Filters (n) that folds the rest */
+      filtersN: n => (n ? `Filters (${n})` : 'Filters'), filtersTip: 'Show or hide the other filters', moreChips: n => `+${n} more`, countN: n => `${n} KOLs`,
       previewTitle: 'Add to shortlist', previewLine: (n, c, m) => `Create ${n} deal${n === 1 ? '' : 's'} in ${c}${m ? ` · Skip ${m}` : ''}`, reason: 'Why skipped',
       skipReason: { in_campaign: 'Already in this campaign', blacklisted: 'Blacklisted' },
       previewHint: 'Shortlist deals start without costs, so Pending does not change. Payment term comes from each KOL (it can stay empty until Confirm QT).',
@@ -1522,5 +1537,67 @@ KT.content = (function () {
   };
   Object.assign(C.overview.sheet, { workqueue: 'Work queue' });
   Object.assign(C.overview.file, { workqueue: 'Work_queue' });
+  /* CR-26 — Dashboard: 4 KPI cards (KOL & Affiliate engaged) · Budget vs Actual by month · Team workload · Operations (since post) */
+  Object.assign(C.overview, {
+    kEngaged: 'KOL & Affiliate engaged', kEngagedTip: 'Partners (each counted once) with at least one committed deal — from Confirm QT on, not cancelled.',
+    engagedDeals: (n, avg) => `${n} committed deals · Avg ${avg} per deal`, notCommittedLine: n => `+${n} in List, not committed yet`,
+    dealsDef: (all, list, prog, done, committed, not) => ({ h: 'Committed deals',
+      d: `${all} deals are not cancelled: List ${list} · In process ${prog} · Complete ${done} (Shortlist and Contacted included). ${committed} of them are committed — from Confirm QT on (the Committed of CR-05). The other ${not} are Shortlist / Contacted, not agreed yet.`,
+      f: 'Avg = Committed ÷ committed deals' }),
+    notCommitted: 'Not committed yet', allDealsL: 'Deals not cancelled', partnersL: 'Partners',
+    bva: {
+      title: 'Budget vs Actual by month',
+      tip: 'Budget = each Phase budget spread over its days (Campaign budget no Phase has: over the Campaign’s days). Actual = the Total cost of a committed deal in the month of its first Post date — not the day it is paid. Not posted yet: Upcoming in the month of its Post due, Late once that day has passed.',
+      monthly: 'Monthly', cumulative: 'Cumulative', modeL: 'View',
+      legend: { budget: 'Budget', posted: 'Posted', upcoming: 'Upcoming', late: 'Late (Post due passed)', cumBudget: 'Budget (cumulative)', cumPosted: 'Posted (cumulative)', cumPlus: 'Posted + upcoming' },
+      over: a => `Over ${a}`, behind: a => `Behind ${a}`,
+      toDate: (p, b, pct) => `To date: Posted ${p} of ${b} planned (${pct}%)`,
+      rest: (label, u, b) => `${label}: ${u} committed upcoming vs ${b} planned`, restYear: 'Rest of year', restPeriod: 'Rest of period', restCampaign: 'Rest of campaign',
+      noDate: a => `${a} committed has no post date`, setDates: 'Set dates', outside: (a, n) => `${a} (${n} deal${n === 1 ? '' : 's'}) posted or due outside these months`,
+      tip2: { budget: 'Budget', posted: 'Posted', upcoming: 'Upcoming', late: 'Late', variance: 'Variance', top: 'Top campaigns' },
+      col: { month: 'Month', budget: 'Budget', posted: 'Posted', upcoming: 'Upcoming', late: 'Late', variance: 'Variance', pct: 'Actual %', status: 'Status' },
+      statusWord: { over: 'Over', behind: 'Behind' }, empty: 'No budget and no committed deals in these months', expandTitle: (t, a, b) => `${t} · ${a} – ${b}`,
+    },
+    team: {
+      title: 'Team workload', tip: 'Open this person’s deals of the Campaign in Deals', notAssigned: 'Not assigned', assign: 'Assign', assignTip: 'Deals of this Campaign with nobody assigned',
+      col: { pic: 'Assigned to', partners: 'Partners', open: 'Open deals', posted: 'Posted', postOverdue: 'Post overdue', noPostDue: 'No post due', cancelled: 'Cancelled', committed: 'Committed', docs: 'Docs to collect' },
+      colTip: { partners: 'KOLs / Affiliates (each once) with a deal not cancelled', open: 'Not posted, not cancelled', postOverdue: 'Open deals whose Post due has passed', noPostDue: 'Open deals with no Post due', committed: 'Committed money of the deals not cancelled' },
+      empty: 'No deals in this Campaign yet',
+    },
+    unscheduledDeals: n => `${n} deal${n === 1 ? ' has' : 's have'} no post date`, setDates: 'Set dates',
+  });
+  C.overview.wq.sincePost = n => `since post ${n} d`;
+  /* CR-27 §3.2 — Payment details · Documents (a checklist, no files) · Send to accounting from the row */
+  /* CR-27 §3.3 — the Deal modal over the page it was opened from */
+  Object.assign(C.deal, { openInDeals: 'Open in Deals', openInDealsTip: 'Go to the Deals page with this deal' });
+  C.samples.addProducts = 'Add products';
+  /* CR-27 §3.1 — Campaign & Phase */
+  Object.assign(C.planner, { todo: n => `${n} thing${n === 1 ? '' : 's'} to finish`, todoTip: 'What still needs filling in — click one to go to it' });
+  Object.assign(C.approval, { view: 'View' });
+  C.pay.docs = {
+    title: 'Documents', received: 'Received', date: 'Received on', note: 'Note', link: 'Link', notePh: 'Note', linkPh: 'https:// (Google Drive …)', openLink: 'Open link',
+    add: '+ Add document', namePh: 'Document name', addOk: 'Add', markAll: 'Mark all received', remove: 'Remove',
+    hint: 'Link to where the file is kept — don’t type ID card or bank account numbers here',
+    nameRequired: 'Name the document', noNumbers: 'ID card or bank account numbers don’t go here', linkHttps: 'A link starts with https://',
+    saved: 'บันทึกเอกสารแล้ว', bulkDone: n => `ติ๊กเอกสารครบแล้ว ${n} รายการ`, none: 'This payment needs no documents (it reimburses staff)',
+    auto: { payee: 'On file in the payee profile', bank_details: 'Bank details are in the vault', post_evidence: 'Every post has its link and date' },
+    checkDocs: 'Check documents', markDocs: 'Mark docs received',
+  };
+  C.pay.details = {
+    title: 'Payment details', amount: 'Amount', milestone: 'Milestone', due: 'Due date', gross: 'Gross', wht: r => `WHT ${r}%`, net: 'Net', payTo: 'Pay to', change: 'Change',
+    noPayee: 'No payee yet', status: 'Status', history: 'History', noHistory: 'Nothing yet', openDeal: 'Open deal', prev: 'Previous payment', next: 'Next payment', navOf: (i, n) => `${i} of ${n}`,
+    steps: { topay: 'To pay', sent: 'Sent to accounting', paid: 'Paid' }, dueOn: d => `Due ${d}`, noDue: 'No due date yet',
+    stepLine: (d, ref, who) => [d, ref ? `Ref ${ref}` : '', who ? `by ${who}` : ''].filter(Boolean).join(' · '),
+    hold: 'Hold', release: 'Release', moveBack: 'Move back', moveBackTitle: 'Move back to To pay', unpaid: 'Mark unpaid', heldLine: (r, who) => `On hold: ${r}${who ? ` · by ${who}` : ''}`,
+    fullMode: 'Full mode: payment runs move it (Payments › Payment runs)',
+    ev: { open: 'To pay', submitted: 'Sent to accounting', paid: 'Paid', on_hold: 'On hold', released: 'Released', cancelled: 'Cancelled', in_run: 'In a run', not_due: 'Not due', ready: 'To pay', missing_docs: 'To pay' },
+    evDocs: (a, b) => `Documents ${a} → ${b}`, evUndo: 'Undo',
+  };
+  Object.assign(C.pay.simple, {
+    send: 'Send', sendAcc: 'Send to accounting', sendOne: (n, m) => `Send to accounting · ${n} · ${m}`, sendN: n => `Send ${n} payments to accounting`, sendOk: 'Send',
+    sentDoneN: n => `ส่งบัญชีแล้ว ${n} รายการ`, flow: 'To pay → Send to accounting (optional) → Paid', sentOn: 'Sent on',
+  });
+  Object.assign(C.overview.sheet, { budgetactual: 'Budget vs Actual', workload: 'Team workload' });
+  Object.assign(C.overview.file, { budgetactual: 'Budget_vs_Actual', budgetactual_camp: 'Budget_vs_Actual', workload: 'Team_workload' });
   return C;
 })();

@@ -294,3 +294,34 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 
 ไม่มี migration · ไม่แตะยอดเงิน · Pillar allocation (`R.pillarAllocation`) ถูกตัด — portfolio ของ All campaigns ยังมี pillar mix ของแต่ละ Campaign
 
+## CR-25 — schema คงที่ 21 (Partner type)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `kol_master` | + `partner_type` (null = KOL) | `kol` · `affiliate` · `both` (ทำทั้ง 2 แบบ — นับในตัวกรอง KOL และ Affiliate) · อ่านผ่าน `R.partnerTypeOf` เสมอ · ไม่เก็บซ้ำใน deal (deal ใช้ค่าของ KOL) |
+| `lookups.partner_types` (ใหม่) | [{ key, label }] kol · affiliate · both | key คงที่ · แก้คำได้ที่ Settings › Lists › Partner types (ว่าง = คำ default) · ใส่ค่า default ตอนโหลดถ้ายังไม่มี |
+| localStorage (ต่อผู้ใช้) | `bkfold_<uid>` (`open` · `folded` · ไม่มี = พับ) | New deal › ส่วนตัวกรองที่พับได้ · try/catch |
+
+**Import KOL** (`KOL_Master_Import_Template.csv`): + คอลัมน์ optional `partner_type` (11 คอลัมน์) · ว่าง = KOL · KOL / Affiliate / Both ตัวพิมพ์ใดก็ได้ · ค่าอื่น = error แถวนั้น · KOL ที่มีอยู่: รับค่าเฉพาะเมื่อของเดิมว่าง
+**Export:** `kol_master.csv` + `partner_type` (ต่อจาก display_name) · `deals.csv` + `partner_type` (ต่อจาก kol_name) — เป็นคำ (KOL / Affiliate / Both)
+
+ไม่มี migration · ไม่แตะยอดเงิน · Dashboard ยังไม่แยก KOL / Affiliate (§6 #4)
+
+## CR-26 — schema คงที่ 21 (Dashboard · อ่านอย่างเดียว)
+
+ไม่มี field ใหม่ · ไม่มี migration · ไม่แตะยอดเงิน (Committed / Paid / Avg ตาม CR-05)
+- **Budget vs Actual** (`R.budgetVsActualByMonth`): แผน = `phases.budget_kol` เกลี่ยตามวันของ Phase + `campaigns.budget_kol` ส่วนที่ไม่ได้แบ่งให้ Phase เกลี่ยตามช่วง Campaign · Actual = Total cost ของ committed deal ในเดือนของ `deal_posts.post_date` แรก · ยังไม่โพสต์ = เดือนของ Post due (`deal_posts.expected_post_date` แรกที่ยังไม่โพสต์ · ไม่มี → `deals.expected_post_date`)
+- **Deals filter** `noPostDate` (ไม่เก็บ · ใช้จากลิงก์ Dashboard) · ลิงก์ Deals `filter.campaign = '__all'` = ทุก Campaign ของปี
+
+## CR-27 — schema คงที่ 21 (เอกสารของการจ่ายเงิน)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `payment_lines` | + `docs` [{ key, label, custom, received_at, note, link }] | checklist ของงวดนี้ (null / ไม่มี = ยังไม่ติ๊ก) · key = id_copy · bank_book · company_cert · vat_cert · bank_details · post_evidence หรือ `own_…` (custom: true · label) · note / link ห้ามตัวเลขติดกัน 9 หลักขึ้นไป · link ขึ้นต้น https:// · **ไม่มีไฟล์** |
+| `payment_lines` | + `docs_only` (true) | line ที่เก็บเอกสารของแถวที่ยังไม่มี line — ไม่ใช่การจ่าย (ไม่เป็นแถวใน To pay · ยอดยังคำนวณจาก deal) · Send / Mark paid / Hold ทำให้เป็น line เต็ม (ยอด ณ วันนั้น) · Release / Undo กลับเป็น docs-only |
+| `payment_lines` | + `sent_ref` | Ref ตอน Send to accounting · `sent_at` = วันที่เลือก |
+| `deal_events` | type ใหม่ `payment_docs` (from / to = "2/4" → "3/4" · note = เอกสารที่เพิ่งได้รับ) | |
+| `deals.docs_done` | ตั้งเป็น true เมื่อทุกงวดมีเอกสารครบ (Simple mode) | |
+
+ไม่มี migration · ไม่แตะยอดเงิน (Paid / Pending ตาม CR-05)
+

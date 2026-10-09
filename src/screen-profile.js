@@ -187,7 +187,7 @@ KT.profile = (function () {
   function overviewHTML(s, k) {
     const O = C.kolOptions, rules = tierRules(), td = today(), accs = R.accountsOfKol(s, k.kol_id), deals = R.dealsOfKol(s, k.kol_id);
     const pidx = R.phaseIndex(s), campById = new Map(s.campaigns.map(c => [c.campaign_id, c]));
-    const profile = kv(T.category, k.kol_category) + kv(T.type, R.kolTypeLabel(s.lookups, k.kol_type)) + kv(T.gender, k.gender ? O.gender[k.gender] : '') + contactKv(k) +
+    const profile = kv(C.partner.field, R.partnerTypeLabel(s.lookups, R.partnerTypeOf(k))) + kv(T.category, k.kol_category) + kv(T.type, R.kolTypeLabel(s.lookups, k.kol_type)) + kv(T.gender, k.gender ? O.gender[k.gender] : '') + contactKv(k) +
       kv(T.kolStatus, (k.kol_status || 'Active') + (k.status_reason ? ` · ${k.status_reason}` : '')) + kv(T.defaultTerm, C.term[R.isTerm(k.default_payment_term) ? k.default_payment_term : 'none']) + kv(T.note, k.note) +
       `<div class="kv"><span>${esc(T.source)}</span><b class="chips" style="justify-content:flex-end">${(k.sources || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}</b></div>`;
     const accounts = accs.map(a => { const n = R.postsOnAccount(s, a.account_id);
@@ -299,6 +299,7 @@ KT.profile = (function () {
     const draft = Object.assign({ status_reason: '' }, k);
     ['kol_category', 'kol_type', 'gender', 'pic', 'contact_channel', 'contact_id', 'note', 'status_reason', 'default_payment_term'].forEach(f => { if (draft[f] == null) draft[f] = ''; });
     draft.kol_status = draft.kol_status || 'Active';
+    draft.partner_type = R.partnerTypeOf(k);   // CR-25 (blank = KOL)
     draft.accounts = R.accountsOfKol(s, k.kol_id).map(a => Object.assign({}, a, { profile_link: a.profile_link || '', followers: a.followers == null ? '' : String(a.followers) }));
     Object.assign(pm, { mode: 'edit', draft, dirty: false, tab: 'overview' }); pm.touched.clear();
     draw();
@@ -326,6 +327,7 @@ KT.profile = (function () {
     const selF = (f, items, ph) => `<select id="f_${f}" data-f="${f}" data-key="${f}">${optionsHTML(items, d[f], ph)}</select>`;
     return `<div class="kpm-edit">${sec(T.secProfile, `<div class="fields">
           ${field('display_name', T.fName, inp('display_name', ` placeholder="${esc(T.namePh)}"`), { req: 1, wide: 1 })}
+          ${field('partner_type', C.partner.field, U.partnerSegHTML('data-ptf', d.partner_type, { id: 'f_partner_type' }), { req: 1, wide: 1 })}
           ${field('kol_category', T.category, inp('kol_category', ' list="km_dl_cat"'))}
           ${field('kol_type', T.type, selF('kol_type', R.kolTypeList(s.lookups).filter(t => t.active !== false || t.key === d.kol_type).map(t => ({ value: t.key, label: R.kolTypeLabel(s.lookups, t.key) })), KTY.notSet),
             { hint: d.kol_type_legacy && d.kol_type_legacy !== R.kolTypeLabel(s.lookups, d.kol_type) ? esc(KTY.oldValue(d.kol_type_legacy)) : '' })}
@@ -356,6 +358,7 @@ KT.profile = (function () {
       el.addEventListener('change', () => { h(); pm.touched.add(el.dataset.key); check(); });
       el.addEventListener('blur', () => { pm.touched.add(el.dataset.key); check(); });
     });
+    root.querySelectorAll('[data-ptf]').forEach(b => b.addEventListener('click', () => { if (pm.draft !== d) return; d.partner_type = U.partnerSegPick(b, 'data-ptf'); pm.dirty = true; check(); }));   // CR-25
     root.querySelectorAll('.acc-edit').forEach(row => {
       const a = d.accounts[+row.dataset.i];
       row.querySelectorAll('[data-a]').forEach(el => {
@@ -393,7 +396,8 @@ KT.profile = (function () {
     const rec = { kol_id: kolId, display_name: R.trim(d.display_name), kol_category: val(d.kol_category), kol_type: val(d.kol_type), gender: d.gender || null,
       pic: d.pic || null, kol_status: d.kol_status || 'Active', status_reason: d.kol_status && d.kol_status !== 'Active' ? val(d.status_reason) : null,
       contact_channel: d.contact_channel || null, contact_id: val(d.contact_id), note: val(d.note), sources: old.sources || [],
-      default_payment_term: R.isTerm(d.default_payment_term) ? d.default_payment_term : null };
+      default_payment_term: R.isTerm(d.default_payment_term) ? d.default_payment_term : null,
+      partner_type: R.partnerTypeOf(d) === R.partnerTypeOf(old) ? (old.partner_type == null ? null : old.partner_type) : R.partnerTypeOf(d) };   // CR-25: untouched stays as it was (blank = KOL)
     const termChanged = (R.isTerm(old.default_payment_term) ? old.default_payment_term : null) !== rec.default_payment_term;
     Object.assign(old, rec);
     const keep = new Set(d.accounts.map(a => a.account_id).filter(Boolean));
@@ -492,12 +496,12 @@ KT.profile = (function () {
     if (!(await leaveOK())) return;
     const back = { kolId: pm.id, tab: pm.tab, name: (R.kolById(state(), pm.id) || {}).display_name || pm.id };
     close({ quiet: true, noRefresh: true });
-    KT.screens.deals.openOver(id, { backKol: back, after: () => listChanged() });
+    KT.screens.deals.openDealModal(id, { backKol: back, after: () => listChanged(), source: 'kol' });
   }
   function backToDeal() {
     const id = pm.backDeal;
     if (pm.pushed && pm.base === '#' + U.toRoute('deals/' + id)) { requestClose(); return; }   // it came from that deal: Back shows it again
-    leaveOK().then(ok => { if (!ok) return; close({ quiet: true }); U.go('deals', { deal: id }); });
+    leaveOK().then(ok => { if (!ok) return; close({ quiet: true }); KT.screens.deals.openDealModal(id, { source: 'kol' }); });   // CR-27 §3.3: over this page
   }
 
   /* ===================== dialogs (over the profile) ===================== */

@@ -5,14 +5,20 @@
    Add n deals → Deals › Table of that Campaign with the new rows lit up and Undo. The header (Campaign · Phase · Assign to · Pillar · Start at ·
    Products) is the New deal modal's (screen-newdeal.js), the same on both tabs.
    CR-22 — the Rate starts empty with "Last rate card ฿x" to click in (no Avg · no Use latest rates / Clear rates) · CTA and the sample method come
-   from the header · a search with no KOL: Create "<name>" as new KOL. → KT.bulk */
+   from the header · a search with no KOL: Create "<name>" as new KOL.
+   CR-25 §3.2 — one quick row (Search · Partner type · Tier · Not in this campaign yet · Filters (n)) · the other filters fold under Filters (folded by
+   default, remembered per user) · chips of the folded filters in use · Partner type chip (AFF · KOL+AFF) beside a name. → KT.bulk */
 KT.bulk = (function () {
   'use strict';
   const U = KT.ui;
-  const { C, R, $, esc, state, today, store, commit, toast, toastAction, optionsHTML, picList, userId, guard, pfIcon, dateHTML, setDate, checksHTML } = U;
+  const { C, R, $, esc, state, today, store, commit, toast, toastAction, optionsHTML, picList, userId, guard, pfIcon, dateHTML, setDate, checksHTML, pref } = U;
   const B = C.bulk, T = C.kol, MV = C.move;
   const PAGE = 50;
-  const blank = () => ({ q: '', platform: '', tier: '', type: '', category: '', owner: '', status: 'Active', lastWorked: '', perf: '', workedIn: [], postedOnly: false, notIn: true });
+  const blank = () => ({ q: '', partner: '', platform: '', tier: '', type: '', category: '', owner: '', status: 'Active', lastWorked: '', perf: '', workedIn: [], postedOnly: false, notIn: true });
+  const MAX_CHIPS = 4;   // CR-25 §3.2: more → "+n more"
+  /* CR-25 §3.2 — Filters open / folded, per user (folded unless that person opened it) */
+  const foldKey = () => 'bkfold_' + (userId() || '');
+  const foldOpen = () => pref.get(foldKey(), '') === 'open';
   let bk = null, api = null;   // this tab's values · the New deal modal (header + its modal handle)
 
   /* KOL Master (rows ticked → Add to campaign) opens New deal on this tab with those KOLs selected */
@@ -37,19 +43,14 @@ KT.bulk = (function () {
   /* ---------- draw ---------- */
   function draw(a, top) {
     api = a; if (!bk) init({});
-    const s = state(), L = s.lookups, h = api.header(), sel = (id, label, items, v, ph, tip) => `<label class="tlab"${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)} <select id="${id}">${optionsHTML(items, v, ph)}</select></label>`;
-    const wi = workedHTML();
-    api.m.setBody(api.headerHTML() + `<div class="bk-main"><div class="bk-left"><div class="toolbar bk-tools" id="bk_tools"><input type="search" class="search" id="bk_q" placeholder="${esc(T.search)}" value="${esc(bk.f.q)}" autocomplete="off">` +
-        sel('bk_fplatform', T.platform, (L.platform_list || []), bk.f.platform, T.allPlatforms) + sel('bk_ftier', T.tier, R.tierOrder(L.tier_rules), bk.f.tier, T.allTiers) +
-        sel('bk_ftype', B.type, (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label })), bk.f.type, B.any) +
-        sel('bk_fcat', B.category, U.distinct(s.kol_master.map(k => k.kol_category)), bk.f.category, B.any) +
-        sel('bk_fowner', B.kolOwner, picList().map(n => ({ value: n, label: n })).concat([{ value: '__none', label: C.deal.unassigned }]), bk.f.owner, B.any, B.kolOwnerTip) +
-        sel('bk_fstatus', B.status, R.KOL_STATUSES, bk.f.status, B.any) +
-        sel('bk_flast', C.perf.colLastWorked, R.LAST_WORKED.map(v => ({ value: v, label: C.perf.last[v] })), bk.f.lastWorked, B.any) +
-        sel('bk_fperf', B.perf, R.BADGES.map(v => ({ value: v, label: C.perf.badge ? C.perf.badge[v] || v : v })), bk.f.perf, B.any) +
-        `<span class="tlab bk-worked">${esc(B.workedIn)} ${wi}</span><label class="tick small"><input type="checkbox" id="bk_posted"${bk.f.postedOnly ? ' checked' : ''}${bk.f.workedIn.length ? '' : ' disabled'}> ${esc(B.postedOnly)}</label>` +
+    const s = state(), L = s.lookups, open = foldOpen();
+    /* CR-25 §3.2 — the quick row (always there): Search · Partner type (All · KOL · Affiliate — Both is in each) · Tier · Not in this campaign yet · Filters (n) */
+    api.m.setBody(api.headerHTML() + `<div class="bk-main"><div class="bk-left"><div class="toolbar bk-tools bk-quick" id="bk_tools"><input type="search" class="search" id="bk_q" placeholder="${esc(T.search)}" value="${esc(bk.f.q)}" autocomplete="off">` +
+        `<span class="tlab bk-pt">${esc(C.partner.field)} ${U.partnerSegHTML('data-bkpt', bk.f.partner, { all: true, keys: ['kol', 'affiliate'], id: 'bk_fpartner' })}</span>` +
+        `<select id="bk_ftier" aria-label="${esc(T.tier)}">${optionsHTML(R.tierOrder(L.tier_rules), bk.f.tier, T.allTiers)}</select>` +   // "All tiers" says what it is (as on KOL Master)
         `<label class="tick small"><input type="checkbox" id="bk_notin"${bk.f.notIn ? ' checked' : ''}> ${esc(B.notInCampaign)}</label>` +
-        `<button type="button" class="btn small ghost hidden" data-bkclear id="bk_clear">${U.ICON.close}<span>${esc(C.common.clearAllFilters)}</span></button></div>` +
+        `<button type="button" class="btn bk-fbtn" id="bk_fbtn" data-bkfold aria-expanded="${open}" aria-controls="bk_more" title="${esc(B.filtersTip)}">${U.ICON.filter} <span id="bk_fbtnt">${esc(B.filtersN(foldChips().length))}</span></button></div>` +
+        `<div class="toolbar bk-tools bk-more${open ? '' : ' hidden'}" id="bk_more">${moreHTML()}</div><div class="fchips bk-chips hidden" id="bk_chips"></div>` +
         `<div id="bk_selbar"></div><div id="bk_list"></div></div>` +
       `<aside class="bk-right" id="bk_right"><div class="bk-rh"><b id="bk_seln"></b><button type="button" class="link" data-bkclearsel>${esc(B.clearSel)}</button></div>` +
         `<div class="bk-ptools"><button type="button" class="btn small" data-bkdueall>${esc(B.setPostDueAll)}</button></div>` +
@@ -62,6 +63,44 @@ KT.bulk = (function () {
     let qT; $('bk_q').addEventListener('input', e => { clearTimeout(qT); qT = setTimeout(() => { if (!bk) return; bk.f.q = e.target.value; bk.page = 0; drawList(); drawTools(); }, 150); });
     drawList(); drawTools();
   }
+  const selHTML = (id, label, items, v, ph, tip) => `<label class="tlab"${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)} <select id="${id}">${optionsHTML(items, v, ph)}</select></label>`;
+  /* CR-25 §3.2 — what Filters folds: Platform · Type · Category · KOL owner · Status · Last worked · Performance · Worked in + Posted only · Clear all filters */
+  function moreHTML() {
+    const s = state(), L = s.lookups;
+    return selHTML('bk_fplatform', T.platform, (L.platform_list || []), bk.f.platform, T.allPlatforms) +
+      selHTML('bk_ftype', B.type, (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label })), bk.f.type, B.any) +
+      selHTML('bk_fcat', B.category, U.distinct(s.kol_master.map(k => k.kol_category)), bk.f.category, B.any) +
+      selHTML('bk_fowner', B.kolOwner, picList().map(n => ({ value: n, label: n })).concat([{ value: '__none', label: C.deal.unassigned }]), bk.f.owner, B.any, B.kolOwnerTip) +
+      selHTML('bk_fstatus', B.status, R.KOL_STATUSES, bk.f.status, B.any) +
+      selHTML('bk_flast', C.perf.colLastWorked, R.LAST_WORKED.map(v => ({ value: v, label: C.perf.last[v] })), bk.f.lastWorked, B.any) +
+      selHTML('bk_fperf', B.perf, R.BADGES.map(v => ({ value: v, label: badgeText(v) })), bk.f.perf, B.any) +
+      `<span class="tlab bk-worked">${esc(B.workedIn)} ${workedHTML()}</span><label class="tick small"><input type="checkbox" id="bk_posted"${bk.f.postedOnly ? ' checked' : ''}${bk.f.workedIn.length ? '' : ' disabled'}> ${esc(B.postedOnly)}</label>` +
+      `<button type="button" class="btn small ghost hidden" data-bkclear id="bk_clear">${U.ICON.close}<span>${esc(C.common.clearAllFilters)}</span></button>`;
+  }
+  const badgeText = v => (C.perf.badge ? C.perf.badge[v] || v : v);
+  /* the folded filters in use → [[key, "Platform: TikTok"]] (Status counts when it is not Active — how the tab opens) · n of Filters (n) */
+  function foldChips() {
+    const s = state(), f = bk.f, out = [];
+    if (f.platform) out.push(['platform', `${T.platform}: ${f.platform}`]);
+    if (f.type) out.push(['type', `${B.type}: ${R.kolTypeLabel(s.lookups, f.type)}`]);
+    if (f.category) out.push(['category', `${B.category}: ${f.category}`]);
+    if (f.owner) out.push(['owner', `${B.kolOwner}: ${f.owner === '__none' ? C.deal.unassigned : f.owner}`]);
+    if (f.status !== 'Active') out.push(['status', `${B.status}: ${f.status || B.any}`]);
+    if (f.lastWorked) out.push(['lastWorked', `${C.perf.colLastWorked}: ${C.perf.last[f.lastWorked]}`]);
+    if (f.perf) out.push(['perf', `${B.perf}: ${badgeText(f.perf)}`]);
+    if (f.workedIn.length) out.push(['workedIn', `${B.workedIn}: ${f.workedIn.map(id => R.campaignName(s, id) || id).join(', ')}`]);
+    if (f.postedOnly && f.workedIn.length) out.push(['postedOnly', B.postedOnly]);
+    return out;
+  }
+  /* a chip's × → that filter back to how the tab opens */
+  function unsetFold(k) {
+    if (k === 'workedIn') { bk.f.workedIn = []; bk.f.postedOnly = false; } else bk.f[k] = blank()[k];
+    bk.page = 0; $('bk_more').innerHTML = moreHTML(); drawList(); drawTools();
+  }
+  function setFold(open) {
+    pref.set(foldKey(), open ? 'open' : 'folded');
+    $('bk_more').classList.toggle('hidden', !open); $('bk_fbtn').setAttribute('aria-expanded', String(open)); drawTools();
+  }
   /* Clear all filters shows when a filter differs from how the tab opens (Status Active · Not in this campaign yet ticked) — Worked in counts too (§4.3) */
   const filtersUsed = () => R.pickerActive(Object.assign({}, bk.f, { status: bk.f.status === 'Active' ? '' : bk.f.status || 'any', notIn: !bk.f.notIn })).length > 0;
   /* §4.3 Worked in: the other Campaigns (approved) · drawn again on each change so its button says what is picked */
@@ -71,20 +110,29 @@ KT.bulk = (function () {
     return U.multiSelect({ id: 'bk_worked', options: camps, value: bk.f.workedIn, label: U.msLabel(bk.f.workedIn, camps, B.workedInAny), aria: B.workedIn,
       onChange: v => { bk.f.workedIn = v; if (!v.length) bk.f.postedOnly = false; bk.page = 0; const el = document.querySelector('[data-ms="bk_worked"]'); if (el) el.outerHTML = workedHTML(); drawList(); drawTools(); } });
   }
-  function drawTools() { const c = $('bk_clear'); if (c) c.classList.toggle('hidden', !filtersUsed()); const p = $('bk_posted'); if (p) p.disabled = !bk.f.workedIn.length; }
+  function drawTools() {
+    const c = $('bk_clear'); if (c) c.classList.toggle('hidden', !filtersUsed()); const p = $('bk_posted'); if (p) p.disabled = !bk.f.workedIn.length;
+    /* CR-25 §3.2 — Filters (n) · folded with filters in use → their chips (4 at most, then "+n more" opens the filters) */
+    const chips = foldChips(), open = foldOpen(), t = $('bk_fbtnt'), el = $('bk_chips');
+    if (t) t.textContent = B.filtersN(chips.length);
+    if (!el) return;
+    if (open || !chips.length) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+    U.filterChips(el, chips.slice(0, MAX_CHIPS), chips.length);
+    if (chips.length > MAX_CHIPS) { const more = `<button type="button" class="fchip fmore" data-bkmore>${esc(B.moreChips(chips.length - MAX_CHIPS))}</button>`, cl = el.querySelector('[data-clearfilters]'); if (cl) cl.insertAdjacentHTML('beforebegin', more); else el.insertAdjacentHTML('beforeend', more); }
+  }
   function drawList() {
     if (!$('bk_list')) return;
     const s = state(), rows = matches(), pages = Math.max(1, Math.ceil(rows.length / PAGE)); bk.page = Math.min(bk.page, pages - 1); bk.rows = rows;
     const page = rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE), allPage = page.length > 0 && page.every(r => bk.sel.has(r.k.kol_id));
     const fol = n => (n ? R.fmtNum(n) : '—');
     $('bk_list').innerHTML = !rows.length ? emptyHTML() : `<div class="tablewrap bk-wrap"><table class="tbl bk-tbl"><thead><tr><th class="cb"><input type="checkbox" id="bk_page" aria-label="${esc(B.selectPage)}"${allPage ? ' checked' : ''}></th>` +
-      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th>${esc(B.colLastCampaign)}</th><th>${esc(B.perf)}</th><th title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th class="num">${esc(B.colRate)}</th></tr></thead><tbody>` +
-      page.map(r => { const q = R.latestQuote(s, r.k.kol_id), rate = q && !R.isBlank(q.rate_card) ? q.rate_card : null, li = R.lastWorkedInfo(s, r.k.kol_id);
+      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th class="bk-own" title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th>${esc(B.colLastCampaign)}</th><th>${esc(B.perf)}</th></tr></thead><tbody>` +
+      page.map(r => { const li = R.lastWorkedInfo(s, r.k.kol_id);
         return `<tr class="click${bk.sel.has(r.k.kol_id) ? ' selected' : ''}" data-bkrow="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-bksel="${esc(r.k.kol_id)}"${bk.sel.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
-        `<td class="bk-kol"><span class="bk-kn">${U.avatarHTML(r.k, 'sm')}<b>${U.nameHTML(r.k.display_name)}</b></span>${r.inCamp ? ` <span class="chip">${esc(B.inCampaign)}</span>` : ''}${(r.k.kol_status || 'Active') !== 'Active' ? ` <span class="chip warn-chip">${esc(r.k.kol_status)}</span>` : ''}</td>` +
+        `<td class="bk-kol"><span class="bk-kn">${U.avatarHTML(r.k, 'sm')}<b>${U.nameHTML(r.k.display_name)}</b>${U.partnerChipHTML(r.k)}</span>${r.inCamp ? ` <span class="chip">${esc(B.inCampaign)}</span>` : ''}${(r.k.kol_status || 'Active') !== 'Active' ? ` <span class="chip warn-chip">${esc(r.k.kol_status)}</span>` : ''}</td>` +
         `<td>${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p, 'posted', p)).join('')}</td><td class="num">${fol(r.mf)}</td><td><span class="chip">${esc(r.tier)}</span></td>` +
-        `<td>${esc(R.kolTypeLabel ? R.kolTypeLabel(s.lookups, r.k.kol_type) || '' : r.k.kol_type || '')}</td><td>${li ? esc(R.campaignName(s, li.campaignId) || '') : '<span class="muted">—</span>'}</td>` +
-        `<td>${r.pf.perf ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${esc(r.k.pic || '')}</td><td class="num">${rate != null ? R.baht(rate) : '<span class="muted">—</span>'}</td></tr>`; }).join('') + `</tbody></table></div>` +
+        `<td class="bk-type">${esc(R.kolTypeLabel ? R.kolTypeLabel(s.lookups, r.k.kol_type) || '' : r.k.kol_type || '')}</td><td class="bk-own">${esc(r.k.pic || '')}</td>` +
+        `<td class="bk-camp">${li ? esc(R.campaignName(s, li.campaignId) || '') : '<span class="muted">—</span>'}</td><td>${r.pf.perf ? U.reliabilityChip(r.pf.perf) : ''}</td></tr>`; }).join('') + `</tbody></table></div>` +
       (pages > 1 ? `<div class="bk-pager"><button type="button" class="btn small" data-bkpage="-1"${bk.page ? '' : ' disabled'}>‹</button><span class="muted small">${esc(B.pageOf(bk.page + 1, pages, rows.length))}</span><button type="button" class="btn small" data-bkpage="1"${bk.page < pages - 1 ? '' : ' disabled'}>›</button></div>` : '');
     const pageSel = page.filter(r => bk.sel.has(r.k.kol_id)).length, allSel = rows.length > 0 && rows.every(r => bk.sel.has(r.k.kol_id));
     $('bk_selbar').innerHTML = allPage && rows.length > page.length && !allSel ? `<div class="bk-banner">${esc(B.pageSelected(pageSel))} · <button type="button" class="link" data-bkall>${esc(B.selectAllMatching(Math.min(rows.length, R.MAX_BULK)))}</button></div>`
@@ -164,7 +212,12 @@ KT.bulk = (function () {
     if (t.closest('[data-bkclearsel]')) { bk.sel.clear(); bk.dirty = true; drawList(); return true; }
     const rm = t.closest('[data-bkrm]'); if (rm) { bk.sel.delete(rm.dataset.bkrm); bk.dirty = true; drawList(); return true; }
     const pg = t.closest('[data-bkpage]'); if (pg) { bk.page += +pg.dataset.bkpage; drawList(); return true; }
-    if (t.closest('[data-bkclear]')) { bk.f = blank(); bk.page = 0; draw(api); return true; }
+    if (t.closest('[data-bkclear]') || t.closest('#bk_chips [data-clearfilters]')) { bk.f = blank(); bk.page = 0; draw(api); return true; }
+    /* CR-25 §3.2 — Partner type · Filters (open / fold) · a chip's × · "+n more" */
+    const pt = t.closest('[data-bkpt]'); if (pt) { bk.f.partner = U.partnerSegPick(pt, 'data-bkpt'); bk.page = 0; drawList(); drawTools(); return true; }
+    if (t.closest('[data-bkfold]')) { setFold(!foldOpen()); return true; }
+    if (t.closest('[data-bkmore]')) { setFold(true); return true; }
+    const un = t.closest('#bk_chips [data-unset]'); if (un) { unsetFold(un.dataset.unset); return true; }
     const sl = t.closest('[data-slast]'); if (sl) { const x = bk.sel.get(sl.dataset.slast); if (x) { x.rate = sl.dataset.amount; bk.dirty = true; drawSide(); } return true; }   // CR-22 §3.1
     if (t.closest('[data-bknewkol]')) { api.createAsNew(bk.f.q); return true; }   // CR-22 §3.4
     if (t.closest('[data-bkclearother]')) { const q = bk.f.q; bk.f = blank(); bk.f.q = q; bk.page = 0; draw(api); return true; }

@@ -27,7 +27,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* the label a line / deal shows: only when the payee is not the KOL's default ("Agency ABC") */
   const payeeTag = (state, payee) => (payee && payee.kol_id && !payee.is_default && trim(payee.label) ? trim(payee.label) : '');
   /* where a payee is used: payment lines and deals that picked it */
-  const payeeUse = (state, payeeId) => ({ lines: (state.payment_lines || []).filter(l => l.payee_id === payeeId).length, deals: (state.deals || []).filter(d => d.payee_id === payeeId).length });
+  const payeeUse = (state, payeeId) => ({ lines: (state.payment_lines || []).filter(l => l.payee_id === payeeId && !R.isDocsOnly(l)).length, deals: (state.deals || []).filter(d => d.payee_id === payeeId).length });
   /* what its card may do · delete = never used (and not the default while others are there) · archive = not the default · set default = a live one */
   function payeeActions(state, p) {
     const u = payeeUse(state, p.payee_id), others = payeesOfKol(state, p.kol_id).filter(x => x.payee_id !== p.payee_id).length;

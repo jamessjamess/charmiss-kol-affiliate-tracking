@@ -5,8 +5,8 @@ KT.screens.kol = (function () {
   'use strict';
   const U = KT.ui;
   const { C, R, $, esc, today, store, state, commit, toast, downloadCSV, checksHTML, ICON, pfIcon, tierRules, distinct, optionsHTML, sortBy, takeParams, can, guard } = U;
-  const T = C.kol, PAGE = 100;
-  const blankFilter = () => ({ q: '', platform: '', tier: '', lastWorked: '', category: '', type: [], pic: '', status: '', term: '', history: '', source: '', contact: '' });
+  const T = C.kol, PT = C.partner, PAGE = 100;
+  const blankFilter = () => ({ q: '', platform: '', tier: '', partner: '', lastWorked: '', category: '', type: [], pic: '', status: '', term: '', history: '', source: '', contact: '' });
   const KTY = C.kolTypes, PR = C.priceRef;
   const typeName = (L, v) => (v ? R.kolTypeLabel(L, v) : KTY.notSet);
   const P = C.perf;
@@ -34,14 +34,14 @@ KT.screens.kol = (function () {
     sec.innerHTML = `<div class="pagehead"><h1 class="page">${esc(T.title)} <span class="count" id="km_count"></span></h1><span class="spacer"></span><button type="button" class="btn primary" id="km_new">${esc(T.newKol)}</button></div>
       <div class="toolbar" id="km_tools">
         <input type="search" class="search" id="km_q" placeholder="${esc(T.search)}" autocomplete="off">
-        ${sel('platform', T.platform)}${sel('tier', T.tier)}${sel('lastWorked', P.colLastWorked)}
+        ${sel('platform', T.platform)}${sel('tier', T.tier)}${sel('partner', PT.field)}${sel('lastWorked', P.colLastWorked)}
         <details class="menu"><summary class="btn">${ICON.filter} ${esc(T.filters)} <span class="badge hidden" id="km_fbadge"></span></summary><div class="popover" id="km_fpop"></div></details>
         <span class="spacer"></span>
         <details class="menu"><summary class="btn icon" title="${esc(C.app.more)}" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list right" id="km_more">
           <button type="button" class="mi" data-m="import">${esc(T.importCsv)}</button><button type="button" class="mi" data-m="kols">${esc(T.exportKols)}</button>
           <button type="button" class="mi" data-m="accounts">${esc(T.exportAccounts)}</button><button type="button" class="mi" data-m="quotes">${esc(T.exportRates)}</button></div></details>
       </div>
-      <div class="toolbar hidden" id="km_bulk"><b id="km_selN"></b><button type="button" class="btn primary" id="km_bulkAdd">${esc(T.bulkAdd)}</button><button type="button" class="btn" id="km_selClear">${esc(T.clear)}</button></div>
+      <div class="toolbar hidden" id="km_bulk"><b id="km_selN"></b><button type="button" class="btn primary" id="km_bulkAdd">${esc(T.bulkAdd)}</button><button type="button" class="btn" id="km_bulkPartner">${esc(PT.setBulk)}</button><button type="button" class="btn" id="km_selClear">${esc(T.clear)}</button></div>
       <div class="fchips hidden" id="km_chips"></div>
       <div id="km_body"></div>`;
     let qT;
@@ -61,6 +61,7 @@ KT.screens.kol = (function () {
     });
     $('km_new').addEventListener('click', e => openNewKol(e.currentTarget));   // CR-11 §4.3: a modal (M)
     $('km_bulkAdd').addEventListener('click', openBulkAdd);
+    $('km_bulkPartner').addEventListener('click', e => setPartnerBulk(e.currentTarget));   // CR-25 §3.1
     $('km_selClear').addEventListener('click', () => { km.selected.clear(); renderList(); });
     const body = $('km_body');
     body.addEventListener('click', e => {
@@ -86,11 +87,12 @@ KT.screens.kol = (function () {
   function renderList() {
     const s = state(), ix = R.kolIndex(s), pidx = R.phaseIndex(s), f = km.f, rules = tierRules(), L = s.lookups, td = today(), perf = R.kolPerfAll(s, td);
     /* CR-04 §4.4: create / import for KOL editors · Add to campaign for deal editors */
-    $('km_new').classList.toggle('hidden', !can('kol.edit')); $('km_bulkAdd').classList.toggle('hidden', !can('deal.edit'));
+    $('km_new').classList.toggle('hidden', !can('kol.edit')); $('km_bulkAdd').classList.toggle('hidden', !can('deal.edit')); $('km_bulkPartner').classList.toggle('hidden', !can('kol.edit'));
     const imp = $('km_more').querySelector('[data-m="import"]'); if (imp) imp.classList.toggle('hidden', !can('kol.edit'));
     const lists = {
       platform: [L.platform_list || [], T.allPlatforms], tier: [[...rules].sort((a, b) => a.min_followers - b.min_followers).map(t => t.tier), T.allTiers],
       lastWorked: [R.LAST_WORKED.map(v => ({ value: v, label: P.last[v] })), P.lastAll],
+      partner: [R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label })), PT.allPartners],   // CR-25: Both is in KOL and in Affiliate
     };
     document.querySelectorAll('#km_tools [data-kf]').forEach(el => { const [items, ph] = lists[el.dataset.kf]; el.innerHTML = optionsHTML(items, f[el.dataset.kf], ph); });
     const pop = { category: [T.category, distinct(s.kol_master.map(k => k.kol_category))], type: [T.type, []],
@@ -105,9 +107,9 @@ KT.screens.kol = (function () {
     const on = POP_KEYS.filter(k => (Array.isArray(f[k]) ? f[k].length : f[k]));
     $('km_fbadge').textContent = `· ${on.length}`; $('km_fbadge').classList.toggle('hidden', !on.length);
     const chips = on.map(k => [k, `${pop[k][0]}: ${k === 'history' ? (f[k] === 'yes' ? T.hasDeals : T.noDeals) : k === 'term' ? C.term[f[k]] : k === 'type' ? f.type.map(v => typeName(L, v)).join(', ') : k === 'contact' ? (f[k] === 'has' ? T.hasContact : T.missingContact) : f[k]}`]);
-    const active = R.activeKolFilters(f), inBar = { platform: T.platform, tier: T.tier, lastWorked: P.colLastWorked };
+    const active = R.activeKolFilters(f), inBar = { platform: T.platform, tier: T.tier, partner: PT.field, lastWorked: P.colLastWorked };
     km.used = [].concat(active.includes('q') ? [C.common.searchChip(R.trim(f.q))] : [],
-      Object.keys(inBar).filter(k => f[k]).map(k => `${inBar[k]}: ${k === 'lastWorked' ? P.last[f[k]] : f[k]}`), chips.map(c => c[1]));
+      Object.keys(inBar).filter(k => f[k]).map(k => `${inBar[k]}: ${k === 'lastWorked' ? P.last[f[k]] : k === 'partner' ? R.partnerTypeLabel(L, f[k]) : f[k]}`), chips.map(c => c[1]));
     U.filterChips($('km_chips'), chips, active.length);
 
     const q = f.q.trim().toLowerCase(), qh = q.replace(/^@/, ''), rows = [];
@@ -119,7 +121,7 @@ KT.screens.kol = (function () {
       const mf = R.maxFollowers(accs), tier = R.tierOf(mf, rules);
       if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.category && k.kol_category !== f.category) || (f.type.length && !f.type.includes(k.kol_type || '')) ||
         (f.tier && tier !== f.tier) || (f.pic && k.pic !== f.pic) || (f.term && (R.isTerm(k.default_payment_term) ? k.default_payment_term : 'none') !== f.term) || (f.status && (k.kol_status || 'Active') !== f.status) ||
-        (f.history === 'yes' && !deals.length) || (f.history === 'no' && deals.length) || (f.source && !(k.sources || []).includes(f.source))) return;
+        (f.history === 'yes' && !deals.length) || (f.history === 'no' && deals.length) || (f.source && !(k.sources || []).includes(f.source)) || (f.partner && !R.partnerMatch(k, f.partner))) return;
       const pf = perf.get(k.kol_id);
       if (f.lastWorked && pf.bucket !== f.lastWorked) return;
       const quote = (ix.quotes.get(k.kol_id) || [])[0] || null;
@@ -134,22 +136,45 @@ KT.screens.kol = (function () {
       lastcamp: r => (r.lastCamp ? `${r.lastCamp.name.toLowerCase()}|${r.pf.last}` : null) }[km.sort.key];
     km.rows = sortBy(rows, key, km.sort.dir, (a, b) => a.k.kol_id.localeCompare(b.k.kol_id));
     const filtered = rows.length !== s.kol_master.length;
-    $('km_count').textContent = filtered ? T.countOf(R.fmtNum(rows.length), R.fmtNum(s.kol_master.length)) : T.count(R.fmtNum(s.kol_master.length), R.fmtNum(s.kol_accounts.length));
+    $('km_count').textContent = filtered ? T.countOf(R.fmtNum(rows.length), R.fmtNum(s.kol_master.length)) : countText(s);
     const shown = km.rows.slice(0, km.limit), allSel = km.rows.length > 0 && km.rows.every(r => km.selected.has(r.k.kol_id));
     const th = (label, k, cls) => k ? `<th class="sort${cls ? ' ' + cls : ''}" data-sort="${k}">${esc(label)}${km.sort.key === k ? `<span class="arr">${km.sort.dir === 'asc' ? '▲' : '▼'}</span>` : ''}</th>` : `<th${cls ? ` class="${cls}"` : ''}>${esc(label)}</th>`;
     if (!rows.length) { $('km_body').innerHTML = U.noMatchHTML(T.noMatch, km.used); bulkBar(); return; }
     $('km_body').innerHTML = `<div class="tablewrap" style="max-height:calc(100vh - 250px)"><table class="tbl km-tbl"><thead><tr>
         <th class="cb" style="width:44px"><input type="checkbox" id="km_all"${allSel ? ' checked' : ''} aria-label="${esc(T.selectAll)}" title="${esc(T.selectAll)}"></th>
-        ${th(T.colKol, 'kol')}${th(T.colPlatforms)}${th(T.colFollowers, 'followers', 'num')}${th(T.colTier)}${th(T.colCategoryType)}${th(T.colPic)}${th(T.colRate, 'rate', 'num')}${th(T.colDeals, 'deals', 'num')}${th(P.colOnTime, 'ontime')}${th(P.colLastWorked, 'last')}${th(T.colLastCampaign, 'lastcamp')}
+        ${th(T.colKol, 'kol')}${th(PT.col, null, 'kpt')}${th(T.colPlatforms)}${th(T.colFollowers, 'followers', 'num')}${th(T.colTier)}${th(T.colCategoryType)}${th(T.colPic)}${th(T.colRate, 'rate', 'num')}${th(T.colDeals, 'deals', 'num')}${th(P.colOnTime, 'ontime')}${th(P.colLastWorked, 'last')}${th(T.colLastCampaign, 'lastcamp')}
       </tr></thead><tbody>` +
       shown.map(r => `<tr class="click" tabindex="0" data-id="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-sel="${esc(r.k.kol_id)}"${km.selected.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
         `<td class="kcol"><div class="kolcell">${U.avatarHTML(r.k)}<div class="cell2"><span class="kname"><b>${U.nameHTML(r.k.display_name)}</b>${U.copyBtnHTML(r.k.display_name)}</span><span class="sub">${esc(r.k.kol_id)}${r.k.kol_status && r.k.kol_status !== 'Active' ? ` · ${esc(r.k.kol_status)}` : ''}</span></div></div></td>` +
-        `<td><span class="pfs">${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p)).join('')}</span></td>` +
+        `<td class="kpt">${U.partnerTagHTML(r.k)}</td><td><span class="pfs">${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p)).join('')}</span></td>` +
         `<td class="num">${R.fmtNum(r.mf)}</td><td>${esc(r.tier)}</td><td class="kcat" title="${esc([r.k.kol_category, R.kolTypeLabel(L, r.k.kol_type)].filter(Boolean).join(' · '))}"><span class="cell2"><span>${esc(r.k.kol_category || '')}</span>${r.k.kol_type ? `<span class="sub">${esc(R.kolTypeLabel(L, r.k.kol_type))}</span>` : ''}</span></td><td>${esc(r.k.pic || '')}</td>` +
         `<td class="num" title="${esc(r.quote ? r.quote.source : '')}">${priceText(r.quote)}</td><td class="num">${r.deals.length || ''}</td><td>${r.pf.perf.measured ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${lastWorkedHTML(r.pf.last, td)}</td>` +
         `<td class="kphase"${r.lastCamp ? ` title="${esc(T.lastCampTip(r.lastCamp.name, r.lastCamp.phase))}"` : ''}>${r.lastCamp ? esc(r.lastCamp.name) : `<span class="muted">—</span>`}</td></tr>`).join('') +
       `</tbody></table></div>` + (km.rows.length > shown.length ? `<div class="loadmore"><button type="button" class="btn" data-more>${esc(T.loadMore(km.rows.length - shown.length))}</button></div>` : '');
     markSelected(); bulkBar();
+  }
+  /* CR-25 §3.1 — "911 partners (KOL 900 · Affiliate 8 · Both 3) · 928 accounts" */
+  function countText(s) {
+    const n = R.partnerCounts(s.kol_master), parts = R.partnerTypesOf(s.lookups).map(t => `${t.label} ${R.fmtNum(n[t.key])}`).join(' · ');
+    return PT.count(R.fmtNum(s.kol_master.length), parts, R.fmtNum(s.kol_accounts.length));
+  }
+  /* CR-25 §3.1 — the ticked KOLs → one Partner type (KOL · Affiliate · Both) */
+  function setPartnerBulk(anchor) {
+    if (!guard('kol.edit')) return;
+    const ids = [...km.selected]; if (!ids.length) return;
+    let pick = '';
+    const m = U.popForm(anchor, { title: PT.setTitle(ids.length), ok: PT.setOk, body: `<div class="field"><label>${esc(PT.field)} <span class="req">*</span></label>${U.partnerSegHTML('data-bpt', '')}</div>`,
+      focus: '[data-bpt]',
+      onOk: f => {
+        if (!pick) { U.popFormError(f, PT.required); return false; }
+        if (!guard('kol.edit')) return false;
+        const s = state(), list = ids.map(id => R.kolById(s, id)).filter(k => k && R.partnerTypeOf(k) !== pick);
+        if (!list.length) { toast(PT.setSame); return true; }
+        list.forEach(k => { k.partner_type = pick; });
+        commit(PT.setDone(list.length, R.partnerTypeLabel(s.lookups, pick))); renderList();
+        return true;
+      } });
+    m.addEventListener('click', e => { const b = e.target.closest('[data-bpt]'); if (b) { pick = U.partnerSegPick(b, 'data-bpt'); U.popFormError(m, ''); } });
   }
   /* "04/09/2026 · 31 days ago" · Never = — */
   const lastWorkedHTML = (date, td) => (date ? `<span class="cell2"><span>${esc(R.dmy(date))}</span><span class="sub">${esc(P.daysAgo(R.dayDiff(td, date)))}</span></span>` : `<span class="muted">—</span>`);

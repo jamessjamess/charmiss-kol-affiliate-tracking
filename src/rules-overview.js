@@ -90,7 +90,9 @@ Object.assign(KT.rules, (function (R, C) {
       return { phase: p, slot: i, budget: x.budget, budgetPct: R.pctOfBudget(x.budget, c.budget_kol), shortlist: x.shortlist, committed: x.committed, paid: x.paid, posts: x.posts, over: x.over };
     });
     const extra = [];
-    if (cs.unscheduled > 0) extra.push({ key: R.UNSCHEDULED, committed: cs.unscheduled });
+    /* CR-26 §3.4 — "n deals have no post date": the committed deals with money in Unscheduled */
+    if (cs.unscheduled > 0) extra.push({ key: R.UNSCHEDULED, committed: cs.unscheduled,
+      deals: state.deals.filter(d => d.campaign_id === campaignId && !isCancelled(d) && !R.isShortlist(state.lookups, d) && ((idx.deal.get(d.deal_id) || { keys: new Set() }).keys.has(R.UNSCHEDULED))).length });
     if (cs.needs > 0 || cs.needsPosts > 0) extra.push({ key: R.NEEDS, committed: cs.needs, posts: cs.needsPosts });
     const posts = R.scopePosts(state, { campaignId }, idx).length;
     return { rows, extra, total: { budget: cs.budget, shortlist: cs.shortlist, committed: cs.committed, paid: cs.paid, posts, over: cs.budget != null && cs.committed > cs.budget } };
@@ -489,13 +491,14 @@ Object.assign(KT.rules, (function (R, C) {
     });
     /* the money owed now (To pay · Ready / Missing docs) */
     R.payQueue(state, today).items.filter(x => x.status === 'ready' || x.status === 'missing_docs').forEach(x => {
+      const posted = x.deal ? R.firstPostDate(state, x.deal) : null;   // CR-26 §3.5: work after the post counts from the post
       push({ kind: 'payment', key: 'pay:' + x.key, deal: x.deal || null, kol_id: x.kol_id, campaign_id: x.campaign_id || null, stage: x.deal ? x.deal.sub_status : null, action: 'pay', waiting: 'us',
-        due: x.due_date || null, field: null, pic: x.pic || null, since: x.due_date || null, inStage: daysSince(x.due_date, today), ref: x });
+        due: x.due_date || null, field: null, pic: x.pic || null, since: x.due_date || null, inStage: daysSince(x.due_date, today), sincePost: daysSince(posted, today), ref: x });
     });
     /* the numbers of a post past its checkpoint (CR-11) */
     if (R.metricsDue) R.metricsDue(state, {}, today).forEach(m => {
       push({ kind: 'metrics', key: 'met:' + m.post.post_id, deal: m.deal, kol_id: m.deal.kol_id, campaign_id: m.deal.campaign_id, stage: m.deal.sub_status, action: 'metrics', waiting: 'us',
-        due: m.info.checkpointDate || null, field: null, pic: m.deal.pic || null, since: m.info.checkpointDate || null, inStage: daysSince(m.info.checkpointDate, today), ref: m.post });
+        due: m.info.checkpointDate || null, field: null, pic: m.deal.pic || null, since: m.info.checkpointDate || null, inStage: daysSince(m.info.checkpointDate, today), sincePost: daysSince(m.post.post_date, today), ref: m.post });
     });
     /* requests waiting for approval — only for those who approve (due: sent + 2 days) */
     if (o.viewer && R.canApprove && R.canApprove(o.viewer)) R.approvalRequests(state).forEach(q => {
@@ -519,14 +522,21 @@ Object.assign(KT.rules, (function (R, C) {
   /* the rows a tile / a stage keeps */
   const WORK_TILES = ['overdue', 'week', 'none', 'stuck', 'us'];
   const workTileHas = (tile, r) => (tile === 'overdue' ? r.bucket === 'overdue' : tile === 'week' ? r.bucket === 'today' || r.bucket === 'week' : tile === 'none' ? r.bucket === 'none' : tile === 'stuck' ? r.stuck : tile === 'us' ? r.waiting === 'us' : true);
-  /* §4.5 — a row a person: open deals · Overdue · Due this week · No due date · Stuck · Waiting on us (most overdue first) */
-  function teamLoad(state, rows) {
+  /* §4.5 — a row a person: open deals · Overdue · Due this week · No due date · Stuck · Waiting on us (most overdue first) ·
+     CR-26 §3.4: o = the filters of the page ({campaignIds, person, today}) → Open deals is counted by R.teamWorkload (the By campaign table) */
+  function teamLoad(state, rows, o) {
     const by = new Map(), at = k => by.get(k) || (by.set(k, { pic: k || null, open: new Set(), overdue: 0, week: 0, none: 0, stuck: 0, us: 0 }), by.get(k));
     rows.filter(r => !r.approver).forEach(r => { const w = at(r.pic || '');
       if (r.deal && R.isOpenDeal(r.deal)) w.open.add(r.deal.deal_id);
       if (r.bucket === 'overdue') w.overdue++; else if (r.bucket === 'today' || r.bucket === 'week') w.week++; else if (r.bucket === 'none') w.none++;
       if (r.stuck) w.stuck++; if (r.waiting === 'us') w.us++; });
-    return [...by.values()].map(w => Object.assign(w, { open: w.open.size }))
+    if (o) {
+      const camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '';
+      const tw = R.teamWorkload(state, state.deals.filter(d => (!camps || camps.has(d.campaign_id)) && (!person || (person === '__none' ? isBlank(d.pic) : d.pic === person))), o.today || R.todayISO());
+      tw.forEach(t => { if (t.open) { const w = at(t.pic || ''); w.open = new Set(); w.openN = t.open; } });
+      by.forEach(w => { if (w.openN == null) w.openN = (tw.find(t => (t.pic || '') === (w.pic || '')) || { open: 0 }).open; w.open = new Set(); });
+    }
+    return [...by.values()].map(w => { const n = w.openN != null ? w.openN : w.open.size; delete w.openN; return Object.assign(w, { open: n }); })
       .sort((a, b) => b.overdue - a.overdue || b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
   }
   /* §4.4 — Stage flow: Shortlist … Approve · deals in it · their average days in it · Stuck · + Posted / Cancelled (o = {person, campaignIds, today}) */

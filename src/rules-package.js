@@ -68,7 +68,7 @@ Object.assign(KT.rules, (function (R, C) {
 
   /* ---------- money ---------- */
   /* the package's payment line (not cancelled) */
-  const packageLine = (state, pkgId) => (state.payment_lines || []).filter(l => l.package_id === pkgId && l.status !== 'cancelled').pop() || null;
+  const packageLine = (state, pkgId) => (state.payment_lines || []).filter(l => l.package_id === pkgId && l.status !== 'cancelled' && !R.isDocsOnly(l)).pop() || null;   // CR-27: not a docs-only line
   /* To pay · Sent (with Accounting) · Paid — from its line (CR-17 Simple mode flows) */
   function packagePayStatus(state, p) {
     const l = packageLine(state, p.package_id);
