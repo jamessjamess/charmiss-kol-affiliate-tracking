@@ -138,12 +138,12 @@ KT.screens.overview = (function () {
       barTip: comTip, caption: comCap, capTip: comTip, capHTML: m.remaining != null && m.remaining < 0 ? `<span class="late">${esc(comCap)}</span>` : null });
     const paidCap = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), X(p.outstanding)), paidTip = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), R.baht(p.outstanding));
     const paid = kpiCard({ label: O.kPaid, tip: O.kPaidTip, value: R.baht(p.paid), bar: seg(p.pct || 0, 'ok'), barTip: paidTip, caption: paidCap, capTip: paidTip });
-    /* partners once (committed deals) · the bar: committed deals (dark) vs in List (faint — Shortlist / Contacted) · KOL / Affiliate / Both in the value's tooltip ·
+    /* partners once (committed deals) · the bar: committed deals (dark) vs in List (faint — Shortlist / Contacted) · KOL / Affiliate in the value's tooltip ·
        an Affiliate there → the caption says KOL n · Affiliate n (CR-29 §6 #2) */
     const kk = k.kols, types = R.partnerTypesOf(state().lookups).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · ');
     const def = O.dealsDef(R.fmtNum(d.n), R.fmtNum(d.list), R.fmtNum(d.inprocess), R.fmtNum(d.complete), R.fmtNum(kk.deals), R.fmtNum(kk.notCommitted));
-    const allDeals = kk.deals + kk.notCommitted, avg = kk.avg == null ? '—' : R.baht(kk.avg), aff = (kk.byType.affiliate || 0) + (kk.byType.both || 0) > 0;
-    const engCap = aff ? O.kc.engagedTypes(R.partnerTypesOf(state().lookups).filter(t => t.key !== 'both' || kk.byType.both).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · '), avg)
+    const allDeals = kk.deals + kk.notCommitted, avg = kk.avg == null ? '—' : R.baht(kk.avg), aff = (kk.byType.affiliate || 0) > 0;   // CR-32 §2.4: no Both
+    const engCap = aff ? O.kc.engagedTypes(types, avg)
       : O.kc.engaged(R.fmtNum(kk.deals), R.fmtNum(allDeals), avg);
     const engaged = kpiCard({ label: O.kEngaged, tip: O.kEngagedTip, value: R.fmtNum(kk.n), suffix: O.kc.partners, valueTip: types,
       bar: seg(kk.deals / Math.max(1, allDeals) * 100, 'com') + seg(kk.notCommitted / Math.max(1, allDeals) * 100, 'lst'), barTip: O.kc.engagedBar(R.fmtNum(kk.deals), R.fmtNum(kk.notCommitted)),

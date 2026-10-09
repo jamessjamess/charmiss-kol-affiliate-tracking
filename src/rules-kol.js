@@ -79,9 +79,9 @@ Object.assign(KT.rules, (function (R, C) {
   }
   const splitAliases = text => [...new Set(String(text || '').split(/[\n,]+/).map(trim).filter(Boolean))];
 
-  /* ===================== CR-25 — Partner type: kols.partner_type (kol · affiliate · both · null = KOL, no migration) ===================== */
-  /* the three keys never change · the words live in lookups.partner_types (Settings › Lists) */
-  const PARTNER_TYPES = ['kol', 'affiliate', 'both'];
+  /* ===================== CR-25 — Partner type: kols.partner_type (kol · affiliate · null = KOL) ===================== */
+  /* CR-32 §2.4 — two keys only (Both is gone: an old 'both' becomes 'kol' when the data loads — migratePartnerBoth) · the words live in lookups.partner_types (Settings › Lists) */
+  const PARTNER_TYPES = ['kol', 'affiliate'];
   const partnerTypesDefault = () => PARTNER_TYPES.map(key => ({ key, label: C.partner.types[key] }));
   /* blank (old data) or anything else = KOL */
   const partnerTypeOf = k => (k && PARTNER_TYPES.includes(k.partner_type) ? k.partner_type : 'kol');
@@ -91,12 +91,26 @@ Object.assign(KT.rules, (function (R, C) {
     return PARTNER_TYPES.map(key => { const x = l.find(r => r && r.key === key); return { key, label: (x && trim(x.label)) || C.partner.types[key] }; });
   }
   const partnerTypeLabel = (L, key) => partnerTypesOf(L).find(x => x.key === (PARTNER_TYPES.includes(key) ? key : 'kol')).label;
-  /* the filter: '' = all · KOL = KOL + Both · Affiliate = Affiliate + Both · Both = Both only (§3.1: Both counts in KOL and in Affiliate) */
-  const partnerMatch = (k, f) => { if (!f) return true; const t = partnerTypeOf(k); return t === f || t === 'both'; };
+  /* the filter: '' = all · KOL · Affiliate */
+  const partnerMatch = (k, f) => { if (!f) return true; return partnerTypeOf(k) === f; };
   /* KOL Master header: how many of each (each KOL once) */
   function partnerCounts(kols) {
-    const n = { kol: 0, affiliate: 0, both: 0 };
+    const n = { kol: 0, affiliate: 0 };
     (kols || []).forEach(k => { n[partnerTypeOf(k)]++; });
+    return n;
+  }
+  /* CR-32 §2.4 — at load: a KOL still marked 'both' becomes 'kol' (an event "partner_type both → kol" for each) · lookups.partner_types keeps KOL and Affiliate only ·
+     → how many KOLs changed (the same data again = 0) */
+  function migratePartnerBoth(obj, now) {
+    let n = 0; const at = now || new Date().toISOString();
+    (obj.kol_master || []).forEach(k => {
+      if (k && k.partner_type === 'both') {
+        k.partner_type = 'kol'; n++;
+        if (Array.isArray(obj.deal_events)) obj.deal_events.push({ event_id: (obj.deal_events.reduce((m, e) => Math.max(m, Number(e.event_id) || 0), 0) + 1), deal_id: null, kol_id: k.kol_id,
+          type: 'partner_type_changed', from: 'both', to: 'kol', changed_at: at, changed_by: null, note: 'partner_type both → kol' });
+      }
+    });
+    if (obj.lookups && Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = obj.lookups.partner_types.filter(x => x && PARTNER_TYPES.includes(x.key));
     return n;
   }
   /* a cell of an import: blank = KOL · the key or the word (any case · default or the Settings word) · anything else = null (an error for the row) */
@@ -156,7 +170,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* schema 13 — every KOL has contact_id (null · nothing is read from the notes) */
   function migrateV13(obj) { (obj.kol_master || []).forEach(k => { if (k.contact_id === undefined) k.contact_id = null; }); obj.schema_version = 13; return obj; }
 
-  return { PARTNER_TYPES, partnerTypesDefault, partnerTypeOf, partnerTypesOf, partnerTypeLabel, partnerMatch, partnerCounts, parsePartnerType,
+  return { PARTNER_TYPES, partnerTypesDefault, partnerTypeOf, partnerTypesOf, partnerTypeLabel, partnerMatch, partnerCounts, parsePartnerType, migratePartnerBoth,
     lastRateCard, migrateV13, KOL_TYPE_DEFAULT, kolTypeDefault, matchKolType, kolTypeList, kolTypeOf, kolTypeLabel, withOldType, migrateKolType, kolTypeCounts, kolTypeUse,
     kolTypeKeyFor, validateKolType, splitAliases, costReference, costRefRows, hasCosts, costNotSet, zeroCostMove };
 })(KT.rules, KT.content));

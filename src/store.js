@@ -122,7 +122,7 @@
                          sum and only a hint now) · deals + cancel_reason_key (null = Other · cancel_reason = its Detail) · lookups.cancel_reasons
                          [{ key, label, active }] — the default list is put in at load when there is none
    (CR-24, schema stays 21) lookups.ops_stuck_days (7 at load when there is none — Settings › Operations mode)
-   (CR-25, schema stays 21) kols.partner_type kol · affiliate · both (null = KOL · nothing migrated) · lookups.partner_types [{ key, label }]
+   (CR-25, schema stays 21) kols.partner_type kol · affiliate (null = KOL · CR-32: an old 'both' → 'kol' at load) · lookups.partner_types [{ key, label }]
                          (put in at load when there is none — Settings › Lists › Partner types)
    schema_version 22 (CR-29) — rules-close.js migrateV22: campaigns + closed_at · closed_by · close_note · reopened_at · reopened_by · reopen_reason ·
                          close_request (null) · a Campaign Complete by its dates (End date before the day it is loaded) → closed_at = its End date ·
@@ -362,6 +362,9 @@ KT.store = (function (R) {
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)
+    R.migratePartnerBoth(obj, (now || new Date()).toISOString());   // CR-32 §2.4: no Both (an old 'both' → 'kol', logged)
+    if (obj.lookups && !Array.isArray(obj.lookups.banks)) obj.lookups.banks = R.banksDefault();   // CR-32 §2.5: the bank names (short · the PR word)
+    R.migrateBandsV32(obj);   // CR-32 §2.5: the old default bands → the PR's 1,000 · 3,000 (once)
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }

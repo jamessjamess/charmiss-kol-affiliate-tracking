@@ -9,7 +9,7 @@ Object.assign(KT.rules, (function (R, C) {
   const issue = (field, msg) => ({ field, msg });
 
   /* ===================== settings (lookups.payment_settings) ===================== */
-  const PAYMENT_SETTINGS_DEFAULT = { vat_rate: 7, wht_threshold: 1000, wht_rates: [0, 1, 2, 3, 5], default_wht_individual: 3, default_wht_company: 3, bands: [1000, 10000], run_weekday: 5 };
+  const PAYMENT_SETTINGS_DEFAULT = { vat_rate: 7, wht_threshold: 1000, wht_rates: [0, 1, 2, 3, 5], default_wht_individual: 3, default_wht_company: 3, bands: [1000, 3000], run_weekday: 5 };   // CR-32 §2.5: the PR's bands
   const paymentSettingsDefault = () => JSON.parse(JSON.stringify(PAYMENT_SETTINGS_DEFAULT));
   const paySettings = L => Object.assign(paymentSettingsDefault(), (L && L.payment_settings) || {});
   /* Settings › Payments: numbers ≥ 0 · VAT and rates are percentages · the defaults are among the rates · bands go up · a weekday 0–6 */
@@ -24,7 +24,7 @@ Object.assign(KT.rules, (function (R, C) {
     if (!(b[0] > 0 && b[1] > b[0])) errs.push(issue('bands', M.payBands));
     if (!(Number.isInteger(n(d.run_weekday)) && n(d.run_weekday) >= 0 && n(d.run_weekday) <= 6)) errs.push(issue('run_weekday', M.payWeekday));
     const value = errs.length ? null : { vat_rate: n(d.vat_rate), wht_threshold: n(d.wht_threshold), wht_rates: [...new Set(rates)].sort((x, y) => x - y),
-      default_wht_individual: n(d.default_wht_individual), default_wht_company: n(d.default_wht_company), bands: b, run_weekday: n(d.run_weekday) };
+      default_wht_individual: n(d.default_wht_individual), default_wht_company: n(d.default_wht_company), bands: b, run_weekday: n(d.run_weekday), bands_cr32: true };
     return { errs, warns: [], infos: [], value };
   }
 
@@ -43,11 +43,20 @@ Object.assign(KT.rules, (function (R, C) {
     const wht = gross >= S.wht_threshold ? round2(gross * r) : 0;
     return { gross, vat, wht, wht_rate: rate, net: round2(gross + vat - wht) };
   }
-  /* CR-09 §4.14 — the amount range words: Under ฿1,000 · ฿1,000 – ฿9,999 · ฿10,000 and above (from the settings' limits) */
+  /* CR-09 §4.14 — the amount range words (from the settings' limits) · CR-32 §2.5: Under ฿1,000 · ฿1,000 – ฿3,000 · Over ฿3,000 (as the PR sheets) */
   const amountLabels = settings => { const b = (settings || PAYMENT_SETTINGS_DEFAULT).bands, f = n => '฿' + R.fmtNum(n);
-    return [C.pay.amountUnder(f(b[0])), `${f(b[0])} – ${f(b[1] - 1)}`, C.pay.amountFrom(f(b[1]))]; };
-  /* the band of an amount: 0 = under 1,000 · 1 = 1,000–9,999 · 2 = 10,000 and above */
-  const bandOf = (gross, settings) => { const b = (settings || PAYMENT_SETTINGS_DEFAULT).bands; return gross < b[0] ? 0 : gross < b[1] ? 1 : 2; };
+    return [C.pay.amountUnder(f(b[0])), `${f(b[0])} – ${f(b[1])}`, C.pay.amountOver(f(b[1]))]; };
+  /* the band of an amount: 0 = under 1,000 · 1 = 1,000–3,000 (both ends in) · 2 = over 3,000 */
+  const bandOf = (gross, settings) => { const b = (settings || PAYMENT_SETTINGS_DEFAULT).bands; return gross < b[0] ? 0 : gross <= b[1] ? 1 : 2; };
+  /* CR-32 §2.5 — once: the old default bands (1,000 · 10,000) kept in Settings become the PR's (1,000 · 3,000) · bands someone set stay */
+  function migrateBandsV32(obj) {
+    const ps = obj && obj.lookups && obj.lookups.payment_settings; if (!ps || ps.bands_cr32) return false;
+    const old = Array.isArray(ps.bands) && Number(ps.bands[0]) === 1000 && Number(ps.bands[1]) === 10000;
+    if (old) ps.bands = [1000, 3000];
+    ps.bands_cr32 = true; return old;
+  }
+  /* "a big amount" (a warning in a run): ฿10,000 and above, whatever the bands are */
+  const BIG_AMOUNT = 10000;
 
   /* ===================== instalments of a deal (§4.3) ===================== */
   /* when the deal reached Confirm QT (the first dated log at or after it) and when it was completed (the last post date, else the Post log) */
@@ -108,6 +117,20 @@ Object.assign(KT.rules, (function (R, C) {
     const need = payee.payee_type === 'company' ? ['company_cert', 'bank_book'].concat(payee.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book'];
     return need.filter(k => !(payee.docs && payee.docs[k])).concat(payee.secure ? [] : ['bank_details']);
   }
+  /* CR-32 §2.5 — the banks: { name, short (KBank — on screen), pr (กสิกร — the PR file) } in lookups.banks · a name typed another way is matched by any of the three */
+  const banksDefault = () => (C.payee.bankList || []).map(b => Object.assign({}, b));
+  const bankNorm = v => String(v == null ? '' : v).toLowerCase().replace(/[\s.()]/g, '');
+  function bankOf(L, name) {
+    const v = bankNorm(name); if (!v) return null;
+    const list = L && Array.isArray(L.banks) && L.banks.length ? L.banks : banksDefault();
+    return list.find(b => [b.name, b.short, b.pr].some(x => bankNorm(x) === v)) || list.find(b => b.short && v.includes(bankNorm(b.short)) && bankNorm(b.short).length >= 3) || null;
+  }
+  const bankShort = (L, name) => { const b = bankOf(L, name); return b ? b.short : trim(name); };
+  const bankPr = (L, name) => { const b = bankOf(L, name); return b ? b.pr || b.short : trim(name); };
+  /* "KBank ••• 1234" (no more of the number) */
+  const bankLine = (L, p) => C.payee.bankLine(bankShort(L, p && p.bank_name), p && p.account_last4);
+  /* which encrypted fields are filled (kept on the payee in plain: only the names of the fields, never their values) */
+  const filledFields = rec => (rec ? BANK_FIELDS.filter(k => !isBlank(rec[k]) && trim(String(rec[k])) !== '') : []);
   const digitsOf = v => String(v == null ? '' : v).replace(/\D/g, '');
   const last4 = v => { const d = digitsOf(v); return d.length >= 4 ? d.slice(-4) : null; };
   /* the plain part of a payee (Tax & terms · Documents) */
@@ -192,14 +215,13 @@ Object.assign(KT.rules, (function (R, C) {
   const lineDocs = l => (l && Array.isArray(l.docs) ? l.docs : []);
   /* a line kept only for the documents of a row nobody has sent / paid / held yet: its amounts are still worked out from the deal */
   const isDocsOnly = l => !!l && !!l.docs_only && l.status === 'open' && !l.run_id;
-  /* what a line still needs (§4.4): the payee's documents and bank details · post evidence for the Final / Full instalment of a deal (not prepaid) · nothing when it reimburses staff ·
-     CR-27: less what the line's own checklist says was received */
+  /* what a line still needs (§4.4): its documents (CR-32 §2.3: ID copy · Bank book · Post proof, or All in one file — rules-ops docsChecklist) and the payee's
+     bank details · nothing when it reimburses staff */
   function docsRequired(state, line, payee) {
     if (line.pay_to === 'reimburse') return [];
-    const miss = payeeDocsMissing(payee === undefined ? payeeOfLine(state, line) : payee), deal = dealOf(state, line.deal_id);
-    if (deal && (line.milestone === 'final' || (line.milestone === 'full' && termOf(deal) !== 'prepaid')) && !postEvidence(state, deal.deal_id)) miss.push('post_evidence');
-    const got = new Set(lineDocs(line).filter(d => !d.custom && d.received_at).map(d => d.key));
-    return miss.filter(k => !got.has(k));
+    const p = payee === undefined ? payeeOfLine(state, line) : payee;
+    const miss = R.docsChecklist(state, { line, payee: p, deal_id: line.deal_id, milestone: line.milestone, pay_to: line.pay_to }).filter(d => !d.received && !d.custom).map(d => d.key);
+    return miss.concat(p && p.secure ? [] : ['bank_details']);
   }
   /* the status on screen: Paid · Cancelled · In run (a Draft run) · Submitted · else Not due (due date ahead) · Missing docs · Ready */
   function lineStatus(state, line, today) {
@@ -230,7 +252,7 @@ Object.assign(KT.rules, (function (R, C) {
     const payee = l ? payeeOfLine(state, l) : pkg ? (pkg.payee_id ? payeeById(state, pkg.payee_id) : null) || payeeOfKol(state, pkg.kol_id) : deal ? R.payeeOfDeal(state, deal) : null;   // CR-16: the deal's payee
     const base0 = l || pkg || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
       price_basis: null, wht_rate: null, pay_to: 'payee', status: 'open' };
-    const base = !l && o.docsLine ? Object.assign({}, base0, { docs: o.docsLine.docs }) : base0;   // CR-27: the documents of a row not sent yet
+    const base = !l && o.docsLine ? Object.assign({}, base0, { docs: o.docsLine.docs, docs_one: o.docsLine.docs_one, docs_note: o.docsLine.docs_note }) : base0;   // CR-27 · CR-32: the documents of a row not sent yet
     const tax = l ? { gross: l.gross, vat: l.vat, wht: l.wht, net: l.net, wht_rate: l.wht_rate } : taxOf(state, base, payee);
     const status = l ? lineStatus(state, l, today) : !pkg && !o.inst.reached ? 'not_due' : docsRequired(state, base, payee).length ? 'missing_docs' : 'ready';
     const kol = base.kol_id ? R.kolById(state, base.kol_id) : null;
@@ -287,14 +309,14 @@ Object.assign(KT.rules, (function (R, C) {
       kol_id: item.kol_id, account_handle: item.account_handle, campaign_id: item.campaign_id, project_label: item.project_label, payee_type: payee ? payee.payee_type : 'individual',
       pay_to: o.pay_to === 'reimburse' ? 'reimburse' : 'payee', reimburse_user: o.pay_to === 'reimburse' ? o.reimburse_user || null : null, price_basis: o.price_basis || 'gross',
       agreed_amount: round2(o.agreed_amount), gross: tax.gross, vat: tax.vat, wht_rate: tax.wht_rate, wht: tax.wht, net: tax.net, due_date: item.due_date || null,
-      docs_check: Object.fromEntries(['id_copy', 'bank_book', 'company_cert', 'vat_cert', 'post_evidence'].map(k => [k, !miss.includes(k)])),
+      docs_check: Object.fromEntries(['id_copy', 'bank_book', 'company_cert', 'vat_cert', 'post_proof'].map(k => [k, !miss.includes(k)])),
       status: 'open', run_id: null, printed: false, paid_date: null, wht_cert_sent_date: null, cancel_reason: null, note: trim(o.note) || null, created_by: o.user || null, created_at: o.now || null };
   }
   /* CR-27 — a row with a docs-only line becomes a full line (Send · Mark paid · Hold): today's amounts, its documents kept */
   function promoteDocsLine(state, item, o) {
     const l = item.docsLine; if (!isDocsOnly(l)) return null;
     const fresh = newLine(state, item, Object.assign({}, o, { lineId: l.line_id }));
-    Object.assign(l, fresh, { docs: lineDocs(l), created_by: l.created_by, created_at: l.created_at }); delete l.docs_only;
+    Object.assign(l, fresh, { docs: lineDocs(l), docs_one: l.docs_one || null, docs_note: l.docs_note != null ? l.docs_note : null, created_by: l.created_by, created_at: l.created_at }); delete l.docs_only;
     return l;
   }
   function validateRequest(state, o) {
@@ -347,7 +369,7 @@ Object.assign(KT.rules, (function (R, C) {
       borne: round2(live.filter(l => l.price_basis === 'net').reduce((a, l) => a + (l.gross - l.agreed_amount), 0)) };
   }
   const lineName = (state, l) => ((l.kol_id && R.kolById(state, l.kol_id)) || {}).display_name || l.account_handle || l.line_id;
-  const docLabel = k => (k === 'bank_details' ? C.payee.missingBank : k === 'post_evidence' ? C.pay.postEvidence : C.payee.docs[k]);
+  const docLabel = k => (k === 'bank_details' ? C.payee.missingBank : k === 'post_evidence' || k === 'post_proof' ? C.pay.docs.postProof : C.payee.docs[k]);
   /* §4.6 Checks — ✕ cannot submit: documents / bank details missing · bank details changed and not verified · gross 0 · the same instalment in another run or paid · reimburse without the person ·
      ! amount differs from the deal · term not set · 10,000 and above · bank details changed after submit (re-export) · a line cancelled with its deal · i net basis (WHT borne) · reimburse */
   function runChecks(state, run, today) {
@@ -370,7 +392,7 @@ Object.assign(KT.rules, (function (R, C) {
         if (!termOf(deal)) warns.push(Object.assign(at(M.runTerm(who)), { kind: 'term', who }));
         if (deal.status === 'Cancel') warns.push(at(M.runDealCancelled(who)));
       }
-      if (l.gross >= S.bands[1]) warns.push(Object.assign(at(M.runBig(who)), { kind: 'big', who }));
+      if (l.gross >= BIG_AMOUNT) warns.push(Object.assign(at(M.runBig(who)), { kind: 'big', who }));
       if (run.status !== 'draft' && p && l.payee_version_at_submit != null && (p.details_version || 0) !== l.payee_version_at_submit) warns.push(at(M.runChangedAfter(who)));
       if (l.price_basis === 'net' && l.gross > l.agreed_amount) infos.push(at(M.runBorne(who, round2(l.gross - l.agreed_amount).toFixed(2))));
       if (l.pay_to === 'reimburse' && l.reimburse_user) infos.push(at(M.runReimburse(who, R.changedByName(state, l.reimburse_user))));
@@ -524,28 +546,41 @@ Object.assign(KT.rules, (function (R, C) {
   /* CR-09 §4.15.1 — PR_09_10_26_PR-2026-10-09.xlsx (the pay date, then the run) */
   const prFileName = (payDate, runId) => `PR_${payDate.slice(8, 10)}_${payDate.slice(5, 7)}_${payDate.slice(2, 4)}${runId ? '_' + runId : ''}.xlsx`;
   const PR_TYPE = { deal: 'KOL', legacy: 'KOL', affiliate: 'AFF', other: 'Other' };
-  /* run → the sheets of the PR (one per band that has lines + Summary) · details: Map payee_id → decrypted bank details (only while unlocked), or null */
+  /* CR-32 §2.5 — the sheet names of the PR: "ยอดน้อยกว่า 1,000 091026" · "ยอด 1,000-3,000 091026" · "ยอดมากกว่า 3,000 091026" (a sheet name cannot hold "/") */
+  const prSheetNames = S => { const f = n => Number(n).toLocaleString('en-US'); return [C.pay.prSheetUnder(f(S.bands[0])), C.pay.prSheetMid(f(S.bands[0]), f(S.bands[1])), C.pay.prSheetOver(f(S.bands[1]))]; };
+  /* the columns of a band's sheet: No · Project · ชื่อ Account · Type · ชื่อ-นามสกุล · ที่อยู่ตามบัตรประชาชน · ธนาคาร · เลขบัญชี · จำนวนเงิน · VAT 7% · WHT 3% ·
+     จำนวนเงินที่ต้องชำระ · Link · PIC · Print · Email / ที่อยู่ส่งใบ WHT · Payee ID · Deal ID — under the first band there is no VAT / WHT (no tax under ฿1,000) */
+  function prColumns(S, band) {
+    const P = C.pay, cols = ['no', 'project', 'account', 'type', 'full_name', 'id_address', 'bank', 'account_no', 'gross', 'vat', 'wht', 'net', 'link', 'pic', 'print', 'wht_contact', 'payee_id', 'deal_id'];
+    return cols.filter(k => band > 0 || (k !== 'vat' && k !== 'wht')).map(k => ({ key: k, head: k === 'vat' ? P.prVat(S.vat_rate) : k === 'wht' ? P.prWht(S.default_wht_individual) : P.prCol[k] }));
+  }
+  /* one PR row of a line (details = the payee's decrypted fields, in memory only) — numbers stay numbers */
+  function prRow(state, l, i, details) {
+    const P = C.pay, p = payeeOfLine(state, l), rec = details && p ? details.get(p.payee_id) || null : null, deal = dealOf(state, l.deal_id);
+    const names = deal ? R.dealProjectNames(state, deal) : [], kol = l.kol_id ? R.kolById(state, l.kol_id) : null;
+    const x = { line: l, payee: p, deal, deal_id: l.deal_id, milestone: l.milestone, pay_to: l.pay_to };
+    const link = l.pay_to === 'reimburse' && l.reimburse_user ? P.prReimburse(R.changedByName(state, l.reimburse_user)) : R.docsLinks(state, x).join('\n');
+    const type = l.source === 'affiliate' || (kol && R.partnerTypeOf(kol) === 'affiliate') ? 'AFF' : PR_TYPE[l.source] || 'Other';
+    return { no: i + 1, project: names.length ? names.join(', ') : l.project_label || (deal ? R.campaignName(state, deal.campaign_id) : ''), account: l.account_handle || '', type,
+      full_name: rec ? rec.full_name || '' : '', id_address: rec ? rec.id_address || '' : '', bank: rec ? bankPr(state.lookups, rec.bank_name) : p ? bankPr(state.lookups, p.bank_name) || '' : '',
+      account_no: rec ? rec.account_no || '' : '', gross: { v: l.gross, money: true }, vat: { v: l.vat, money: true }, wht: { v: l.wht, money: true }, net: { v: l.net, money: true },
+      link, pic: picOfLine(state, l, deal) || '', print: { v: !!l.printed, t: 'b' }, wht_contact: rec ? rec.wht_contact || '' : '', payee_id: (p && p.payee_id) || '', deal_id: l.deal_id || '' };
+  }
+  /* run → the sheets of the PR (one per band that has lines, the run line on top · "รวม" at the bottom) + Summary · details: Map payee_id → decrypted bank details, or null */
   function prSheets(state, run, details) {
-    const P = C.pay, S = paySettings(state.lookups), ddmmyy = `${run.pay_date.slice(8, 10)}${run.pay_date.slice(5, 7)}${run.pay_date.slice(2, 4)}`;
+    const P = C.pay, S = paySettings(state.lookups), ddmmyy = `${run.pay_date.slice(8, 10)}${run.pay_date.slice(5, 7)}${run.pay_date.slice(2, 4)}`, names = prSheetNames(S);
     const lines = runLines(state, run.run_id).filter(l => l.status !== 'cancelled'), sheets = [], bandRows = [], runLine = P.prRunLine(run.run_id, R.dmy(run.pay_date));
+    const colL = n => String.fromCharCode(65 + n);
     [0, 1, 2].forEach(b => {
       const list = lines.filter(l => bandOf(l.gross, S) === b); if (!list.length) return;
-      const rows = [[{ v: runLine, bold: true }], P.prCols.map(h => ({ v: h, bold: true }))];
-      list.forEach((l, i) => {
-        const p = payeeOfLine(state, l), rec = details && p ? details.get(p.payee_id) || null : null, deal = dealOf(state, l.deal_id);
-        const posts = deal ? R.postsOf(state, deal.deal_id).map(x => x.post_link).filter(Boolean) : [];
-        const link = [p && p.docs_link, ...posts, l.note, l.pay_to === 'reimburse' && l.reimburse_user ? P.prReimburse(R.changedByName(state, l.reimburse_user)) : null].filter(Boolean).join('\n');
-        const pic = picOfLine(state, l, deal);
-        rows.push([i + 1, l.project_label || (deal ? R.campaignName(state, deal.campaign_id) : ''), l.account_handle || '', PR_TYPE[l.source] || 'Other',
-          rec ? rec.full_name || '' : '', rec ? rec.id_address || '' : '', rec ? rec.phone || '' : '', rec ? rec.wht_contact || '' : '', { v: false, t: 'b' },
-          rec ? rec.bank_name || '' : '', rec ? rec.account_no || '' : '', { v: l.gross, money: true }, { v: l.vat, money: true }, { v: l.wht, money: true }, `${l.wht_rate}%`,
-          { v: l.net, money: true }, link, pic || '', { v: !!l.printed, t: 'b' }, (p && p.payee_id) || '', l.line_id]);
-      });
-      const last = rows.length;   // the run line is row 1, the header row 2, lines 3 … last
-      const sum = col => ({ v: `SUM(${col}3:${col}${last})`, t: 'f', bold: true, money: true });
-      const total = new Array(P.prCols.length).fill(''); total[1] = { v: P.prTotal, bold: true }; total[11] = sum('L'); total[12] = sum('M'); total[13] = sum('N'); total[15] = sum('P');
+      const cols = prColumns(S, b), rows = [[{ v: runLine, bold: true }], cols.map(c => ({ v: c.head, bold: true }))];
+      list.forEach((l, i) => { const r = prRow(state, l, i, details); rows.push(cols.map(c => r[c.key])); });
+      const last = rows.length, total = cols.map(() => '');   // the run line is row 1, the header row 2, lines 3 … last
+      total[1] = { v: P.prTotal, bold: true };
+      cols.forEach((c, n) => { if (['gross', 'vat', 'wht', 'net'].includes(c.key)) total[n] = { v: `SUM(${colL(n)}3:${colL(n)}${last})`, t: 'f', bold: true, money: true }; });
       rows.push(total);
-      sheets.push({ name: `${P.prSheet[b]} ${ddmmyy}`, rows, freeze: 2, widths: [6, 22, 20, 7, 24, 34, 14, 26, 10, 18, 18, 14, 12, 12, 9, 16, 40, 10, 10, 11, 12] });
+      const W = { no: 6, project: 24, account: 20, type: 7, full_name: 24, id_address: 34, bank: 12, account_no: 18, gross: 14, vat: 12, wht: 12, net: 16, link: 40, pic: 10, print: 10, wht_contact: 26, payee_id: 11, deal_id: 11 };
+      sheets.push({ name: `${names[b]} ${ddmmyy}`, rows, freeze: 2, widths: cols.map(c => W[c.key]) });
       const t = runTotals(list); bandRows.push([amountLabels(S)[b], t.n, { v: t.gross, money: true }, { v: t.vat, money: true }, { v: t.wht, money: true }, { v: t.net, money: true }]);
     });
     const t = runTotals(lines);
@@ -580,5 +615,5 @@ Object.assign(KT.rules, (function (R, C) {
     payeeHasPaid, canEditPayee, PAYEE_CSV_COLS, normHandle, planPayeeImport, scrubSensitive,
     LINE_STATUSES, payeeOfLine, postEvidence, docsRequired, lineDocs, isDocsOnly, promoteDocsLine, docLabel, lineStatus, taxOf, expectedDue, payItem, payQueue, payCards, canRequest, newLine, validateRequest, dealPayItems,
     RUN_STATUSES, nextRunDate, runIdFor, newRun, runLines, runTotals, runChecks, addToRun, removeFromRun, submitRun, syncDealPayment, syncDeals, markPaid, undoPaid, reopenRun, editLineAmount,
-    amountLabels, runStatusKey, runStatusLabel, returnRun, prFileName, prSheets, resetVault, paidLines, whtNotSent, markWhtSent, whtSummary, WHT_SUMMARY_COLS, validateManual, newManualLine, markPaidOutside, cancelLines, cancelDealLines };
+    amountLabels, runStatusKey, runStatusLabel, returnRun, prFileName, prSheets, prColumns, prSheetNames, prRow, migrateBandsV32, BIG_AMOUNT, banksDefault, bankOf, bankShort, bankPr, bankLine, filledFields, resetVault, paidLines, whtNotSent, markWhtSent, whtSummary, WHT_SUMMARY_COLS, validateManual, newManualLine, markPaidOutside, cancelLines, cancelDealLines };
 })(KT.rules, KT.content));

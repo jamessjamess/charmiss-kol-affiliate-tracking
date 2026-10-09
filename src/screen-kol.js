@@ -92,7 +92,7 @@ KT.screens.kol = (function () {
     const lists = {
       platform: [L.platform_list || [], T.allPlatforms], tier: [[...rules].sort((a, b) => a.min_followers - b.min_followers).map(t => t.tier), T.allTiers],
       lastWorked: [R.LAST_WORKED.map(v => ({ value: v, label: P.last[v] })), P.lastAll],
-      partner: [R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label })), PT.allPartners],   // CR-25: Both is in KOL and in Affiliate
+      partner: [R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label })), PT.allPartners],   // CR-25 · CR-32: KOL · Affiliate
     };
     document.querySelectorAll('#km_tools [data-kf]').forEach(el => { const [items, ph] = lists[el.dataset.kf]; el.innerHTML = optionsHTML(items, f[el.dataset.kf], ph); });
     const pop = { category: [T.category, distinct(s.kol_master.map(k => k.kol_category))], type: [T.type, []],
@@ -153,12 +153,12 @@ KT.screens.kol = (function () {
       `</tbody></table></div>` + (km.rows.length > shown.length ? `<div class="loadmore"><button type="button" class="btn" data-more>${esc(T.loadMore(km.rows.length - shown.length))}</button></div>` : '');
     markSelected(); bulkBar();
   }
-  /* CR-25 §3.1 — "911 partners (KOL 900 · Affiliate 8 · Both 3) · 928 accounts" */
+  /* CR-25 §3.1 — CR-32 §2.4: "912 partners · KOL 912 · Affiliate 0 · 928 accounts" */
   function countText(s) {
     const n = R.partnerCounts(s.kol_master), parts = R.partnerTypesOf(s.lookups).map(t => `${t.label} ${R.fmtNum(n[t.key])}`).join(' · ');
     return PT.count(R.fmtNum(s.kol_master.length), parts, R.fmtNum(s.kol_accounts.length));
   }
-  /* CR-25 §3.1 — the ticked KOLs → one Partner type (KOL · Affiliate · Both) */
+  /* CR-25 §3.1 — the ticked KOLs → one Partner type (KOL · Affiliate) */
   function setPartnerBulk(anchor) {
     if (!guard('kol.edit')) return;
     const ids = [...km.selected]; if (!ids.length) return;

@@ -72,10 +72,15 @@ KT.samples = (function () {
   /* ---------- the Deal drawer's Samples section ---------- */
   function sectionHTML(d) {
     const list = R.shipmentsOf(state(), d.deal_id), ok = R.canEditShip(U.actor(), d, null), td = today();
-    const da = defAddr(d.kol_id);
+    const da = defAddr(d.kol_id), canA = R.canEditPayee(state(), U.actor(), null, R.kolById(state(), d.kol_id)), open = canA && addrOpen.has(d.deal_id);
+    /* CR-32 §2.1 — No address · Add address: the form here (Unlock to add while the vault is locked) · Open in KOL Master (Payee & shipping, ‹ Back to the deal) */
+    const vs = KT.payee.nkVaultState();
+    const form = open ? `<div class="sm-ai" data-smai="${esc(d.deal_id)}">${KT.payee.addrInlineHTML('sm' + d.deal_id, {})}<div class="mv-err" data-err="ai_box"></div>` +
+      `<div class="btns sm-aibtns"><button type="button" class="btn small" data-smaicancel="${esc(d.deal_id)}">${esc(C.common.cancel)}</button>${vs === 'open' ? `<button type="button" class="btn small primary" data-smaisave="${esc(d.deal_id)}">${esc(SM.addAddressIn)}</button>` : ''}</div></div>` : '';
     const addr = `<div class="sm-addr"><span class="muted small">${esc(SM.shipToDefaultL)}:</span> ${da ? `<b>${esc(da.label)}</b> ` : ''}${onFile(d.kol_id) ? `<span class="chip ok-chip">${esc(SM.addressOnFile)}</span>` : `<span class="chip">${esc(SM.noAddress)}</span>`}` +
-      (R.canEditPayee(state(), U.actor(), null, R.kolById(state(), d.kol_id)) ? ` <button type="button" class="link" data-smship="${esc(d.kol_id)}">${esc(da ? SM.shippingDetails : SM.addAddress)}</button>` : '') +
-      (onFile(d.kol_id) && KT.vault.isUnlocked(state().lookups.payee_vault) && U.can('payee.unlock') ? `<div class="sm-shipsecure" data-smsecure="${esc(d.kol_id)}"><span class="muted small">…</span></div>` : '') + `</div>`;
+      (canA ? (da ? ` <button type="button" class="link" data-smship="${esc(d.kol_id)}">${esc(SM.shippingDetails)}</button>` : open ? '' : ` <button type="button" class="link" data-smaddin="${esc(d.deal_id)}">${esc(SM.addAddressIn)}</button>`) : '') +
+      (d.kol_id ? ` · <button type="button" class="link small" data-smkm="${esc(d.kol_id)}" data-deal="${esc(d.deal_id)}">${esc(SM.openInKm)}</button>` : '') +
+      (onFile(d.kol_id) && KT.vault.isUnlocked(state().lookups.payee_vault) && U.can('payee.unlock') ? `<div class="sm-shipsecure" data-smsecure="${esc(d.kol_id)}"><span class="muted small">…</span></div>` : '') + form + `</div>`;
     const rows = list.map(sh => { const st = R.sampleStatus(sh, td), old = R.isLegacyDelivered(sh);
       /* CR-11 §4.6 — delivered from the old files: read only, "—" with the reason on hover */
       if (old) return legacyRow(sh, st);
@@ -199,8 +204,32 @@ KT.samples = (function () {
         s.deal_events.push(R.updateShipment(x, { kind: 'edit', address_id: v }, { eventId: store.newEventId(), now: new Date().toISOString(), user: userId() })); commit(SM.done(1)); if (after) after(); return true; } });
   }
 
+  /* CR-32 §2.1 — the deals with the Add address form open (Deal modal › Shipments) */
+  const addrOpen = new Set();
+  /* Add address › Save: checked · encrypted (the KOL's address, default when ticked or the first) · "Use for n open shipments?" (still to ship, no address of their own) */
+  async function saveAddrHere(dealId, after) {
+    const d = dealOf(dealId), box = document.querySelector(`[data-smai="${CSS.escape(dealId)}"]`); if (!d || !box) return;
+    const x = KT.payee.addrInlineRead(box), errs = KT.payee.addrInlineCheck(d.kol_id, x);
+    box.querySelectorAll('[data-err^="ai_"]').forEach(el => { const er = errs.find(y => y.field === el.dataset.err); el.innerHTML = er ? `<span class="err">${esc(er.msg)}</span>` : ''; });
+    box.querySelectorAll('[data-ai]').forEach(el => el.classList.toggle('invalid', errs.some(y => y.field === 'ai_' + el.dataset.ai)));
+    if (errs.length) { const f = box.querySelector('.invalid'); if (f) f.focus(); return; }
+    let rec = null; try { rec = await KT.payee.addrInlineSave(d.kol_id, x); } catch (er) { toast(C.payee.noCrypto); return; }
+    box.querySelectorAll('[data-ai]').forEach(el => { if (el.type !== 'checkbox') el.value = ''; });   // the typed values leave the page
+    addrOpen.delete(dealId); commit(C.payee.addressAdded(rec.label));
+    const openShips = R.shipmentsOf(state(), dealId).filter(sh => sh.status === 'to_ship' && !sh.address_id && !R.isLegacyDelivered(sh));
+    if (openShips.length && await U.confirmDialog(C.payee.useForOpen(openShips.length), C.payee.useForOpenBody, C.payee.useYes, false, C.payee.useNo)) {
+      openShips.forEach(sh => { const s2 = R.shipmentsOf(state(), dealId).find(y => y.shipment_id === sh.shipment_id); if (s2) s2.address_id = rec.address_id; });
+      commit(SM.shippingSaved);
+    }
+    if (after) after();
+  }
   /* clicks in the drawer or in the Samples tab → true when handled */
   function click(e, after) {
+    const ain = e.target.closest('[data-smaddin]'); if (ain) { addrOpen.add(ain.dataset.smaddin); if (after) after(); setTimeout(() => { const f = document.querySelector(`[data-smai="${CSS.escape(ain.dataset.smaddin)}"] input, [data-smai="${CSS.escape(ain.dataset.smaddin)}"] button`); if (f) f.focus(); }, 30); return true; }
+    const aic = e.target.closest('[data-smaicancel]'); if (aic) { addrOpen.delete(aic.dataset.smaicancel); if (after) after(); return true; }
+    const ais = e.target.closest('[data-smaisave]'); if (ais) { saveAddrHere(ais.dataset.smaisave, after); return true; }
+    if (e.target.closest('.sm-ai [data-aiunlock]')) { KT.payee.unlockDialog(() => { if (after) after(); }); return true; }
+    const km = e.target.closest('[data-smkm]'); if (km) { KT.profile.open(km.dataset.smkm, { tab: 'payee', backDeal: km.dataset.deal || null }); return true; }
     const pu = e.target.closest('[data-smpurchase], [data-smunpurchase]'); if (pu) { const m = pu.closest('details'); if (m) m.open = false; purchase(pu.dataset.smpurchase || pu.dataset.smunpurchase, !!pu.dataset.smunpurchase, after); return true; }
     const qk = e.target.closest('[data-smquick]'); if (qk) { const m = qk.closest('details'); if (m) m.open = false; quick(qk.dataset.smquick, [qk.dataset.sm], m ? m.querySelector('summary') : qk, after); return true; }   // CR-17
     const ud = e.target.closest('[data-smundo]'); if (ud) { const m = ud.closest('details'); if (m) m.open = false; undoDeliver(ud.dataset.smundo, after); return true; }

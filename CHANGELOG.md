@@ -2,6 +2,15 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-32 v1.2 · 09/10/2026 — ที่อยู่ & payee ในหน้า · Delivered ตั้งแต่ Draft 1 · เอกสารจ่ายเงิน · ไม่มี Both · Ready to send · Export ตาม PR
+schema **คงที่ 23** (payment_lines `docs_one` · `docs_note` · payee `details_filled` · lookups.banks) · ยอดเงินเท่าเดิม
+- **ในหน้า:** Deal modal › Shipments `Add address` (Unlock to add · "Use for 1 open shipment?") · Payment details › Pay to `Add payee` (ชื่อตามบัตร · ที่อยู่ตามบัตร · ธนาคาร · บัญชี · Email WHT) · `Open in KOL Master` · หน้า Shipments แถว Missing `Add address`
+- **Move:** Draft k / Approve / Post → ☑ Mark sample as delivered (ติ๊กไว้ · To ship = Shipped + Delivered วันเดียวกัน · KOL buys own = purchased) · Post link คนละแพลตฟอร์ม → เตือน "This link isn't an Instagram link"
+- **เอกสาร:** ID copy · Bank book · Post proof (Posted on) · All documents in one file · Note รวม · ตัด Bank details (เดิมที่ติ๊กไว้ = รายการเอง) · "Includes other fee ฿100"
+- **Partner type:** KOL · Affiliate เท่านั้น (Both เดิม → KOL ตอนโหลด + log) · header "911 partners · KOL 911 · Affiliate 0 · 928 accounts"
+- **Ready to send:** `rules.paymentReadiness` · กล่องใน Payment details · chip Ready / Missing n · ตัวกรอง · Send / Export เฉพาะแถวที่พร้อม (ข้าม = "n lines skipped") · Manager / Admin `Send anyway` (เหตุผล) · Mark paid เตือนอย่างเดียว
+- **Export for accounting:** คอลัมน์ / ชื่อ sheet ตาม PR (ช่วงยอด 1,000 · 3,000 · ใต้ 1,000 ไม่มี VAT / WHT) · Project = สินค้า · Link = เอกสาร · ธนาคารแบบ PR · ไม่มีเบอร์โทร / Line ID / Earn · Manager / Admin + vault ปลดล็อก · log "exported n lines · PR-…"
+
 ## CR-31 v1.0 · 09/10/2026 — Campaign mix · Deals toolbar · Move stage (วันที่ · Note · Contacted · New address) · แถบ Can’t save
 schema **คงที่ 23** (step_notes รับทุกขั้น `step_<ชื่อ>`) · ตัวเลขเงินเท่าเดิม
 - **By campaign:** Pillar / KOL tier / Platform mix ใต้ Budget vs Actual (รวม = Committed ของ Campaign · ดาวน์โหลด / Excel `*_camp`)

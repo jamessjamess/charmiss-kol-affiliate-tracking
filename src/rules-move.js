@@ -340,6 +340,10 @@ Object.assign(KT.rules, (function (R, C) {
           seen.set(key, i);
           const other = state.deal_posts.find(p => p.deal_id !== deal.deal_id && p.post_link && R.normLink(p.post_link) === key);
           if (other) errs.push(issue(fld, M.postDup(M.postN(i + 1), other.deal_id, ((R.kolById(state, (state.deals.find(x => x.deal_id === other.deal_id) || {}).kol_id) || {}).display_name) || '')));
+          /* CR-32 §2.2 — a link of another platform than the account's (Instagram account · facebook.com link): a warning, never a block */
+          const accId = r.account_id || ((state.deal_posts.find(p => p.post_id === r.post_id) || {}).account_id), acc = accId ? (state.kol_accounts || []).find(a => a.account_id === accId) : null;
+          const pl = acc ? R.platformFromLink(r.link) : '';
+          if (pl && acc.platform && acc.platform !== 'Other' && pl !== acc.platform) warns.push(issue(fld, C.move.linkNotPlatform(acc.platform)));
         });
         if (isISODate(moveDate) && moveDate > td) errs.push(issue('date', M.movePostFuture));
       } else {
@@ -509,6 +513,18 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* before Confirm QT (Contacted): Rate card / Payment term start empty — empty keeps what the deal has */
   const beforeQt = (lookups, toSub) => { const to = R.stepOf(lookups, toSub), qt = R.stepOf(lookups, QT); return !!to && !!qt && !R.isCancelStep(to) && to.sort_order < qt.sort_order; };
-  return { moveDateLabel, beforeQt, stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter,
+  /* ===================== CR-32 §2.2 — Mark sample as delivered from Draft 1 on ===================== */
+  /* a move to Draft k · Approve · Post: the KOL is working, so the sample reached them (ticked by default · it can be unticked) */
+  const deliverStep = st => !!st && !R.isCancelStep(st) && (!!R.draftNo(st) || R.isApproveStep(st) || R.isPostStep(st));
+  /* the shipment it is about: not delivered yet (to ship · problem · on the way · the KOL buys it) — not the old imported ones */
+  const shipmentToDeliver = (state, deal) => (R.shipmentsOf(state, deal.deal_id) || []).find(x => ['to_ship', 'problem', 'shipped', 'kol_purchase'].includes(x.status) && !R.isLegacyDelivered(x)) || null;
+  /* → the events (shipped + delivered the same day for one never marked shipped · delivered · KOL buys own: purchased) · null when there is none */
+  function deliverOnMove(state, deal, date, ctx) {
+    const sh = shipmentToDeliver(state, deal); if (!sh || !isISODate(date)) return null;
+    if (sh.status === 'kol_purchase') return [R.updateShipment(sh, { kind: 'purchased', date }, { eventId: ctx.eventId(), now: ctx.now, user: ctx.user })];
+    return R.shipQuick(state, sh, sh.status === 'shipped' ? 'delivered' : 'both', { date }, ctx);
+  }
+
+  return { deliverStep, shipmentToDeliver, deliverOnMove, moveDateLabel, beforeQt, stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter,
     CANCEL_OTHER, CANCEL_REASON_KEYS, cancelReasonsDefault, cancelReasonsOf, cancelReasonLabel, cancelImpact };
 })(KT.rules, KT.content));

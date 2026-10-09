@@ -508,13 +508,13 @@ KT.ui = (function () {
     return `<span class="rel rel-${p.badge}" title="${esc(tip)}">${esc(p.badge === 'none' || short || pct == null ? b : PF.badgeLine(b, pct))}</span>`;
   }
 
-  /* ===================== CR-25 — Partner type (KOL · Affiliate · Both) ===================== */
-  /* the small chip beside a name (New deal · Pipeline card · Deal modal): AFF · KOL+AFF · nothing for a KOL (§6 #6) */
+  /* ===================== CR-25 — Partner type (KOL · Affiliate — CR-32: no Both) ===================== */
+  /* the small chip beside a name (New deal · Pipeline card · Deal modal): AFF · nothing for a KOL (§6 #6) */
   function partnerChipHTML(k) {
     const t = R.partnerTypeOf(k); if (t === 'kol') return '';
     return `<span class="ptc ptc-${t}" title="${esc(C.partner.chipTip(R.partnerTypeLabel(state().lookups, t)))}">${esc(C.partner.chip[t])}</span>`;
   }
-  /* KOL Master › Partner: the word (KOL grey · Affiliate · Both) */
+  /* KOL Master › Partner: the word (KOL grey · Affiliate) */
   const partnerTagHTML = k => { const t = R.partnerTypeOf(k); return `<span class="ptag ptag-${t}">${esc(R.partnerTypeLabel(state().lookups, t))}</span>`; };
   /* the buttons of Partner type: KOL · Affiliate · Both (forms) · o.all → All first ('' — filters) · o.keys → only these */
   function partnerSegHTML(attr, value, o = {}) {

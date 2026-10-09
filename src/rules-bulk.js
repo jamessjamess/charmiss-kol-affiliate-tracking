@@ -37,7 +37,7 @@ Object.assign(KT.rules, (function (R, C) {
     kol_type: '', kol_category: '', gender: '', contact_channel: '', contact_id: '', pic: R.picName(user) || '', default_payment_term: '', partner_type: 'kol' }; };
 
   /* §4.10 — Create KOL from New deal: Name and PIC are needed · a handle without spaces or @ · followers ≥ 0 · a link that is a link ·
-     CR-30 §3.5: Partner type KOL / Affiliate (Both is set later) · Platform * · Profile link * (https://) · Username * (taken from the link · no @) */
+     CR-30 §3.5: Partner type KOL / Affiliate · Platform * · Profile link * (https://) · Username * (taken from the link · no @) */
   function validateCreateKol(state, x) {
     const errs = [], h = trim(x.handle), NK = C.newKol;
     if (!trim(x.display_name)) errs.push({ field: 'ck_display_name', msg: M.kolNameRequired });
@@ -116,7 +116,7 @@ Object.assign(KT.rules, (function (R, C) {
       if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.tier && tier !== f.tier) || (f.type && (k.kol_type || '') !== f.type) || (f.category && k.kol_category !== f.category) ||
         (f.owner && (k.pic || '') !== (f.owner === '__none' ? '' : f.owner)) || (f.status && (k.kol_status || 'Active') !== f.status) || (f.lastWorked && pf.bucket !== f.lastWorked) ||
         (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id)) || (worked && !worked.has(k.kol_id)) ||
-        (f.partner && !R.partnerMatch(k, f.partner))) return null;   // CR-25: Partner type (Both is in KOL and in Affiliate)
+        (f.partner && !R.partnerMatch(k, f.partner))) return null;   // CR-25: Partner type
       return { k, accs, mf, tier, pf, inCamp: inCamp.has(k.kol_id) };
     }).filter(Boolean).sort((a, b) => a.k.display_name.localeCompare(b.k.display_name, 'th'));
   }

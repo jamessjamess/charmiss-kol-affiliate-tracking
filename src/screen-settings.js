@@ -141,7 +141,7 @@ KT.screens.settings = (function () {
           ${own ? `<button type="button" class="link" data-crdel${used ? ` disabled title="${esc(LS.inUse(used))}"` : ''}>${esc(LS.del)}</button>` : ''}</div>`; }).join('') +
       `<div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
   }
-  /* CR-25 §3.1 — Partner types (lookups.partner_types): the 3 keys stay (KOL · Affiliate · Both) · only the words change · a blank word = the default */
+  /* CR-25 §3.1 — Partner types (lookups.partner_types): the 2 keys stay (KOL · Affiliate — CR-32: no Both) · only the words change · a blank word = the default */
   function partnerTypesHTML() {
     const PT = C.partner, s = state(), n = R.partnerCounts(s.kol_master);
     return `<div class="card"><div class="card-head"><h3>${esc(PT.nav)}</h3></div><p class="hint" style="margin-top:0">${esc(PT.hint)}</p>` +
@@ -344,7 +344,7 @@ KT.screens.settings = (function () {
           p = R.blankPayee(s, { payee_id: U.store.newId('payee'), kol_id: r.kol ? r.kol.kol_id : null, account_handle: r.handle, payee_type: r.payee_type, label, is_default: first, user: uid, now }); s.payee_profiles.push(p);
         }
         const replaced = !!p.secure;
-        Object.assign(p, { payee_type: r.payee_type, secure, bank_name: r.details.bank_name, account_last4: R.last4(r.details.account_no), docs_link: r.docs_link || p.docs_link,
+        Object.assign(p, { payee_type: r.payee_type, secure, bank_name: r.details.bank_name, account_last4: R.last4(r.details.account_no), details_filled: R.filledFields(r.details), docs_link: r.docs_link || p.docs_link,
           details_version: (p.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid, updated_at: now, updated_by: uid });
         if (replaced && R.payeeHasPaid(s, p.payee_id)) Object.assign(p, { needs_verification: true, verified_at: null, verified_by: null });
         s.deal_events.push({ event_id: U.store.newEventId(), deal_id: null, payee_id: p.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });

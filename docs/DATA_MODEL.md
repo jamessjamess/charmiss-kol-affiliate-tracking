@@ -352,6 +352,18 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 
 **Migration v23:** `deal_gencodes` = [] · deals `other_fee` = 0 · `other_fee_note` = null · `handle` ตัด @ / ช่องว่าง · ไม่แตะยอดเงิน
 
+## CR-32 — schema คงที่ 23 (เอกสารจ่ายเงิน · Ready to send · ไม่มี Both)
+
+| ที่ | เปลี่ยน | หมายเหตุ |
+|---|---|---|
+| `payment_lines.docs[]` | key `id_copy` · `bank_book` · `post_proof` (+ `posted_on`) · `company_cert` · `vat_cert` · รายการเอง (`custom`) · ไม่มี `note` รายรายการ | อ่านข้อมูลเดิม: `post_evidence` = `post_proof` · `bank_details` ที่ติ๊ก = รายการเอง "Bank details" · note เดิม → Note รวม (`R.lineDocsOf`) |
+| `payment_lines` | + `docs_one` { on · link (https) · received_at } · + `docs_note` | All documents in one file (1 ลิงก์ = ครบทุกรายการ) · Note รวม |
+| `payee_profiles` | + `details_filled` [ชื่อฟิลด์ใน `secure` ที่กรอกแล้ว] | ไม่มีค่าจริง · เขียนทุกครั้งที่บันทึก payee · payee เก่าได้ตอน Unlock ครั้งถัดไป |
+| `lookups.banks` | [{ name · short (KBank) · pr (กสิกร) }] | หน้าจอ "KBank ••• 1234" · ไฟล์ PR ใช้ `pr` |
+| `lookups.payment_settings.bands` | ค่าเดิม 1,000 · 10,000 → 1,000 · 3,000 ครั้งเดียว (`bands_cr32`) | ช่วงกลางรวมยอด 3,000 · คำเตือนยอดสูงในรอบจ่ายยังเป็น ฿10,000 |
+| `kol_master.partner_type` | `kol` · `affiliate` เท่านั้น | `both` → `kol` ตอนโหลด + `deal_events` type `partner_type_changed` (deal_id null · kol_id) note "partner_type both → kol" |
+| `deal_events` | type `payment_export` (run_id · note "exported n lines · PR-…") | ไม่เก็บเนื้อหาไฟล์ |
+
 ## CR-31 — schema คงที่ 23 (step_notes ทุกขั้น · IndexedDB archive)
 
 | ที่ | เปลี่ยน | หมายเหตุ |

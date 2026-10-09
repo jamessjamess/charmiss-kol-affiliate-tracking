@@ -36,7 +36,7 @@ KT.payee = (function () {
   function payeeCardHTML(s, kol, p) {
     const S = R.paySettings(s.lookups), miss = R.payeeDocsMissing(p), a = R.payeeActions(s, p), ok = R.canEditPayee(s, U.actor(), p, kol), use = R.payeeUse(s, p.payee_id);
     const terms = [PY.types[p.payee_type], p.vat_registered ? PY.vatShort : PY.noVat, PY.whtShort(p.default_wht_rate != null ? p.default_wht_rate : S.default_wht_individual), PY.basisShort[p.price_basis]].join(' · ');
-    const bank = p.secure ? `<b>${esc(PY.bankLine(p.bank_name, p.account_last4))}</b>${p.details_updated_at ? ` <span class="muted small">${esc(PY.updatedBy(R.dmy(p.details_updated_at.slice(0, 10)), userName(p.details_updated_by)))}</span>` : ''}`
+    const bank = p.secure ? `<b>${esc(R.bankLine(s.lookups, p))}</b>${p.details_updated_at ? ` <span class="muted small">${esc(PY.updatedBy(R.dmy(p.details_updated_at.slice(0, 10)), userName(p.details_updated_by)))}</span>` : ''}`
       : `<span class="chip warn-chip">${esc(PY.missing(PY.missingBank))}</span>`;
     const verify = p.needs_verification ? `<div class="chip err-chip" style="margin-top:6px">${esc(PY.needsVerify(R.dmy((p.details_updated_at || '').slice(0, 10)), userName(p.details_updated_by)))}</div>` +
         (can('payee.verify') ? ` <button type="button" class="btn small" data-payee-verify="${esc(p.payee_id)}">${esc(PY.markVerified)}</button>` : '')
@@ -218,7 +218,7 @@ KT.payee = (function () {
     const bankHTML = () => {
       if (mode === 'nocrypto') return `<div class="check warn">! <span>${esc(PY.noCrypto)}</span></div><div class="fields">${bankInputs()}</div>`;
       if (mode === 'novault') return `<div class="check warn">! <span>${esc(PY.vaultNotSetUp)}</span>${can('vault.admin') ? ` <button type="button" class="btn small" data-py-setup>${esc(PY.setUpVault)}</button>` : ''}</div><div class="fields">${bankInputs()}</div>`;
-      if (mode === 'saved') return `<div class="py-saved"><b>${esc(PY.savedLast4(p.bank_name, p.account_last4))}</b><span class="spacer"></span>` +
+      if (mode === 'saved') return `<div class="py-saved"><b>${esc(PY.savedLast4(R.bankShort(state().lookups, p.bank_name), p.account_last4))}</b><span class="spacer"></span>` +
         (can('payee.unlock') ? `<button type="button" class="btn small" data-py-unlock>${esc(PY.unlockToEdit)}</button>` : '') + `<button type="button" class="btn small" data-py-replace>${esc(PY.replace)}</button></div>`;
       return (mode === 'replace' ? `<div class="hint" style="margin-bottom:8px">${esc(PY.replaceHint)} <button type="button" class="link" data-py-keep>${esc(PY.keepSaved)}</button></div>` : '') + `<div class="fields">${bankInputs()}</div>`;
     };
@@ -293,7 +293,7 @@ KT.payee = (function () {
       /* CR-16 §4.2 — one default a KOL: the first payee is it · ticked = it takes over */
       if (kol && (makeDefault || !R.payeesOfKol(s3, kol.kol_id).some(x => x.is_default && x.payee_id !== rec.payee_id))) R.withDefault(s3.payee_profiles, 'payee_id', rec.payee_id);
       if (changed) {
-        Object.assign(rec, { secure, bank_name: R.trim(bank.bank_name) || null, account_last4: R.last4(bank.account_no), details_version: (rec.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid });
+        Object.assign(rec, { secure, bank_name: R.trim(bank.bank_name) || null, account_last4: R.last4(bank.account_no), details_filled: R.filledFields(R.bankRecord(bank)), details_version: (rec.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid });   // CR-32: the names of the filled fields
         /* §4.4 — bank details changed after a payment was made to them → verify with the KOL before the next submit */
         if (R.payeeHasPaid(s3, rec.payee_id)) Object.assign(rec, { needs_verification: true, verified_at: null, verified_by: null });
         s3.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: rec.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
@@ -416,7 +416,7 @@ KT.payee = (function () {
     if (x.ship) { const rec = R.newAddress({ address_id: store.newId('address'), kol_id: kolId, label: R.trim(x.ship.label), is_default: true, secure: shipSecure, now, user: uid }); s.shipping_addresses.push(rec); R.withDefault(s.shipping_addresses, 'address_id', rec.address_id); out.address = rec; }
     if (x.bank) {
       const p = R.blankPayee(s, { payee_id: store.newId('payee'), kol_id: kolId, user: uid, now });
-      Object.assign(p, { secure: bankSecure, bank_name: R.trim(x.bank.bank_name) || null, account_last4: R.last4(x.bank.account_no), details_version: 1, details_updated_at: now, details_updated_by: uid });
+      Object.assign(p, { secure: bankSecure, bank_name: R.trim(x.bank.bank_name) || null, account_last4: R.last4(x.bank.account_no), details_filled: R.filledFields(R.bankRecord(Object.assign({ full_name: '' }, x.bank))), details_version: 1, details_updated_at: now, details_updated_by: uid });
       s.payee_profiles.push(p); R.withDefault(s.payee_profiles, 'payee_id', p.payee_id); out.payee = p;
       s.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: p.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
     }
@@ -470,8 +470,66 @@ KT.payee = (function () {
   }
   const nkVaultWipe = root => { if (root) root.querySelectorAll('[data-nkv]').forEach(el => { el.value = ''; }); };
   /* the labels left on screen (never the details) */
-  const nkVaultLabels = out => [out.address ? out.address.label : '', out.payee ? PY.bankLine(out.payee.bank_name, out.payee.account_last4) : ''].filter(Boolean).join(' · ');
+  const nkVaultLabels = out => [out.address ? out.address.label : '', out.payee ? R.bankLine(state().lookups, out.payee) : ''].filter(Boolean).join(' · ');
+
+  /* ===================== CR-32 §2.1 — + Add payee, in place (Payments › Payment details › Pay to) ===================== */
+  /* locked until the vault is unlocked (Unlock to add) · Full name (as on ID) · ID-card address · Bank · Account name · Account number · Email / address for WHT certificate ·
+     ☑ Default · what is typed goes straight into KT.vault.encrypt (payeeInlineSave) and the boxes are wiped — only "KBank ••• 1234" stays on screen */
+  const PI_FIELDS = ['full_name', 'id_address', 'bank_name', 'account_name', 'account_no', 'wht_contact'];
+  const PI_REQ = ['full_name', 'id_address', 'bank_name', 'account_name', 'account_no'];
+  function payeeInlineHTML(prefix, kolId) {
+    const st = nkvState(), id = k => `${prefix}_pi_${k}`, first = !R.payeesOfKol(state(), kolId).length;
+    if (st === 'none') return `<div class="ai-box hint">${esc(C.newKol.vaultNone)}</div>`;
+    if (st === 'locked') return `<div class="ai-box nk-lock">🔒 <span>${esc(C.newKol.vaultLocked)}</span>${can('payee.unlock') ? `<button type="button" class="btn small" data-piunlock>${esc(C.newKol.unlockToAdd)}</button>` : ''}</div>`;
+    const inp = (k, o = {}) => `<div class="field${o.wide ? ' wide' : ''}"><label for="${id(k)}">${esc(PY.bank[k])}${PI_REQ.includes(k) ? ' <span class="req">*</span>' : ''}</label>` +
+      (o.area ? `<textarea id="${id(k)}" data-pi="${k}" rows="2" spellcheck="false" autocomplete="off"></textarea>` : `<input id="${id(k)}" data-pi="${k}" autocomplete="off" spellcheck="false"${o.list ? ` list="${prefix}_pibanks"` : ''}${o.num ? ' inputmode="numeric"' : ''}>`) +
+      `<div class="mv-err" data-err="pi_${k}"></div></div>`;
+    return `<div class="ai-box pi-box"><div class="ai-h">🔓 ${esc(PY.addPayeeH)}</div><div class="fields">${inp('full_name', { wide: 1 })}${inp('id_address', { area: 1, wide: 1 })}${inp('bank_name', { list: 1 })}${inp('account_name')}${inp('account_no', { num: 1 })}${inp('wht_contact', { wide: 1 })}` +
+      `<div class="field wide"><label class="tick"><input type="checkbox" data-pi="default"${first ? ' checked disabled' : ' checked'}> ${esc(PY.makeDefault)}</label></div></div>` +
+      `<datalist id="${prefix}_pibanks">${(PY.banks || []).map(b => `<option value="${esc(b)}">`).join('')}</datalist></div>`;
+  }
+  /* what is typed · null while locked */
+  function payeeInlineRead(root) {
+    if (!root || nkvState() !== 'open' || !root.querySelector('[data-pi="full_name"]')) return null;
+    const out = Object.fromEntries(PI_FIELDS.map(k => [k, (root.querySelector(`[data-pi="${k}"]`) || {}).value || '']));
+    out.default = !!(root.querySelector('[data-pi="default"]') || {}).checked;
+    return out;
+  }
+  /* → [{ field: pi_<key>, msg }] */
+  function payeeInlineCheck(x) {
+    if (!x) return [{ field: 'pi_box', msg: nkvState() === 'none' ? C.newKol.vaultNone : C.newKol.vaultLocked }];
+    const errs = [];
+    PI_REQ.forEach(k => { if (R.isBlank(R.trim(x[k]))) errs.push({ field: 'pi_' + k, msg: C.msg.payeeRequired(PY.bank[k]) }); });
+    R.validateBankDetails(Object.assign({}, x)).errs.filter(e => !errs.some(y => y.field === 'pi_' + e.field.replace(/^b_/, ''))).forEach(e => errs.push({ field: 'pi_' + e.field.replace(/^b_/, ''), msg: e.msg }));
+    return errs;
+  }
+  /* encrypted → a new payee of the KOL (its label: Primary for the first, else the bank's short name) · default when ticked or it is the first → the payee */
+  async function payeeInlineSave(kolId, x) {
+    const v = vaultOf(), s = state(), now = nowISO(), uid = userId(), rec0 = R.bankRecord(x);
+    const secure = await V.encrypt(v, rec0);
+    const taken = new Set(R.payeesOfKol(s, kolId, true).map(p => R.trim(p.label).toLowerCase()));
+    let label = !taken.size ? PY.primary : R.bankShort(s.lookups, x.bank_name) || PY.primary, n = 2; const base = label;
+    while (taken.has(label.toLowerCase())) label = `${base} ${n++}`;
+    const p = R.blankPayee(s, { payee_id: store.newId('payee'), kol_id: kolId, user: uid, now, label });
+    Object.assign(p, { is_default: false, secure, bank_name: R.trim(x.bank_name) || null, account_last4: R.last4(x.account_no), details_filled: R.filledFields(rec0), details_version: 1, details_updated_at: now, details_updated_by: uid });
+    s.payee_profiles.push(p);
+    if (x.default || !R.payeesOfKol(s, kolId).some(y => y.is_default && y.payee_id !== p.payee_id)) R.withDefault(s.payee_profiles, 'payee_id', p.payee_id);
+    s.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: p.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
+    return p;
+  }
+  /* an older payee (before CR-32) does not say which fields it has: the next time the vault is unlocked they are read in memory and only their names kept */
+  async function backfillFilled() {
+    const v = vaultOf(); if (!v || !V.isUnlocked(v)) return 0;
+    let n = 0;
+    for (const p of (state().payee_profiles || []).filter(x => x.secure && !Array.isArray(x.details_filled))) {
+      try { const rec = await V.decrypt(p.secure); if (rec) { p.details_filled = R.filledFields(rec); n++; } } catch (e) { /* another key — left as it is */ }
+    }
+    if (n) commit();
+    return n;
+  }
+  V.onChange(open => { if (open) backfillFilled(); });
 
   return { tabHTML, fillSecure, onClick, openDialog: openDialog_, addressDialog, unlockDialog, setupDialog, changeDialog, resetDialog,
-    nkVaultHTML, nkVaultRead, nkVaultCheck, nkVaultSave, nkVaultWipe, nkVaultLabels, nkVaultState: nkvState, addrInlineHTML, addrInlineUnlock, addrInlineRead, addrInlineCheck, addrInlineSave };
+    nkVaultHTML, nkVaultRead, nkVaultCheck, nkVaultSave, nkVaultWipe, nkVaultLabels, nkVaultState: nkvState, addrInlineHTML, addrInlineUnlock, addrInlineRead, addrInlineCheck, addrInlineSave,
+    payeeInlineHTML, payeeInlineRead, payeeInlineCheck, payeeInlineSave, backfillFilled };
 })();

@@ -433,7 +433,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (f.cta && (f.cta === '__none' ? !isBlank(d.cta) : d.cta !== f.cta)) return false;
       if (f.noImported && R.isImported(d)) return false;   // CR-11 §4.6: Include imported off
       if (f.tiers && f.tiers.length && !f.tiers.includes((ctx.tiers.get(d.deal_id) || {}).tier || UNKNOWN_TIER)) return false;
-      if (f.partner && !R.partnerMatch(ctx.kols.get(d.kol_id), f.partner)) return false;   // CR-25: the KOL's Partner type (Both is in KOL and in Affiliate)
+      if (f.partner && !R.partnerMatch(ctx.kols.get(d.kol_id), f.partner)) return false;   // CR-25: the KOL's Partner type
       if (f.payment && R.paymentProgress(d) !== f.payment) return false;
       if (f.overdue && !R.isOverdue(state, d, today)) return false;
       if (f.unpaid && !isUnpaid(d)) return false;

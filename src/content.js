@@ -622,17 +622,17 @@ KT.content = (function () {
 
     kolOptions: { gender: { Female: 'Female', Male: 'Male', Other: 'Other' } },
 
-    /* CR-25 — Partner type of a KOL (KOL · Affiliate · Both) · the words can change in Settings › Lists (lookups.partner_types) */
+    /* CR-25 — Partner type of a KOL (KOL · Affiliate — CR-32 §2.4: no Both) · the words can change in Settings › Lists (lookups.partner_types) */
     partner: {
       field: 'Partner type', col: 'Partner', nav: 'Partner types', all: 'All', allPartners: 'All partners',
-      types: { kol: 'KOL', affiliate: 'Affiliate', both: 'Both' },
-      chip: { affiliate: 'AFF', both: 'KOL+AFF' }, chipTip: l => `Partner type: ${l}`,
-      count: (n, parts, a) => `${n} partners (${parts}) · ${a} accounts`,
+      types: { kol: 'KOL', affiliate: 'Affiliate' },
+      chip: { affiliate: 'AFF' }, chipTip: l => `Partner type: ${l}`,
+      count: (n, parts, a) => `${n} partners · ${parts} · ${a} accounts`,
       setBulk: 'Set partner type…', setTitle: n => `Set partner type · ${n} KOL${n === 1 ? '' : 's'}`, setOk: 'Set',
       setDone: (n, l) => `ตั้ง Partner type ของ ${n} คนเป็น ${l} แล้ว`, setSame: 'ทุกคนที่เลือกเป็นค่านี้อยู่แล้ว',
-      hint: 'The words can change. The three types stay: KOL · Affiliate · Both (does both — counts in the KOL and the Affiliate filters).',
+      hint: 'The words can change. The two types stay: KOL · Affiliate.',
       label: 'Label', saved: 'บันทึก Partner types แล้ว', used: n => `${n} KOL${n === 1 ? '' : 's'}`,
-      importBad: v => `partner_type “${v}” — use KOL, Affiliate or Both (blank = KOL)`, required: 'Choose a partner type',
+      importBad: v => `partner_type “${v}” — Use KOL or Affiliate (blank = KOL)`, required: 'Choose a partner type',
     },
 
     campaign: {
@@ -1661,7 +1661,8 @@ KT.content = (function () {
   C.banner.cannotSave = 'Can’t save on this device — back up before closing';
   C.banner.cannotSaveDetail = 'The browser would not store the data (a private window, or its storage is full). Changes stay only until this tab closes.';
   Object.assign(C.settings, { usingOf: (mb, q) => `Using ${mb} MB of ~${q} MB`, largest: t => `Largest: ${t} MB` });
-  C.pay.otherLine = (a, n) => `Includes Other: ${n || '—'} · ${a}`;
+  /* CR-32 §2.3 — "Includes other fee ฿100" when the note says nothing (empty or "-") */
+  C.pay.otherLine = (a, n) => (!n || /^[-–—\s]*$/.test(n) ? `Includes other fee ${a}` : `Includes Other: ${n} · ${a}`);
   C.counts.deal_gencodes = 'Gencodes';   // CR-30 §3.3 (not the Draft n notes above it)
   C.msg.otherFeeNote = 'Say what the Other fee is for';
   C.newKol = {
@@ -1691,5 +1692,55 @@ KT.content = (function () {
     moveL: 'Gencodes (optional)', movePh: 'Paste the codes if the KOL has sent them',
     ev: { gencode_added: 'Gencode added', gencode_copied: 'Gencode copied', gencode_deleted: 'Gencode deleted', gencode_edited: 'Gencode edited' },
   };
+  /* ===================== CR-32 — address & payee in place · delivered from Draft 1 · payment documents · no Both · Ready to send · Export for accounting ===================== */
+  /* the banks (short on screen · the word the PR file uses) — lookups.banks starts with these */
+  C.payee.bankList = [
+    { name: 'Kasikorn Bank (KBank)', short: 'KBank', pr: 'กสิกร' }, { name: 'Siam Commercial Bank (SCB)', short: 'SCB', pr: 'ไทยพาณิชย์' },
+    { name: 'Bangkok Bank (BBL)', short: 'BBL', pr: 'กรุงเทพ' }, { name: 'Krungthai Bank (KTB)', short: 'KTB', pr: 'กรุงไทย' },
+    { name: 'Krungsri (BAY)', short: 'Krungsri', pr: 'กรุงศรี' }, { name: 'TMBThanachart (ttb)', short: 'ttb', pr: 'ทีทีบี' },
+    { name: 'Government Savings Bank (GSB)', short: 'GSB', pr: 'ออมสิน' }, { name: 'Kiatnakin Phatra (KKP)', short: 'KKP', pr: 'เกียรตินาคินภัทร' },
+    { name: 'UOB', short: 'UOB', pr: 'ยูโอบี' }, { name: 'CIMB Thai', short: 'CIMB', pr: 'ซีไอเอ็มบี' }, { name: 'LH Bank', short: 'LH Bank', pr: 'แลนด์ แอนด์ เฮ้าส์' }, { name: 'BAAC', short: 'BAAC', pr: 'ธ.ก.ส.' },
+  ];
+  Object.assign(C.payee, {
+    bankLine: (b, l) => `${b || 'Bank'} ••• ${l}`, savedLast4: (b, l) => `Saved · ${b || ''} ••• ${l}`,
+    addPayeeIn: 'Add payee', addPayeeH: 'New payee', openInKm: 'Open in KOL Master', payeeSaved: l => `Payee saved · ${l}`, noPayeeYet: 'No payee yet',
+    useForOpen: n => `Use for ${n} open shipment${n === 1 ? '' : 's'}?`, useForOpenBody: 'They are still to ship — they go to this address.', useYes: 'Use it', useNo: 'Not now',
+    addressAdded: l => `Address added · ${l}`,
+  });
+  Object.assign(C.payee.bank, { full_name: 'Full name (as on ID)', id_address: 'ID-card address', wht_contact: 'Email / address for WHT certificate' });
+  Object.assign(C.pay, {
+    amountOver: x => `Over ${x}`,
+    prSheetUnder: a => `ยอดน้อยกว่า ${a}`, prSheetMid: (a, b) => `ยอด ${a}-${b}`, prSheetOver: b => `ยอดมากกว่า ${b}`,
+    prVat: r => `VAT ${r}%`, prWht: r => `WHT ${r}%`,
+    prCol: { no: 'No', project: 'Project', account: 'ชื่อ Account', type: 'Type', full_name: 'ชื่อ-นามสกุล', id_address: 'ที่อยู่ตามบัตรประชาชน', bank: 'ธนาคาร', account_no: 'เลขบัญชี',
+      gross: 'จำนวนเงิน', net: 'จำนวนเงินที่ต้องชำระ', link: 'Link (สำเนาบัตร หน้า Bookbank หลักฐานการลงคลิปพร้อมวันที่ลงงาน)', pic: 'PIC', print: 'Print (สำหรับดรีม)',
+      wht_contact: 'Email / ที่อยู่ส่งใบ WHT', payee_id: 'Payee ID', deal_id: 'Deal ID' },
+  });
+  Object.assign(C.pay.docs, {
+    postProof: 'Post proof', postedOn: 'Posted on', postProofHint: 'Screenshot of the live post showing the post date',
+    oneFile: 'All documents in one file', oneLink: 'Link to the file', oneHint: 'One link for every document (ID copy · Bank book · Post proof)', oneNeedsLink: 'Add the link to the file',
+    note: 'Note', notePh: 'Anything about the documents', addDocs: 'Add documents',
+  });
+  /* Ready to send (Payment details · the To pay table) */
+  C.pay.ready = {
+    title: 'Ready to send', ready: 'Ready', missingN: n => `Missing ${n}`, readyTip: 'Everything Accounting needs is here', all: 'All', notReady: 'Not ready', filter: 'Ready',
+    items: { payee: 'Payee', full_name: 'Full name (as on ID)', id_address: 'ID-card address', bank: 'Bank · account name · account number', docs: 'Documents (links)',
+      posted: 'Posted (link + date)', project: 'Products (Project)', amount: 'Amount · payment term', pic: 'PIC', wht_contact: 'Email / address for WHT certificate' },
+    acts: { payee: 'Add payee', payeeEdit: 'Payee details', docs: 'Add documents', posts: 'Open posts', products: 'Add products', deal: 'Open deal', pic: 'Assign' },
+    unknown: 'Unlock payee details to check', warnOnly: 'A warning — it does not block',
+    sendAnyway: 'Send anyway', sendAnywayTitle: n => `Send anyway · ${n}`, sendAnywayHint: 'Not everything is here. Say why it goes now — it is kept in History.',
+    reasonL: 'Reason', anywayNote: (r, miss) => `Sent anyway: ${r} · missing ${miss}`,
+    skipped: n => `${n} line${n === 1 ? '' : 's'} skipped — missing details`, notReadyTip: l => `Missing: ${l}`, markPaidWarn: l => `Not everything is here: ${l} — Mark paid still works`,
+  };
+  Object.assign(C.pay.simple, {
+    exportNeedsManager: 'Ask a manager to export', exportPii: 'This file contains personal and bank details — share only with accounting',
+    exportTitle: n => `Export for accounting · ${n} line${n === 1 ? '' : 's'}`, exportOk: 'Export', unlockExport: 'Unlock and export', exportLog: (n, id) => `exported ${n} line${n === 1 ? '' : 's'} · ${id}`,
+    exportOnlyReady: (r, n) => `${r} of ${n} ready — the others stay in To pay`,
+  });
+  Object.assign(C.move, {
+    markDeliveredOn: 'Mark sample as delivered', markPurchasedOn: 'Mark product as purchased', deliveredOn: 'Delivered on', purchasedOn: 'Purchased on',
+    linkNotPlatform: p => `This link isn't ${/^[aeiou]/i.test(p) ? 'an' : 'a'} ${p} link`,
+  });
+  Object.assign(C.samples, { addAddressIn: 'Add address', openInKm: 'Open in KOL Master' });
   return C;
 })();

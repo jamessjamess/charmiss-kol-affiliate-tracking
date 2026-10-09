@@ -107,7 +107,7 @@ KT.move = (function () {
     const s = state(), d = dealById(mv.id); if (!d) { mv.m.close(); return; }
     const req = R.stageRequirements(s, d, mv.to, mv.f), F = req.fields, f = mv.f; mv.req = req;
     if (R.isPostStep(req.to) && req.post && !f.posts) f.posts = initPosts(s, d);
-    if (req.to && R.isPostStep(req.to) && f.markDelivered == null) f.markDelivered = true;   // CR-23 §3.3: posted = the KOL has the product
+    if (req.to && R.deliverStep(req.to) && f.markDelivered == null) f.markDelivered = true;   // CR-23 §3.3 · CR-32 §2.2: from Draft 1 on, the KOL has the product
     if (req.notesDraft && (!mv.ed || mv.ed.k !== req.notesDraft)) { if (mv.ed) KT.photos.removeStepImages(mv.ed.added); mv.ed = notesEditor(d.deal_id, req.notesDraft); }
     if (!req.notesDraft && mv.ed) { KT.photos.removeStepImages(mv.ed.added); mv.ed = null; }
     const plan = R.planOf(d), nx = R.nextStep(s.lookups, d), optional = new Set(nx.optional.map(x => x.sub_status));
@@ -134,6 +134,7 @@ KT.move = (function () {
       if (req.next.length) parts.push(nextHTML(s, d, req));
       if (req.notesDraft && mv.ed) parts.push(sec(NT.title(req.notesDraft), notesEditorHTML(mv.ed, 'mv')));
       if (isPost) parts.push(postHTML(s, d, req));
+      const dv = deliverHTML(s, d, req); if (dv) parts.push(dv);   // CR-32 §2.2
       if (done.length) parts.splice(1, 0, `<div class="mv-done">${done.join('')}</div>`);
     }
     const noteReq = F.note === 'req';
@@ -277,7 +278,15 @@ KT.move = (function () {
     const acc = R.accountsOfKol(s, d.kol_id).slice().sort((a, b) => (Number(b.followers) || 0) - (Number(a.followers) || 0))[0];
     return R.postsOf(s, d.deal_id).length ? [] : [{ post_id: null, account_id: acc ? acc.account_id : '', link: '' }];
   }
-  const shipToDeliver = (s, d) => (R.shipmentsOf(s, d.deal_id) || []).find(x => ['to_ship', 'problem', 'shipped'].includes(x.status) && !R.isLegacyDelivered(x)) || null;
+  /* CR-32 §2.2 — Draft k · Approve · Post and a sample not delivered yet: ☑ Mark sample as delivered (ticked) + the date (the move's) · KOL buys own: Mark product as purchased */
+  function deliverHTML(s, d, req) {
+    if (!req.to || !R.deliverStep(req.to) || !R.canShipWork(U.actor())) return '';
+    const sh = R.shipmentToDeliver(s, d); if (!sh) return '';
+    const f = mv.f, buy = sh.status === 'kol_purchase', dl = buy ? MV.purchasedOn : MV.deliveredOn;
+    return `<div class="fields mv-deliver" data-fk="deliver"><div class="field wide"><label class="tick"><input type="checkbox" data-mvtick="markDelivered"${f.markDelivered ? ' checked' : ''}> ${esc(buy ? MV.markPurchasedOn : MV.markDeliveredOn)}</label>` +
+      `<div class="hint">${esc(KT.samples.summaryText(sh))}</div></div>` +
+      (f.markDelivered ? fld('deliver_date', dl, dateHTML('data-mv="deliverDate" data-key="deliver_date"', f.deliverDate || f.date, { label: dl })) : '') + `</div>`;
+  }
   function postHTML(s, d, req) {
     const f = mv.f, accs = R.accountsOfKol(s, d.kol_id), accOpts = accs.map(a => ({ value: a.account_id, label: `${a.platform} @${a.handle}` }));
     const rows = (f.posts || []).map((r, i) => {
@@ -286,12 +295,10 @@ KT.move = (function () {
         `<input type="url" data-mv="posts.${i}.link" data-key="post${i}_link" value="${esc(r.link)}" placeholder="${esc(MV.linkPh)}" aria-label="${esc(MV.postedLink)}" autocomplete="off">` +
         `<button type="button" class="icon-btn" data-mvrmpost="${i}" title="${esc(MV.removePostRow)}" aria-label="${esc(MV.removePostRow)}">×</button><div class="mv-err" data-err="post${i}_link"></div><div class="mv-err" data-err="post${i}_account"></div></div>`;
     }).join('');
-    const sh = shipToDeliver(s, d) && R.canShipWork(U.actor());
     return sec(MV.secPost, `<div class="fields">${req.approve ? fld('approve_date', MV.approveDate, dateHTML('data-mv="approveDate" data-key="approve_date"', f.approveDate || f.date, { label: MV.approveDate }), { req: 1 }) : ''}</div>` +
       (req.post ? `<div class="field wide" data-fk="posts"><label>${esc(MV.postedLink)} <span class="req">*</span></label><div class="mv-posts">${rows}</div>` +
         `<button type="button" class="link" data-mvact="addPost"${accs.length ? '' : ' disabled'}>${esc(MV.addPostRow)}</button><div class="mv-err" data-err="posts"></div></div>` : '') +
-      (req.fields.gencodes ? `<div class="field wide"><label for="mv_gencodes">${esc(C.gencode.moveL)}</label><textarea id="mv_gencodes" data-mv="gencodes" data-key="gencodes" rows="3" class="gc-code" spellcheck="false" placeholder="${esc(C.gencode.movePh)}">${esc(f.gencodes || '')}</textarea><div class="hint" id="mv_gcprev"></div></div>` : '') +   // CR-30 §3.1
-      (sh ? `<label class="tick"><input type="checkbox" data-mvtick="markDelivered"${f.markDelivered ? ' checked' : ''}> ${esc(MV.markDelivered)}</label>` : ''));
+      (req.fields.gencodes ? `<div class="field wide"><label for="mv_gencodes">${esc(C.gencode.moveL)}</label><textarea id="mv_gencodes" data-mv="gencodes" data-key="gencodes" rows="3" class="gc-code" spellcheck="false" placeholder="${esc(C.gencode.movePh)}">${esc(f.gencodes || '')}</textarea><div class="hint" id="mv_gcprev"></div></div>` : ''));   // CR-30 §3.1
   }
 
   /* ===================== live parts (no redraw — typing keeps its focus) ===================== */
@@ -429,10 +436,11 @@ KT.move = (function () {
       if (!mv) return;
       mv.f.ship.address_id = rec.address_id; mv.newAddr = null;
     }
-    const form = formFor(s, d, mv.req), to = mv.to, ed = mv.ed, deliver = mv.f.markDelivered && R.isPostStep(mv.req.to), o = mv.o;
+    const form = formFor(s, d, mv.req), to = mv.to, ed = mv.ed, deliver = mv.f.markDelivered && R.deliverStep(mv.req.to) && R.canShipWork(U.actor()), o = mv.o;   // CR-32 §2.2
+    const deliverDate = R.isISODate(mv.f.deliverDate) ? mv.f.deliverDate : form.date;
     mv.applied = true;
     U.closeModal();
-    apply(d.deal_id, to, form, { ed, deliver, onDone: o.onDone });
+    apply(d.deal_id, to, form, { ed, deliver, deliverDate, onDone: o.onDone });
   }
   /* the move (dialog or drop): applyMove · its posts · its notes · Undo puts every part back */
   function apply(dealId, to, form, o = {}) {
@@ -451,7 +459,7 @@ KT.move = (function () {
     if (form.gencodes) { const pv = R.gencodePreview(s, r.deal, form.gencodes); let e = 0, c = 0; const be = store.newEventId(), bc = parseInt(String(store.newId('gencode')).replace(/\D/g, ''), 10) || 1;
       const x = R.addGencodes(s, r.deal, pv.rows, { eventId: () => be + e++, codeId: () => 'GC-' + String(bc + c++).padStart(5, '0'), now: new Date().toISOString(), user: userId() });
       R.gencodesAll(s).push(...x.records); x.events.forEach(ev => s.deal_events.push(ev)); }
-    if (o.deliver) { const sh = shipToDeliver(s, r.deal); if (sh) { let e = 0; const base = store.newEventId(); const evs = R.shipQuick(s, sh, sh.status === 'shipped' ? 'delivered' : 'both', { date: form.date }, { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }); if (evs) s.deal_events.push(...evs); } }
+    if (o.deliver) { let e = 0; const base = store.newEventId(); const evs = R.deliverOnMove(s, r.deal, o.deliverDate || form.date, { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }); if (evs) s.deal_events.push(...evs); }   // CR-32 §2.2
     const gone = o.ed ? o.ed.removed.slice() : [];
     commit();
     if (o.onDone) o.onDone(dealId);

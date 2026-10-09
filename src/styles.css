@@ -2476,3 +2476,33 @@ main[data-cw="m"] .ov-r4.r3>.card:last-child,main[data-cw="s"] .ov-r4.r3>.card:l
 .dcard .r2 .r2r{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
 .bc-b>.dcard{flex-shrink:0}
 .sh-addr [data-shnewaddr]{display:block;padding:0;margin-top:2px}   /* CR-31: + New address under "Missing" (the column stays narrow) */
+
+/* ===================== CR-32 — address & payee in place · delivered from Draft 1 · documents · Ready to send ===================== */
+.pd-d2{grid-template-columns:minmax(0,1fr) auto}
+.pd-d3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pd-d3 .dfield{max-width:180px}
+.pd-one{display:flex;align-items:center;gap:6px;margin:0 0 8px}
+.pd-onef{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px 12px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.pd-onef .pd-onehint{grid-column:1/-1;margin:0}
+@media (max-width:600px){.pd-onef{grid-template-columns:1fr}}
+.pd-note{margin:4px 0 0}
+.pd-note textarea{width:100%;min-height:52px}
+.pd-ready{border-top:1px solid var(--border)}
+.pd-ready h4{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pd-rl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.pd-rl li{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:2px 6px;align-items:baseline}
+.pd-rl .pd-ri{width:14px;flex:0 0 14px;text-align:center;font-weight:700}
+.pd-rl li.ok .pd-ri{color:var(--ok)}
+.pd-rl li.bad .pd-ri{color:var(--err)}
+.pd-rl li.warn .pd-ri{color:var(--warn)}
+.pd-rl li.ok .pd-rt{color:var(--text-2)}
+.pd-bank{font-weight:600}
+.pd-pi{margin-top:8px}
+.pd-pibtns,.sm-aibtns{justify-content:flex-end;margin-top:8px}
+.pm-ready,.pm-notready{margin-left:6px;font-size:12px;line-height:18px;padding:0 8px}
+button.pm-notready{cursor:pointer;font:inherit;font-size:12px}
+.pm-sendw{display:inline-block}
+.pm-paidwarn{margin-bottom:8px}
+.sm-ai{margin-top:8px;flex-basis:100%}
+.mv-deliver .hint{margin-top:2px}
+.pd-pi .fields{grid-template-columns:minmax(0,1fr)}

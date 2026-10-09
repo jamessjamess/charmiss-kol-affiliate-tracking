@@ -132,74 +132,145 @@ Object.assign(KT.rules, (function (R, C) {
     if (run && run.auto && !R.runLines(state, run.run_id).length) state.payment_runs = state.payment_runs.filter(r => r !== run);
     return [ev];
   }
-  /* "Docs 2/4" (§4.2 — information only, never a block): the payee's documents + bank details + post evidence when the instalment needs it */
-  function docsTally(state, x) {
-    if (!x || x.pay_to === 'reimburse') return null;
-    const p = x.payee, company = !!p && p.payee_type === 'company', deal = x.deal || null;
-    const need = (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(['bank_details']);
-    if (deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'))) need.push('post_evidence');
-    const miss = R.docsRequired(state, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to, docs: R.lineDocs(x.docsLine) }, p || null);
-    const own = R.lineDocs(x.line || x.docsLine).filter(d => d.custom);   // CR-27: documents added by hand count too
-    return { need: need.length + own.length, have: need.filter(k => !miss.includes(k)).length + own.filter(d => d.received_at).length, missing: miss };
+  /* ===================== CR-27 §3.2 · CR-32 §2.3 — Payment details › Documents ===================== */
+  /* the documents of a row: ID copy · Bank book (a company: Company certificate · Bank book · VAT certificate when VAT registered) · Post proof for an
+     instalment paid after the post · the ones added by hand · "All documents in one file" (one link stands for all of them) · one Note for the section ·
+     Bank details are not a document any more (they are the payee's, in the vault — Pay to) */
+  const afterPost = (x, deal) => !!deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'));
+  const dealOfX = (state, x) => x.deal || (x.deal_id ? state.deals.find(d => d.deal_id === x.deal_id) || null : null);
+  function docKeys(state, x) {
+    if (!x || x.pay_to === 'reimburse') return [];
+    const p = x.payee === undefined ? R.payeeOfLine(state, x.line || x) : x.payee, company = !!p && p.payee_type === 'company';
+    return (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(afterPost(x, dealOfX(state, x)) ? ['post_proof'] : []);
   }
-
-  /* ===================== CR-27 §3.2 — Payment details › Documents ===================== */
-  /* the checklist of a row: the documents it needs (a payee document on file / posts done = received on its own, "auto") + the ones added by hand ·
-     → [{ key, label, custom, auto, received, received_at, note, link }] */
+  /* what a line keeps, read the CR-32 way: an old "Post evidence" tick = Post proof · an old "Bank details" tick = a document of its own (kept) ·
+     the old notes of each document become the one Note (when there is none yet) */
+  function lineDocsOf(l) {
+    const raw = R.lineDocs(l);
+    const items = raw.map(d => (d.key === 'post_evidence' && !d.custom ? Object.assign({}, d, { key: 'post_proof' })
+      : d.key === 'bank_details' && !d.custom ? Object.assign({}, d, { custom: true, label: d.label || C.payee.missingBank }) : d));
+    const oldNotes = raw.filter(d => trim(d.note)).map(d => `${d.custom ? d.label || '' : d.key === 'bank_details' ? C.payee.missingBank : R.docLabel(d.key === 'post_evidence' ? 'post_proof' : d.key)}: ${trim(d.note)}`);
+    const one = (l && l.docs_one) || {};
+    return { items, note: l && l.docs_note != null ? l.docs_note : oldNotes.join(' · '), one: { on: !!one.on, link: one.link || '', received_at: one.received_at || null } };
+  }
+  /* the latest post date of the deal (Post proof › Posted on starts with it) */
+  const lastPostDate = (state, dealId) => (dealId ? R.postsOf(state, dealId).map(p => p.post_date).filter(Boolean).sort().pop() || null : null);
+  /* the checklist of a row → [{ key, label, custom, auto (on file in the payee profile), received, received_at, link, posted_on (Post proof) }] ·
+     All in one file with a link: every one counts as received */
   function docsChecklist(state, x) {
     if (!x || x.pay_to === 'reimburse') return [];
-    const p = x.payee, company = !!p && p.payee_type === 'company', deal = x.deal || null;
-    const need = (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(['bank_details']);
-    if (deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'))) need.push('post_evidence');
-    const auto = R.docsRequired(state, { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to }, p || null), docs = R.lineDocs(x.line || x.docsLine);
-    return need.map(k => { const d = docs.find(y => y.key === k && !y.custom) || {}, a = !auto.includes(k), onFile = a && p && p.docs && isISODate(p.docs[k]) ? p.docs[k] : null;
-      return { key: k, label: R.docLabel(k), custom: false, auto: a, received: a || !!d.received_at, received_at: d.received_at || onFile || null, note: d.note || '', link: d.link || '' }; })
-      .concat(docs.filter(d => d.custom).map(d => ({ key: d.key, label: d.label || '', custom: true, auto: false, received: !!d.received_at, received_at: d.received_at || null, note: d.note || '', link: d.link || '' })));
+    const p = x.payee === undefined ? R.payeeOfLine(state, x.line || x) : x.payee, v = lineDocsOf(x.line || x.docsLine || x), one = v.one.on && /^https:\/\//i.test(v.one.link);
+    const deal = dealOfX(state, x);
+    return docKeys(state, x).map(k => {
+      const d = v.items.find(y => y.key === k && !y.custom) || {}, onFile = k !== 'post_proof' && p && p.docs && isISODate(p.docs[k]) ? p.docs[k] : null;
+      const got = !!d.received_at || !!onFile || one;
+      return { key: k, label: R.docLabel(k), custom: false, auto: !d.received_at && !!onFile, received: got, received_at: d.received_at || onFile || (one ? v.one.received_at : null),
+        link: d.link || (onFile && p.docs_link ? p.docs_link : '') || '', posted_on: k === 'post_proof' ? d.posted_on || lastPostDate(state, deal && deal.deal_id) : null };
+    }).concat(v.items.filter(d => d.custom).map(d => ({ key: d.key, label: d.label || '', custom: true, auto: false, received: !!d.received_at || one, received_at: d.received_at || null, link: d.link || '', posted_on: null })));
   }
-  /* Note / Link: no ID-card, phone or bank-account number (9 or more digits in a row, - and spaces left out) · a link starts with https:// · an own document needs a name */
+  /* All in one file · the Note (the section's own, read the CR-32 way) */
+  const docsMeta = x => { const v = lineDocsOf(x && (x.line || x.docsLine || x)); return { one: v.one, note: v.note }; };
+  /* "Docs 2/3" (information · the readiness asks for the links) → { need, have, missing [keys] } */
+  function docsTally(state, x) {
+    if (!x || x.pay_to === 'reimburse') return null;
+    const list = docsChecklist(state, x);
+    return { need: list.length, have: list.filter(d => d.received).length, missing: list.filter(d => !d.received).map(d => d.key) };
+  }
+  /* Note / Link: no ID-card, phone or bank-account number (9 or more digits in a row, - and spaces left out) · a link starts with https:// · an own document needs a name ·
+     CR-32: the one Note · the All-in-one link */
   const longDigits = v => /\d{9,}/.test(String(v == null ? '' : v).replace(/[-\s]/g, ''));
-  function validateDocs(entries) {
+  const linkErr = v => (!trim(v) ? null : !/^https:\/\/\S+$/i.test(trim(v)) ? C.pay.docs.linkHttps : longDigits(v) ? C.pay.docs.noNumbers : null);
+  function validateDocs(entries, meta) {
     const errs = [];
     (entries || []).forEach((e, i) => {
       if (e.custom && !trim(e.label)) errs.push({ field: `doc${i}_label`, msg: C.pay.docs.nameRequired });
       if (e.custom && (R.looksSensitive(e.label) || longDigits(e.label))) errs.push({ field: `doc${i}_label`, msg: C.msg.sensitive });
       if (trim(e.note) && (R.looksSensitive(e.note) || longDigits(e.note))) errs.push({ field: `doc${i}_note`, msg: C.pay.docs.noNumbers });
-      if (trim(e.link) && !/^https:\/\/\S+$/i.test(trim(e.link))) errs.push({ field: `doc${i}_link`, msg: C.pay.docs.linkHttps });
-      else if (trim(e.link) && longDigits(e.link)) errs.push({ field: `doc${i}_link`, msg: C.pay.docs.noNumbers });
+      const le = linkErr(e.link); if (le) errs.push({ field: `doc${i}_link`, msg: le });
       if (e.received_at && !isISODate(e.received_at)) errs.push({ field: `doc${i}_date`, msg: C.msg.dateInvalid(C.pay.docs.received) });
+      if (e.posted_on && !isISODate(e.posted_on)) errs.push({ field: `doc${i}_posted`, msg: C.msg.dateInvalid(C.pay.docs.postedOn) });
     });
+    if (meta) {
+      if (trim(meta.note) && (R.looksSensitive(meta.note) || longDigits(meta.note))) errs.push({ field: 'docs_note', msg: C.pay.docs.noNumbers });
+      const one = meta.one || {}, le = linkErr(one.link); if (le) errs.push({ field: 'docs_onelink', msg: le });
+      if (one.received_at && !isISODate(one.received_at)) errs.push({ field: 'docs_onedate', msg: C.msg.dateInvalid(C.pay.docs.received) });
+    }
     return { errs, warns: [], infos: [] };
   }
   const docsText = list => { const n = list.filter(d => d.received).length; return `${n}/${list.length}`; };
-  /* entries = the checklist as edited ({key, label, custom, received_at, note, link}) → the row's line keeps them (a row with no line gets a docs-only one) ·
-     an event 'payment_docs' "2/4 → 3/4" · the deal's Docs done follows · → { line, event, created } | { errs } */
-  function setItemDocs(state, x, entries, ctx) {
-    const v = validateDocs(entries); if (v.errs.length) return { errs: v.errs };
+  /* entries = the checklist as edited ({key, label, custom, received_at, link, posted_on}) · meta = { note, one: {on, link, received_at} } (left out = as it is) →
+     the row's line keeps them (a row with no line gets a docs-only one) · an event 'payment_docs' "2/3 → 3/3" · the deal's Docs done follows · → { line, event, created } | { errs } */
+  function setItemDocs(state, x, entries, ctx, meta) {
+    const cur = docsMeta(x), m = { note: meta && meta.note !== undefined ? meta.note : cur.note, one: Object.assign({}, cur.one, (meta && meta.one) || {}) };
+    const v = validateDocs(entries, m); if (v.errs.length) return { errs: v.errs };
     const before = docsChecklist(state, x);
     let l = x.line || x.docsLine, created = false;
-    const keepIt = e => e.custom || e.received_at || trim(e.note) || trim(e.link);
+    const keepIt = e => e.custom || e.received_at || trim(e.link) || (e.posted_on && e.key === 'post_proof');
     const list = (entries || []).filter(keepIt).map((e, i) => ({ key: e.custom ? e.key || `own_${Date.now().toString(36)}_${i}` : e.key, label: e.custom ? trim(e.label) : null, custom: !!e.custom,
-      received_at: e.received_at || null, note: trim(e.note) || null, link: trim(e.link) || null }));
+      received_at: e.received_at || null, note: null, link: trim(e.link) || null, posted_on: e.key === 'post_proof' ? e.posted_on || null : undefined }))
+      .map(e => { if (e.posted_on === undefined) delete e.posted_on; return e; });
+    const one = { on: !!m.one.on, link: trim(m.one.link) || null, received_at: m.one.received_at || null }, note = trim(m.note) || null, anyOne = one.on || one.link;
     if (!l) {
-      if (!list.length) return { line: null, event: null, created: false };
+      if (!list.length && !anyOne && !note) return { line: null, event: null, created: false };
       l = R.newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now });
       l.docs_only = true; state.payment_lines.push(l); created = true;
     }
-    l.docs = list;
-    if (R.isDocsOnly(l) && !list.length) state.payment_lines = state.payment_lines.filter(y => y !== l);   // nothing left to keep
+    l.docs = list; l.docs_note = note; l.docs_one = anyOne ? one : null;
+    if (R.isDocsOnly(l) && !list.length && !anyOne && !note) state.payment_lines = state.payment_lines.filter(y => y !== l);   // nothing left to keep
     const after = docsChecklist(state, Object.assign({}, x, x.line ? { line: l } : { docsLine: l }));
     const ev = { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payment_docs', from: docsText(before), to: docsText(after), changed_at: ctx.now, changed_by: ctx.user || null,
-      note: after.filter(d => d.received && !before.some(b => b.key === d.key && b.received)).map(d => d.label).join(' · ') || null };
+      note: (one.on && one.link && !(cur.one.on && cur.one.link) ? C.pay.docs.oneFile : after.filter(d => d.received && !before.some(b => b.key === d.key && b.received)).map(d => d.label).join(' · ')) || null };
     if (l.deal_id) syncDocsDone(state, l.deal_id, String(ctx.now || '').slice(0, 10));
     return { line: l, event: ev, created };
   }
-  /* Mark all received (a row or many): every document not on file yet → received on date */
+  /* Mark all received (a row or many): every document not received yet → received on date */
   const allReceived = (state, x, date) => docsChecklist(state, x).map(d => Object.assign({}, d, d.auto || d.received ? {} : { received_at: date }));
+
+  /* ===================== CR-32 §2.5 — Ready to send ===================== */
+  /* the products of a deal (its Products, else what its samples carried) — the "Project" of the PR file */
+  function dealProjectNames(state, deal) {
+    if (!deal) return [];
+    const codes = R.dealProductList(state, deal.deal_id).map(x => x.tr_code);
+    const from = codes.length ? codes : (state.sample_shipments || []).filter(sh => sh.deal_id === deal.deal_id && sh.status !== 'cancelled' && sh.status !== 'not_required').flatMap(sh => (sh.items || []).map(i => i.tr_code));
+    return [...new Set(from.filter(Boolean))].map(c => { const p = R.productByCode(state, c); return p ? R.productShort(p) || p.tr_code : c; }).filter(Boolean);
+  }
+  /* the documents' links of a row (All in one file, else one per document) — the Link column of the PR file · [] when a document has no link */
+  function docsLinks(state, x) {
+    const m = docsMeta(x); if (m.one.on && /^https:\/\//i.test(m.one.link)) return [m.one.link];
+    return docsChecklist(state, x).filter(d => !d.custom).map(d => d.link).filter(Boolean);
+  }
+  /* the payee's encrypted fields are never read here — the payee keeps which ones are filled (details_filled, written each time they are saved;
+     an older payee gets it the next time the vault is unlocked) */
+  const filledOf = p => (p && p.secure ? (Array.isArray(p.details_filled) ? p.details_filled : null) : []);
+  /* → { ready, items [{ key, ok, warn (only a warning), unknown (unlock to check), act }], missing [keys that block], warns [keys] } ·
+     a reimbursement needs only the amount and the PIC · a manual line has no posts or payment term to check */
+  function paymentReadiness(state, x) {
+    const items = [], put = (key, ok, o = {}) => items.push(Object.assign({ key, ok: !!ok, warn: false, unknown: false, act: null }, o));
+    const deal = dealOfX(state, x), staff = x.pay_to === 'reimburse';
+    if (!staff) {
+      const p = x.payee, f = filledOf(p), has = k => !!f && f.includes(k), unk = !!p && p.secure && !f;
+      put('payee', !!p && !!p.secure, { act: 'payee' });
+      if (p && p.secure) {
+        put('full_name', has('full_name'), { unknown: unk, act: 'payee' });
+        put('id_address', has('id_address'), { unknown: unk, act: 'payee' });
+        put('bank', has('bank_name') && has('account_no') && has('account_name'), { unknown: unk, act: 'payee' });
+      }
+      const list = docsChecklist(state, x), m = docsMeta(x), oneOk = m.one.on && /^https:\/\//i.test(m.one.link);
+      put('docs', oneOk || (list.length > 0 && list.filter(d => !d.custom).every(d => d.received && /^https:\/\//i.test(d.link))), { act: 'docs' });
+      if (deal && afterPost(x, deal)) { const ps = R.postsOf(state, deal.deal_id); put('posted', ps.length > 0 && ps.every(R.postDone), { act: 'posts' }); }
+      put('project', deal ? dealProjectNames(state, deal).length > 0 : !!trim(x.project_label), { act: deal ? 'products' : null });
+    }
+    put('amount', (x.tax ? x.tax.gross : 0) > 0 && (!deal || !!R.termOf(deal)), { act: deal ? 'deal' : null });
+    put('pic', !!(x.pic || (staff && x.reimburse_user)), { act: deal ? 'pic' : null });
+    if (!staff && x.tax && x.tax.wht > 0) { const f = filledOf(x.payee); put('wht_contact', !!f && f.includes('wht_contact'), { warn: true, unknown: !!x.payee && x.payee.secure && !f, act: x.payee ? 'payee' : null }); }
+    const missing = items.filter(i => !i.ok && !i.warn).map(i => i.key), warns = items.filter(i => !i.ok && i.warn).map(i => i.key);
+    return { ready: !missing.length, items, missing, warns };
+  }
   /* a deal's Docs done: every instalment (not cancelled) has what it needs — set once all are in (the warning "Marked as paid, but documents aren't checked yet" goes) */
   function syncDocsDone(state, dealId, today) {
     const d = state.deals.find(y => y.deal_id === dealId); if (!d) return;
     const items = R.dealPayItems(state, d, today || R.todayISO()).filter(y => y.status !== 'cancelled' && y.pay_to !== 'reimburse');
-    const ok = items.length > 0 && items.every(y => !R.docsRequired(state, y.line || { deal_id: y.deal_id, milestone: y.milestone, pay_to: y.pay_to, docs: R.lineDocs(y.docsLine) }, y.payee || null).length);
+    const ok = items.length > 0 && items.every(y => !docsTally(state, y) || docsTally(state, y).have >= docsTally(state, y).need);   // CR-32: the documents of each (Bank details are the payee's)
     if (ok && !d.docs_done) Object.assign(d, { docs_done: true, docs_done_date: today || R.todayISO() });
   }
   /* the history of a row: the events of its line (status · hold · documents), oldest first */
@@ -259,6 +330,6 @@ Object.assign(KT.rules, (function (R, C) {
 
   return { OPS_KINDS, OPS_MODES, OPS_DEFAULT, opsMode, isSimple, setOpsMode, simpleBucket, sentAt, sentDays, SENT_LATE_DAYS, canPaySimple, canUnpay,
     markItemsPaid, undoMarkPaid, markUnpaid, sendToAccounting, undoSend, moveBackToPay, docsTally, setWhtSent, paymentsToConfirm, simplePayTrack,
-    docsChecklist, validateDocs, setItemDocs, allReceived, syncDocsDone, lineHistory,
+    docsChecklist, validateDocs, setItemDocs, allReceived, syncDocsDone, lineHistory, docKeys, lineDocsOf, docsMeta, dealProjectNames, docsLinks, paymentReadiness, afterPost,
     shipQuick, undoDelivered, migrateV16 };
 })(KT.rules, KT.content));

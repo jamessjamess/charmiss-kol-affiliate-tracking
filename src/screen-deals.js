@@ -415,7 +415,7 @@ KT.screens.deals = (function () {
       sel('pillar', D.pillar, (L.pillar_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.pillarNotSet }])) +
       sel('cta', F.cta, (L.cta_list || []).map(v => ({ value: v, label: v })).concat([{ value: '__none', label: D.ctaNotSet }])) +
       sel('term', D.term, R.PAYMENT_TERMS.concat(['none']).map(v => ({ value: v, label: C.term[v] }))) +
-      sel('partner', C.partner.field, R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label }))) +   // CR-25: the KOL's Partner type (Both is in KOL and in Affiliate)
+      sel('partner', C.partner.field, R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label }))) +   // CR-25: the KOL's Partner type
       sel('sub', D.subStatus, R.stepsOf(L).map(st => ({ value: st.sub_status, label: st.sub_status }))) +
       sel('sample', C.samples.filter, R.SAMPLE_STATUSES.map(k => ({ value: k, label: C.samples.status[k] }))) +
       `<label class="tick"><input type="checkbox" data-ffimp${f.noImported ? '' : ' checked'}> ${esc(D.includeImported)}</label>` +
@@ -1725,7 +1725,7 @@ KT.screens.deals = (function () {
     if (e.target.closest('[data-dmopenpage]')) { const id = dl.id; U.requestCloseDrawer().then(ok => { if (ok) go('deals', { deal: id }); }); return; }   // CR-27 §3.3
     /* CR-27 §3.2 — "Marked as paid, but documents aren't checked yet" › Check documents → Payment details at Documents */
     if (e.target.closest('[data-dmdocs]')) { const s = state(), d = dealById(dl.id), id = dl.id; if (!d) return;
-      const items = R.dealPayItems(s, d, today()).filter(x => x.status !== 'cancelled' && x.pay_to !== 'reimburse'), miss = x => R.docsRequired(s, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to, docs: R.lineDocs(x.docsLine) }, x.payee || null).length > 0;
+      const items = R.dealPayItems(s, d, today()).filter(x => x.status !== 'cancelled' && x.pay_to !== 'reimburse'), miss = x => { const t = R.docsTally(s, x); return !!t && t.have < t.need; };   // CR-32: the row's documents
       const x = items.find(y => y.status === 'paid' && miss(y)) || items.find(miss) || items[0]; if (!x) return;
       KT.screens.payments.openDetails(x.key, { section: 'docs', after: () => { if (dl.id === id && dl.mode === 'view') renderPanel(); } }); return; }
     if (gencodeClick(e)) return;   // CR-30 §3.1
