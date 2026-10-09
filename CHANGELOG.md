@@ -2,6 +2,14 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-33 v2.0 · 09/10/2026 — Payee details บังคับ · เอกสารเป็นไฟล์ / ลิงก์ · รอบ PR · Accounting Verify / Return · Print PDF · Actual (posted)
+schema **23 → 24** (payee docs เป็นรายการ · แถวจ่าย payee_confirmed / verified / returned / printed · รอบ = payment_runs `round`) · ยอดแถวจ่ายเท่าเดิม
+- **Payee details:** ฟอร์มเดียวทั้ง KOL Master / Payments · บังคับ type · WHT · basis · ชื่อบัญชี · ธนาคาร (dropdown) · เลขบัญชี 10–15 หลัก · Full name · ID-card address · (Company: Tax ID) · กรอบ 🔒 Personal data แยก · การ์ด "Incomplete · n missing" + Complete
+- **เอกสาร:** Upload file (PDF / รูป ≤ 5 MB · เข้ารหัสด้วย vault ใน IndexedDB · Preview ต้องปลด vault) หรือ Link https · ID copy / Bank book / ใบทะเบียน / ภ.พ.20 = ระดับ payee ("From payee") · Post proof = ต่อรอบ · Backup ไม่รวมไฟล์ (ติ๊ก "Include payee documents (encrypted)" ได้) · Settings › Data แสดงขนาด
+- **Payments (Simple):** To submit · Submitted (Staff "Sent to accounting" · Accounting "Submitted by staff") · Paid (confirmed) · Pay to: Confirm payee / Choose payee (ว่าง) / + Add new payee · Create round (เฉพาะ Ready) · Verify / Return · Confirm paid ทั้งรอบ (ยกเว้นบางแถวได้) · Undo confirm · Mark paid รายแถวอยู่ใน ⋯ + เหตุผล · Export มี Round ID / Line ID · Print column "Printed dd/mm · ชื่อ"
+- **Print:** PDF ไฟล์เดียว (สรุป → ID → Bank book → ใบทะเบียน → ภ.พ.20 → Post proof → อื่น ๆ) · ลิงก์ = "Linked — not included" + เตือนก่อน · สร้างเองใน `src/pdf.js` (ไม่ใช้ pdf-lib — ดูการตัดสินใจ #1 ใน docs/CR-33.md)
+- **Dashboard:** KPI "Actual (posted)" แทน Paid (bar % ของ Committed · "฿x submitted for payment · ฿y not submitted") · Portfolio คอลัมน์ Actual
+
 ## CR-32 v1.2 · 09/10/2026 — ที่อยู่ & payee ในหน้า · Delivered ตั้งแต่ Draft 1 · เอกสารจ่ายเงิน · ไม่มี Both · Ready to send · Export ตาม PR
 schema **คงที่ 23** (payment_lines `docs_one` · `docs_note` · payee `details_filled` · lookups.banks) · ยอดเงินเท่าเดิม
 - **ในหน้า:** Deal modal › Shipments `Add address` (Unlock to add · "Use for 1 open shipment?") · Payment details › Pay to `Add payee` (ชื่อตามบัตร · ที่อยู่ตามบัตร · ธนาคาร · บัญชี · Email WHT) · `Open in KOL Master` · หน้า Shipments แถว Missing `Add address`
@@ -9,7 +17,7 @@ schema **คงที่ 23** (payment_lines `docs_one` · `docs_note` · payee 
 - **เอกสาร:** ID copy · Bank book · Post proof (Posted on) · All documents in one file · Note รวม · ตัด Bank details (เดิมที่ติ๊กไว้ = รายการเอง) · "Includes other fee ฿100"
 - **Partner type:** KOL · Affiliate เท่านั้น (Both เดิม → KOL ตอนโหลด + log) · header "911 partners · KOL 911 · Affiliate 0 · 928 accounts"
 - **Ready to send:** `rules.paymentReadiness` · กล่องใน Payment details · chip Ready / Missing n · ตัวกรอง · Send / Export เฉพาะแถวที่พร้อม (ข้าม = "n lines skipped") · Manager / Admin `Send anyway` (เหตุผล) · Mark paid เตือนอย่างเดียว
-- **Export for accounting:** คอลัมน์ / ชื่อ sheet ตาม PR (ช่วงยอด 1,000 · 3,000 · ใต้ 1,000 ไม่มี VAT / WHT) · Project = สินค้า · Link = เอกสาร · ธนาคารแบบ PR · ไม่มีเบอร์โทร / Line ID / Earn · Manager / Admin + vault ปลดล็อก · log "exported n lines · PR-…"
+- **Export for accounting:** คอลัมน์ / ชื่อ sheet ตาม PR (ช่วงยอด 1,000 · 3,000 · ใต้ 1,000 ไม่มี VAT / WHT) · Project = สินค้า · Link = เอกสาร · ธนาคารแบบ PR · ไม่มีเบอร์โทร / Line ID / Earn · Export ได้: Admin · KOL Manager · **Accounting** · **Staff (Phase 1)** — permission `payment.export` + passphrase ตอน export (Staff: vault ล็อกกลับหลังสร้างไฟล์) · log "exported n lines · PR-…"
 
 ## CR-31 v1.0 · 09/10/2026 — Campaign mix · Deals toolbar · Move stage (วันที่ · Note · Contacted · New address) · แถบ Can’t save
 schema **คงที่ 23** (step_notes รับทุกขั้น `step_<ชื่อ>`) · ตัวเลขเงินเท่าเดิม

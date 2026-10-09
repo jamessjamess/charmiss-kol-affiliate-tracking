@@ -272,10 +272,11 @@ Object.assign(KT.rules, (function (R, C) {
     const idx = R.phaseIndex(state);
     const rows = campaignsInRange(state, from, to, today, statuses).map(c => {
       const [a, z] = scopeRange(state, { campaignId: c.campaign_id }), m = campaignMoney(state, c.campaign_id, idx), p = postsIn(state, c.campaign_id, from, to);
-      return Object.assign({ campaign: c, status: campaignStatusOf(state, c, today), from: a, to: z, posts: p.posts, views: p.views, pillarMix: campaignPillarPct(state, c.campaign_id, idx) }, m);
+      const actual = R.actualPosted(state, state.deals.filter(d => d.campaign_id === c.campaign_id), from, to, today);   // CR-33 §3.9
+      return Object.assign({ campaign: c, status: campaignStatusOf(state, c, today), from: a, to: z, posts: p.posts, views: p.views, pillarMix: campaignPillarPct(state, c.campaign_id, idx), actual }, m);
     });
     /* the Total = the rows on screen (CR-14: the picked statuses decide, Cancelled too when it is picked) */
-    return { rows, total: Object.assign(moneyTotal(rows), { posts: rows.reduce((s, r) => s + r.posts, 0), views: rows.reduce((s, r) => s + r.views, 0) }) };
+    return { rows, total: Object.assign(moneyTotal(rows), { posts: rows.reduce((s, r) => s + r.posts, 0), views: rows.reduce((s, r) => s + r.views, 0), actual: Math.round(rows.reduce((s, r) => s + r.actual, 0) * 100) / 100 }) };
   }
   /* Row 1 — the 4 KPIs: deals / money of the Campaigns in range · posts / views posted in range */
   function allKpis(state, from, to, today, statuses) {

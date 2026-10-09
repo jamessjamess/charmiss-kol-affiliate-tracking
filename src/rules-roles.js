@@ -34,6 +34,9 @@ Object.assign(KT.rules, (function (R, C) {
     { key: 'payee.import', actions: ['payee.import'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
     { key: 'payment.run', actions: ['payment.run'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
     { key: 'payment.paid', actions: ['payment.paid'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: true },
+    /* CR-32 §2.5 (as asked 09/10/2026) — Export for accounting / Export PR (the file has personal and bank details · the vault unlocked for it):
+       Admin · KOL Manager · Accounting · Phase 1: every Staff too (staff: false later = Manager / Admin / Accounting only) */
+    { key: 'payment.export', actions: ['payment.export'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: true },
     { key: 'payment.reopen', actions: ['payment.reopen'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'settings.payments', actions: ['settings.payments'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
     /* CR-11 §4.7 — Settings › Go-live clean-up: Admin runs it · Accounting sees the payments step read-only */
@@ -50,7 +53,7 @@ Object.assign(KT.rules, (function (R, C) {
   const PERM_MODULE = { view: 'dashboard', 'deal.edit': 'deals', 'deal.money': 'deals', 'campaign.products': 'deals', 'campaign.draft': 'deals', 'campaign.edit': 'deals',
     'shipment.edit': 'shipments', 'shipment.ship': 'shipments', 'shipment.settings': 'shipments',
     'payee.edit': 'payments', 'payment.request': 'payments', 'payee.unlock': 'payments', 'payee.verify': 'payments', 'vault.admin': 'payments', 'payee.import': 'payments',
-    'payment.run': 'payments', 'payment.paid': 'payments', 'payment.reopen': 'payments', 'settings.payments': 'payments',
+    'payment.run': 'payments', 'payment.paid': 'payments', 'payment.export': 'payments', 'payment.reopen': 'payments', 'settings.payments': 'payments',
     'kol.edit': 'kol', 'kol.merge': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'settings.ops': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
   const permGroups = () => PERM_MODULES.map(m => ({ module: m, rows: PERMISSIONS.filter(p => (PERM_MODULE[p.key] || 'settings') === m) })).filter(g => g.rows.length);
   /* can(user, action) — asked when a control is drawn and again right before anything is written ·

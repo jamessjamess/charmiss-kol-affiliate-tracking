@@ -138,7 +138,7 @@ KT.store = (function (R) {
   const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
   const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 23;
+  const SCHEMA_VERSION = 24;   // CR-33: payment rounds · documents as files / links · payee confirmed
   const QUOTA_MB = 5;
   const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes', 'deal_gencodes'];
   /* collections that older versions do not have yet (they are created by migrate) */
@@ -335,6 +335,7 @@ KT.store = (function (R) {
   function toV22(obj, now) { R.migrateV22(obj, R.dateOfTimestamp((now || new Date()).toISOString())); }
   /* v22 → v23 (CR-30 §4): Gencodes · Other fee · the Username */
   function toV23(obj) { R.migrateV23(obj); }
+  function toV24(obj, now) { R.migrateV24(obj, (now || new Date()).toISOString()); }   // CR-33 §4 (once)
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -359,6 +360,7 @@ KT.store = (function (R) {
     if (obj.schema_version === 20) toV21(obj);
     if (obj.schema_version === 21) toV22(obj, now);
     if (obj.schema_version === 22) toV23(obj);
+    if (obj.schema_version === 23) toV24(obj, now);
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)
@@ -437,7 +439,8 @@ KT.store = (function (R) {
       const errors = shapeErrors(obj);
       if (errors.length) return { ok: false, errors };
       const photos = obj.photos && typeof obj.photos === 'object' && !Array.isArray(obj.photos) ? Object.keys(obj.photos).length : 0;   // CR-16 §4.4
-      return { ok: true, counts: counts(obj), current: counts(state), backupAt: obj.local && obj.local.last_backup_at, photos, obj };
+      const docFiles = Array.isArray(obj.doc_files) ? obj.doc_files.length : 0;   // CR-33: payee documents (encrypted)
+      return { ok: true, counts: counts(obj), current: counts(state), backupAt: obj.local && obj.local.last_backup_at, photos, docFiles, obj };
     }
     function restore(text, fileName) {
       const p = previewRestore(text);
@@ -446,6 +449,7 @@ KT.store = (function (R) {
       /* CR-16 §4.4 — the pictures of a backup "with photos" go back to IndexedDB (ui.js), never into the state / localStorage */
       const photos = p.photos ? p.obj.photos : null; delete p.obj.photos;
       const stepImages = p.obj.step_images && typeof p.obj.step_images === 'object' && !Array.isArray(p.obj.step_images) ? p.obj.step_images : null; delete p.obj.step_images;   // CR-20 §4.13
+      const docFiles = p.docFiles ? p.obj.doc_files : null; delete p.obj.doc_files;   // CR-33: to IndexedDB (ui.js) — never into the state
       state = migrate(p.obj, now());
       const scrubbed = R.scrubSensitive(state);   // CR-08 §4.4
       /* the person in this browser stays the same when the backup has that user (active) */
@@ -454,7 +458,7 @@ KT.store = (function (R) {
       state.local.restored_from = fileName || null;
       status.corrupt = false;
       save();
-      return { ok: true, counts: counts(state), migratedFrom: was < SCHEMA_VERSION ? was : null, scrubbed, photos, stepImages };
+      return { ok: true, counts: counts(state), migratedFrom: was < SCHEMA_VERSION ? was : null, scrubbed, photos, stepImages, docFiles };
     }
     function reset() {
       const keepBackupAt = state.local.last_backup_at;

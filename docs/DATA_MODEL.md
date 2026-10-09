@@ -1,6 +1,6 @@
 # Data model — Charmiss KOL Tracker
 
-schema_version **19** (CR-20 · 08/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
+schema_version **24** (CR-33 · 09/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
 ที่มาข้อมูลตั้งต้น: `data/KOL_seed_v2.json` → `data/seed.js` (ห้ามแก้) · การอัปเกรดทำใน `src/store.js` `migrate()` ตอนโหลด (seed · localStorage · Backup เก่า v1–v10) — ทำครั้งเดียวตาม `schema_version` · เพิ่ม field เท่านั้น ไม่ลบข้อมูลเงิน
 
 ## Collections
@@ -351,6 +351,19 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 | `shipping_addresses` · `payee_profiles` | สร้างได้ตอน New KOL (เข้ารหัส CR-16 · default) | |
 
 **Migration v23:** `deal_gencodes` = [] · deals `other_fee` = 0 · `other_fee_note` = null · `handle` ตัด @ / ช่องว่าง · ไม่แตะยอดเงิน
+
+## CR-33 — schema 24 (เอกสารเป็นไฟล์ · รอบ PR · Verify / Return · Print)
+
+| ที่ | เปลี่ยน | หมายเหตุ |
+|---|---|---|
+| `payee_profiles.docs` | object วันที่ → รายการ `[{ key, kind: file \| link, file_id, url, name, mime, bytes, received_at }]` | key: `id_copy` · `bank_book` · `company_cert` · `vat_cert` · `name` = `<key>.<ext>` (ไม่เก็บชื่อไฟล์จริง) |
+| `payee_profiles.secure` | + Full name · ID-card address · Phone · WHT contact · Tax ID (ก้อนเดียวกับบัญชี · เข้ารหัส) | แทน `*_enc` แยก · `details_filled` = ชื่อฟิลด์ที่กรอกแล้ว |
+| IndexedDB `charmiss_kol_tracker_docs` › `doc_files` (ใหม่) | `{ file_id (DF-xxxxxxxxxxxx), owner { type payee \| payment, id }, mime, bytes, name, enc { key_id, wrapped_key, iv, data }, created_at }` | ไม่อยู่ใน localStorage / state / log · Backup เฉพาะเมื่อติ๊ก (ยังเข้ารหัส · key `doc_files`) |
+| `payment_lines` | + `payee_confirmed_at` · `payee_confirmed_by` · `verified_at` · `verified_by` · `returned_reason` · `returned_at` · `returned_by` · `printed_at` · `printed_by` · `external_ref` · `voucher_status` | `docs[]` = Post proof / อื่น ๆ (file_id หรือ url) · `docs_one` = ไฟล์หรือลิงก์ |
+| `payment_runs` (= รอบ PR) | + `round` · `name` · `submitted_by` · `expected_pay_date` · `paid_at` · `paid_ref` · `confirmed_by` · `confirmed_at` · `external_ref` · `voucher_status` · `unconfirm_reason` | status `submitted` → `paid` · Round ID = `run_id` (PR-yyyy-mm-dd[-n]) |
+| `deal_events` | type `payee_confirmed` · `payment_verified` · `payment_printed` (note "printed PR-… · n lines") · Return / Not paid in this round = payment event (note) | ไม่เก็บเนื้อหาไฟล์ |
+
+**Migration v24** (`rules-ops.js migrateV24` · รันซ้ำได้ผลเดิม): payee docs ที่เป็นวันที่ → `kind: link` ว่าง + `received_at` · ID copy / Bank book ที่อยู่บนแถวจ่าย (CR-32) → ย้ายขึ้น payee · แถวที่ผูก payee → `payee_confirmed_at` = เวลา migrate (by `system`) · field ใหม่ = null · run ที่ทุกแถว Paid → `paid` (confirmed_by `system`) · run จาก Send to accounting → ชื่อ `PR-<วันส่ง>` · แถว Sent ไม่มี run → รอบ Submitted ตามวันส่ง · แถว Paid ไม่มี run → รอบ Paid ตามวันจ่าย · ยอดเงินเท่าเดิม
 
 ## CR-32 — schema คงที่ 23 (เอกสารจ่ายเงิน · Ready to send · ไม่มี Both)
 

@@ -46,6 +46,7 @@ KT.screens.settings = (function () {
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
     $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : st.section === 'partner_types' ? partnerTypesHTML() : listHTML(st.section);
+    if (st.section === 'data') fillDocFiles();
     if (st.section === 'perf') perfCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
@@ -76,6 +77,11 @@ KT.screens.settings = (function () {
   }
 
   /* ===================== Data ===================== */
+  /* CR-33 §3.2 — how many payee document files this browser holds and their size (IndexedDB · read after the page is drawn) */
+  function fillDocFiles() {
+    const el = $('st_docfiles'); if (!el || !KT.docfiles || !KT.docfiles.available()) return;
+    KT.docfiles.sizes().then(z => { const e2 = $('st_docfiles'); if (e2) e2.innerHTML = kv(K.docFiles, K.docFilesLine(R.fmtNum(z.n), (z.bytes / 1048576).toFixed(2))); }).catch(() => {});
+  }
   function dataHTML() {
     const s = state(), rep = store.storageReport(), mb = rep.total / 1024 / 1024, ok = store.status.canSave;   // CR-31 §2.7: all of it (the data · copies · settings)
     const top = rep.stores.slice(0, 3).map(x => `${x.key} ${(x.chars / 1024 / 1024).toFixed(2)}`).join(' · ');
@@ -86,6 +92,7 @@ KT.screens.settings = (function () {
         ${kv(K.dataSize, K.usingOf(mb.toFixed(1), S.QUOTA_MB), mb > S.QUOTA_MB * 0.85 ? 'over' : '')}
         <div class="hint" style="margin:-4px 0 8px">${esc(K.largest(top))}</div>
         ${kv(K.photos, KT.photos.available() ? K.photosLine(R.fmtNum(KT.photos.totals().n), (KT.photos.totals().bytes / 1048576).toFixed(2)) : C.profile.photoOff)}
+        <div id="st_docfiles">${kv(K.docFiles, KT.docfiles && KT.docfiles.available() ? '…' : C.profile.photoOff)}</div>
         <div class="btns" style="margin-top:16px"><button type="button" class="btn primary" data-act="backup">${esc(K.backupNow)}</button>
           ${can('data.restore') ? `<button type="button" class="btn" data-act="restore">${esc(K.restore)}</button><button type="button" class="btn danger" data-act="reset">${esc(K.reset)}</button>` : ''}</div>
         ${KT.golive.beforeCopyHTML()}

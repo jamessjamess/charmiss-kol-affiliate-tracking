@@ -2506,3 +2506,57 @@ button.pm-notready{cursor:pointer;font:inherit;font-size:12px}
 .sm-ai{margin-top:8px;flex-basis:100%}
 .mv-deliver .hint{margin-top:2px}
 .pd-pi .fields{grid-template-columns:minmax(0,1fr)}
+/* ===================== CR-33 — document slots (a file or a link) · PR rounds · the payee form's two frames ===================== */
+.dslot{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.dslot.got{background:color-mix(in srgb,var(--ok-soft) 60%,transparent)}
+.dslot.busy{opacity:.6;pointer-events:none}
+.ds-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.ds-from{margin-left:auto}
+.ds-b{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:28px;min-width:0}
+.ds-file{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%}
+.ds-name{overflow-wrap:anywhere;min-width:0}
+.ds-rec{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+.ds-rec .dfield{width:150px}
+.ds-linkrow{display:flex;gap:6px;flex-wrap:wrap}
+.ds-linkrow input{flex:1;min-width:180px}
+.ds-x{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ds-x .dfield{width:150px}
+.ds-err:empty{display:none}
+.ds-prev{display:flex;justify-content:center;align-items:center;min-height:60vh;padding:0;background:var(--surface-2)}
+.ds-prev img{max-width:100%;max-height:75vh;object-fit:contain}
+.ds-prev iframe{width:100%;height:75vh;border:0;background:#fff}
+.pd-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+@media (max-width:700px){.pd-slots{grid-template-columns:minmax(0,1fr)}}
+.pd-one{display:inline-flex;align-items:center;gap:6px;margin:2px 0 8px}
+.pd-posted{display:inline-flex;align-items:center;gap:6px}
+.pd-row2{margin-top:6px;font-size:13px}
+.pd-pl{font-weight:600;overflow-wrap:anywhere;min-width:0}
+.pd-conf{font-size:11px}
+.py-frame{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px;min-width:0}
+.py-frame .sec-h{margin-bottom:4px}
+.py-docs2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;margin-top:6px}
+@media (max-width:700px){.py-docs2{grid-template-columns:minmax(0,1fr)}}
+.py-inc{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.py-val{font-variant-numeric:tabular-nums}
+.qcard.late{border-color:var(--err);background:var(--err-soft)}
+.qcard.late .n,.qcard.late .t{color:var(--err)}
+.pm-addto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+.pm-ret{margin-left:6px;font-size:11px}
+.chip.err-chip{background:var(--err-soft);color:var(--err)}
+.pm-rounds tr.pm-rh td{padding:6px 10px}
+.pm-rhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;left:10px;max-width:calc(100vw - 60px)}
+.pm-rounds tr.pm-rh .gh{width:auto;position:static}
+.pm-rbtns{display:inline-flex;gap:6px;flex-wrap:wrap}
+.pm-rounds .pm-act{white-space:nowrap}
+.pm-rounds .pm-act .btn{margin-right:4px}
+.chip.warn-chip.pm-age,.pm-rhead .chip{font-size:11px}
+.cr-tbl td,.cr-tbl th{white-space:nowrap}
+.cr-tbl td:first-child{white-space:normal;overflow-wrap:anywhere}
+.cf-list{display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto;padding:2px}
+.tick.block{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+@media (max-width:760px){.pm-rhead{max-width:calc(100vw - 40px)}.ds-rec{margin-left:0}}
+/* CR-33 §3.9 — Actual (posted): its caption wraps between its two parts instead of being cut */
+.kpi.kc .cap:has(.cdw){white-space:normal;text-overflow:clip}
+.kpi.kc .cap .cdw{white-space:nowrap}
+.pm-rhead>span:not(.pm-rbtns):not(.chip){white-space:normal;overflow-wrap:anywhere;min-width:0}
+.pm-rounds tr.pm-rh td{white-space:normal}

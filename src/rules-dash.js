@@ -20,6 +20,18 @@ Object.assign(KT.rules, (function (R, C) {
   const daysLeftRank = d => [{ last: 0, left: 0, starts: 1, hold: 2 }[d.kind] ?? 3, d.n == null ? 0 : d.n];
   const campaignItem = (state, c, today) => { const [from, to] = R.scopeRange(state, { campaignId: c.campaign_id }); return { status: R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today), from, to }; };
 
+  /* ===================== CR-33 §3.9 — Actual (posted) ===================== */
+  /* the Total cost of the committed deals (Confirm QT on · not cancelled) whose first post date is in [from, to] and not after today (Prepaid / Package too: by the post, not the payment) */
+  function actualPosted(state, deals, from, to, today) {
+    const end = !to || (today && to > today) ? today || to : to;
+    return round2(deals.filter(d => !isCancelled(d) && !R.isShortlist(state.lookups, d)).reduce((a, d) => { const f = firstPostDate(state, d); return f && (!from || f >= from) && (!end || f <= end) ? a + totalCost(d) : a; }, 0));
+  }
+  /* "submitted for payment": what the lines of these deals in a round (Submitted / Paid) come to (gross) */
+  function submittedFor(state, dealIds) {
+    const ids = new Set(dealIds), runs = new Map((state.payment_runs || []).map(r => [r.run_id, r]));
+    return round2((state.payment_lines || []).filter(l => ids.has(l.deal_id) && l.run_id && ['submitted', 'paid'].includes(l.status) && runs.has(l.run_id) && ['submitted', 'paid'].includes(runs.get(l.run_id).status)).reduce((a, l) => a + (l.gross || 0), 0));
+  }
+
   /* ===================== All campaigns — the 5 KPI cards (§4.1) ===================== */
   /* the Campaigns whose dates touch [from, to] and whose status is picked (CR-14 §4.1) — the same rows as the Campaign portfolio */
   function portfolioKpis(state, from, to, today, statuses) {
@@ -35,6 +47,9 @@ Object.assign(KT.rules, (function (R, C) {
       deals: { n: deals.length, list: count('List'), inprocess: count('Inprocess'), complete: count('Complete') },
       money: { budget: t.budget, committed: t.committed, usedPct: t.usedPct, remaining: t.remaining, pending: t.pending },
       paid: { paid: t.paid, pct: t.committed ? t.paid / t.committed * 100 : null, outstanding: round2(t.committed - t.paid) },
+      /* CR-33 §3.9 — the third card: Actual (posted) · % of committed · submitted for payment / not submitted (of the posted) · not yet posted */
+      actual: (() => { const posted = committedDeals.filter(d => { const f = firstPostDate(state, d); return f && (!from || f >= from) && f <= (to && to < today ? to : today); }), a = actualPosted(state, committedDeals, from, to, today), sub = Math.min(a, submittedFor(state, posted.map(d => d.deal_id)));
+        return { actual: a, pct: t.committed ? a / t.committed * 100 : null, submitted: sub, notSubmitted: round2(a - sub), notPosted: round2(Math.max(0, t.committed - a)) }; })(),
       kols: { n: new Set(committedDeals.map(d => d.kol_id)).size, deals: committedDeals.length, avg: committedDeals.length ? Math.round(t.committed / committedDeals.length) : null,
         byType: R.partnerCounts([...new Set(committedDeals.map(d => d.kol_id))].map(id => R.kolById(state, id) || { kol_id: id })),   // CR-26 §3.1: partners once, by Partner type
         notCommitted: deals.length - committedDeals.length },   // Shortlist / Contacted — in the 401, not in the 278
@@ -341,7 +356,7 @@ Object.assign(KT.rules, (function (R, C) {
     return t;
   }
 
-  return { budgetVsActualByMonth, budgetItems, postDueOf, firstPostDate, BVA_OVER: OVER, BVA_BEHIND: BEHIND, bvaStatus, teamWorkload, teamWorkloadTotal,
+  return { actualPosted, submittedFor, budgetVsActualByMonth, budgetItems, postDueOf, firstPostDate, BVA_OVER: OVER, BVA_BEHIND: BEHIND, bvaStatus, teamWorkload, teamWorkloadTotal,
     campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, PLATFORM_ROWS, PLATFORM_OTHER, dealPlatform, platformMix,
     campaignMixDeals, tierMixOf, pillarMixOf, platformMixOf, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

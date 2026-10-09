@@ -177,7 +177,7 @@ KT.content = (function () {
         /* CR-08 §4.9 */
         'payee.edit': 'Payee section: type / tax · documents · enter / replace bank details (encrypted) — Staff: their own KOLs / payees',
         'payment.request': 'Hold / Release a payment · manual line — Staff: deals they are the PIC of',
-        'payee.unlock': 'Unlock payee details (see them in full) · Export PR with payee details', 'payee.verify': 'Mark bank details as verified',
+        'payee.unlock': 'Unlock payee details (see them in full)', 'payment.export': 'Export for accounting / Export PR (with payee details — the vault passphrase is asked for the file only)', 'payee.verify': 'Mark bank details as verified',
         'vault.admin': 'Payee vault: set up · change passphrase · reset', 'payee.import': 'Import payee details (CSV)',
         'payment.run': 'Payment runs: create · add / remove lines · edit amount · submit · export PR', 'payment.paid': 'Mark paid · mark paid outside the app · Return to team · WHT certificate sent · WHT summary · close run',
         'payment.reopen': 'Reopen a run · undo Paid', 'settings.payments': 'Settings › Payments',
@@ -1101,7 +1101,7 @@ KT.content = (function () {
       payPercent: l => `${l} ต้องเป็นตัวเลข 0–100`, payAmount: l => `${l} ต้องเป็นตัวเลข 0 ขึ้นไป`, payRates: 'ใส่อัตรา WHT เป็นตัวเลข 0–99 คั่นด้วยจุลภาค',
       payDefaultRate: 'อัตรา WHT เริ่มต้นต้องอยู่ในรายการอัตราที่เลือกได้', payBands: 'ขอบช่วงยอดต้องมากกว่า 0 และช่วงที่สองต้องมากกว่าช่วงแรก', payWeekday: 'เลือกวันในสัปดาห์',
       payeeType: 'เลือกประเภทผู้รับเงิน (Individual / Company)', payeeBasis: 'เลือก Price basis (Gross / Net)', payeeLink: 'ลิงก์โฟลเดอร์เอกสารต้องขึ้นต้นด้วย http',
-      payeeRequired: l => `ใส่ ${l}`, payeeAccountNo: 'เลขบัญชีต้องเป็นตัวเลข 6–15 หลัก (มี - หรือเว้นวรรคได้)', payeeTaxId: 'เลขผู้เสียภาษีต้องมี 13 หลัก',
+      payeeRequired: l => `ใส่ ${l}`, payeeAccountNo: 'เลขบัญชีต้องเป็นตัวเลข 10–15 หลัก (มี - หรือเว้นวรรคได้)', payeeTaxId: 'เลขผู้เสียภาษีต้องมี 13 หลัก',
       payeeImportNoHandle: 'ไม่มี account_handle', payeeImportDup: 'handle ซ้ำกับแถวก่อนหน้า',
       payAmountPositive: 'ยอดต้องมากกว่า 0', payReimburseUser: 'เลือกพนักงานที่สำรองจ่าย',
       payManualSource: 'เลือก Affiliate หรือ Other', payManualPayee: 'เลือกผู้รับเงิน (หรือสร้าง payee ใหม่)', payManualProject: 'เลือก Campaign หรือพิมพ์ชื่อ Project', payManualDue: 'ใส่วันที่ครบกำหนดจ่าย',
@@ -1729,7 +1729,7 @@ KT.content = (function () {
     acts: { payee: 'Add payee', payeeEdit: 'Payee details', docs: 'Add documents', posts: 'Open posts', products: 'Add products', deal: 'Open deal', pic: 'Assign' },
     unknown: 'Unlock payee details to check', warnOnly: 'A warning — it does not block',
     sendAnyway: 'Send anyway', sendAnywayTitle: n => `Send anyway · ${n}`, sendAnywayHint: 'Not everything is here. Say why it goes now — it is kept in History.',
-    reasonL: 'Reason', anywayNote: (r, miss) => `Sent anyway: ${r} · missing ${miss}`,
+    reasonL: 'Reason', anywayOnly: 'Send anyway: Admin or KOL Manager', anywayNote: (r, miss) => `Sent anyway: ${r} · missing ${miss}`,
     skipped: n => `${n} line${n === 1 ? '' : 's'} skipped — missing details`, notReadyTip: l => `Missing: ${l}`, markPaidWarn: l => `Not everything is here: ${l} — Mark paid still works`,
   };
   Object.assign(C.pay.simple, {
@@ -1742,5 +1742,92 @@ KT.content = (function () {
     linkNotPlatform: p => `This link isn't ${/^[aeiou]/i.test(p) ? 'an' : 'a'} ${p} link`,
   });
   Object.assign(C.samples, { addAddressIn: 'Add address', openInKm: 'Open in KOL Master' });
+  /* ===================== CR-33 — Payee details (required · Personal data) · documents as files · Pay to confirmed · PR rounds · Accounting verify · Print · Actual (posted) ===================== */
+  Object.assign(C.payee, {
+    bankCo: { account_name: 'Account name (company)', full_name: 'Company name', id_address: 'Registered address', tax_id: 'Tax ID' },
+    bankFromList: 'Choose a bank from the list', chooseBank: 'Choose bank', choose: 'Choose…',
+    taxIdOptional: 'Optional for an individual · required for a company',
+    groupPersonal: 'Personal data', groupPersonalHint: 'Full name, address and contact — encrypted like the bank details',
+    personalSaved: 'Saved (encrypted) — unlock to view',
+    docsHint: 'Upload a file (PDF / JPG / PNG / WEBP · up to 5 MB · encrypted in this browser) or paste an https link',
+    unlockToCheck: 'Unlock to check', incomplete: n => `Incomplete · ${n} missing`, complete: 'Complete',
+    plainField: { payee_type: 'Payee type', default_wht_rate: 'Default WHT rate', price_basis: 'Price basis', account_name: 'Account holder name' },
+  });
+  C.newKol.vaultLocked = 'Locked — unlock the vault to add payee details';
+  Object.assign(C.data, {
+    includeDocs: 'Include payee documents (encrypted)', includeDocsHint: (n, size) => `${n} file${n === 1 ? '' : 's'} (${size}) — they stay encrypted; only the vault passphrase opens them`,
+    docsRow: 'Payee documents', docsKept: 'No documents in the file — the ones in this browser stay', docsRestored: n => `ใส่เอกสารผู้รับเงินกลับ ${n} ไฟล์แล้ว`,
+  });
+  Object.assign(C.settings, { docFiles: 'Payee documents', docFilesLine: (n, mb) => `${n} file${n === 1 ? '' : 's'} · ${mb} MB (encrypted · this browser only)` });
+  Object.assign(C.pay.tabs, { tosubmit: 'To submit', submitted: 'Submitted', confirmed: 'Paid (confirmed)' });
+  Object.assign(C.pay.tabTip, { tosubmit: 'What is owed now — tick the Ready rows and create a PR round', submitted: 'PR rounds sent to accounting, not confirmed paid yet', confirmed: 'Rounds confirmed paid · WHT certificates' });
+  Object.assign(C.pay, { reimburseLine: 'Reimburse staff — no payee', printedLine: (d, n) => `Printed ${d}${n ? ` · ${n}` : ''}` });
+  Object.assign(C.pay.prCol, { round_id: 'Round ID', line_id: 'Line ID' });
+  Object.assign(C.pay.ready.items, { payee_confirmed: 'Payee not confirmed', tax_id: 'Tax ID (company)' });
+  Object.assign(C.pay.ready.acts, { confirm: 'Confirm payee' });
+  Object.assign(C.pay.docs, {
+    attached: 'Attached', fromPayee: 'From payee', missingDoc: 'Missing', notAttached: 'File not attached', file: 'File',
+    upload: 'Upload file', change: 'Change', replace: 'Replace', preview: 'Preview', saveLink: 'Save link', linkWord: 'Link',
+    receivedOn: d => `Received ${d}`, receivedNoFile: d => `Received ${d} · file not attached`, fileInApp: l => `${l} — file in the app`,
+    tooBig: 'The file is over 5 MB', wrongType: 'Use a PDF, JPG, PNG or WEBP file', uploadFailed: "Couldn't save the file — try again", cannotOpen: "Can't open this file",
+    editInPayee: 'Edit in payee', removeDoc: 'Remove',
+    hint: 'A file is encrypted in this browser · a link must start with https:// — never type ID card or bank account numbers here',
+  });
+  C.pay.rounds = {
+    tabs: { submittedAcc: 'Submitted by staff', submittedStaff: 'Sent to accounting' },
+    sumToSubmit: 'To submit', sumSubmitted: 'Submitted, not confirmed', sumConfirmed: 'Confirmed this month',
+    cards: { posted: 'Posted but not submitted', missing: 'Missing details', notdue: 'Not due yet', hold: 'On hold', check: 'Needs check' },
+    postedLateTip: 'A post went live more than 7 days ago and its payment is not submitted yet',
+    flow: 'To submit → Create round (the Ready rows) → Submitted → Accounting verifies → Confirm paid',
+    addingTo: n => `Adding lines to ${n} — tick the Ready rows, then Add to ${n}`, doneAdding: 'Done',
+    createRound: 'Create round', addToRound: n => `Add to ${n}`, markPaidOutside: 'Mark paid (outside a round)…',
+    reasonL: 'Reason', reasonPh: 'Why it is paid outside a round', reasonNeeded: 'Say why it is paid outside a round', outsideNote: r => `Paid outside a round: ${r}`,
+    print: 'Print', export: 'Export', addLines: 'Add lines', confirmPaid: 'Confirm paid',
+    remove: 'Remove line', removeTitle: 'Remove line from the round', removed: 'Line removed — back in To submit',
+    verify: 'Verify', unverify: 'Unverify', verifiedToast: 'Verified', unverifiedToast: 'Verify removed',
+    return: 'Return', returnOk: 'Return', returnTitle: n => `Return ${n} to staff`, returnedToast: 'Returned — back in To submit',
+    returnedChip: 'Returned', returnedTip: (r, n, d) => `Returned ${d}${n ? ` by ${n}` : ''}: ${r}`, returnedNote: r => `Returned: ${r}`, notPaidNote: 'Not paid in this round',
+    verified: (v, n) => `Verified ${v}/${n}`, verified1: 'Verified', notVerified: 'Not verified', colVerified: 'Verified', verifiedBy: (d, n) => `Verified ${d}${n ? ` by ${n}` : ''}`,
+    age: d => `${d} day${d === 1 ? '' : 's'}`, ageTip: 'Days since the round was sent (yellow after 7 days)',
+    headLine: (d, by, n, net) => `Sent ${d} · ${by} · ${n} line${n === 1 ? '' : 's'} · Net ฿${net}`,
+    hintStaff: 'Rounds sent to accounting. Accounting verifies each line; Confirm paid once it is transferred.',
+    hintAcc: 'Verify each line or return it with a reason · Print / Export a round · Confirm paid once it is transferred.',
+    noSubmitted: 'No rounds waiting', noConfirmed: 'Nothing confirmed paid in this range',
+    paidHead: (d, ref, by, n, net) => `Paid ${d}${ref ? ` · ${ref}` : ''} · confirmed by ${by} · ${n} line${n === 1 ? '' : 's'} · Net ฿${net}`,
+    outside: 'Paid outside a round', outsideLine: (n, net) => `${n} line${n === 1 ? '' : 's'} · Net ฿${net}`, system: 'System',
+    undoConfirm: 'Undo confirm', undoTitle: n => `Undo confirm · ${n}`, undone: 'Back in Submitted',
+    name: 'Round name', namePh: id => id, nameRequired: 'Give the round a name', payDate: 'Expected pay date',
+    create: 'Create round', createTitle: n => `Create round · ${n} line${n === 1 ? '' : 's'}`,
+    created: (name, n) => `${name} created · ${n} line${n === 1 ? '' : 's'}`, added: (n, name) => `Added ${n} line${n === 1 ? '' : 's'} to ${name}`,
+    confirmTitle: n => `Confirm paid · ${n}`, confirmOk: 'Confirm paid', confirmNone: 'Tick at least one line',
+    confirmHint: 'Untick a line that was not paid in this round — it goes back to To submit',
+    confirmed: (name, n) => `${name} confirmed paid · ${n} line${n === 1 ? '' : 's'}`,
+    confirmPayee: 'Confirm payee', choosePayee: 'Choose payee', addNewPayee: '+ Add new payee',
+    payeeConfirmedOn: d => `Confirmed ${d}`, payeeConfirmedToast: 'Payee confirmed',
+    evConfirmed: n => `Payee confirmed${n ? ` · ${n}` : ''}`, evVerified: 'Verified by accounting', evUnverified: 'Verify removed',
+    status: { due: 'To submit', not_due: 'Not due', on_hold: 'On hold', in_run: 'In a run', sent: 'Submitted', paid: 'Paid' },
+    steps: { tosubmit: 'To submit', submitted: 'Submitted', paid: 'Paid (confirmed)' },
+    printedLog: (label, n) => `printed ${label} · ${n} line${n === 1 ? '' : 's'}`,
+  };
+  C.pay.print = {
+    title: 'Payment summary', round: 'PR round', noRound: 'Not in a round', printedBy: n => `Printed by ${n}`,
+    project: 'Project', account: 'Account', type: 'Type', fullName: 'Full name', idAddress: 'ID-card address', bank: 'Bank', accountNo: 'Account number',
+    gross: 'Gross', vat: 'VAT', wht: r => `WHT ${r}%`, net: 'Net', pic: 'PIC', dealId: 'Deal ID', lineId: 'Line ID', postLink: 'Post link', postedOn: 'Posted on', notAvailable: '—',
+    included: 'Included in this file', linked: 'Linked — not included', notIncluded: 'Could not be added', missing: 'Missing documents',
+    footer: (line, deal) => `Line ${line}${deal ? ` · Deal ${deal}` : ''} · Charmiss KOL Tracker`,
+    linksTitle: n => `${n} document${n === 1 ? ' is a link — open and print it' : 's are links — open and print them'} separately`,
+    linksBody: 'Links cannot go into the PDF (the drive asks to sign in). They are listed on the summary page as "Linked — not included".', printAnyway: 'Print anyway',
+    working: 'Making the PDF…', done: n => `PDF ready · ${n} line${n === 1 ? '' : 's'}`,
+    cannotRead: "Couldn't read the file", protectedPdf: 'The PDF is password-protected', pdfNotAdded: why => `A PDF could not be added: ${why}`,
+  };
+  Object.assign(C.overview, {
+    kActual: 'Actual (posted)', kActualTip: 'Cost of committed deals whose first post is live — submitted for payment or not',
+    colActual: 'Actual', submittedForPay: 'Submitted for payment', notSubmitted: 'Not submitted', notYetPosted: 'Not posted yet',
+  });
+  Object.assign(C.overview.kc, {
+    actualParts: (sub, notSub) => [`${sub} submitted for payment`, `${notSub} not submitted`],
+    actual: (sub, notSub) => `${sub} submitted for payment · ${notSub} not submitted`,
+    actualTip: (pct, sub, notSub, notPosted) => `${pct}% of committed is posted · ${sub} submitted for payment · ${notSub} not submitted · ${notPosted} not posted yet`,
+  });
   return C;
 })();

@@ -128,56 +128,161 @@ Object.assign(KT.rules, (function (R, C) {
   function moveBackToPay(state, l, ctx, note) {
     if (!l || l.status !== 'submitted' || !trim(note)) return null;
     const run = runOf(state, l.run_id), ev = payEvent(l, 'submitted', 'open', ctx, trim(note) || null);
-    Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_by: null, sent_ref: null });
-    if (run && run.auto && !R.runLines(state, run.run_id).length) state.payment_runs = state.payment_runs.filter(r => r !== run);
+    Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_by: null, sent_ref: null, verified_at: null, verified_by: null });
+    dropEmpty(state, run);   // CR-33: a round left empty goes too
     return [ev];
   }
-  /* ===================== CR-27 §3.2 · CR-32 §2.3 — Payment details › Documents ===================== */
-  /* the documents of a row: ID copy · Bank book (a company: Company certificate · Bank book · VAT certificate when VAT registered) · Post proof for an
-     instalment paid after the post · the ones added by hand · "All documents in one file" (one link stands for all of them) · one Note for the section ·
-     Bank details are not a document any more (they are the payee's, in the vault — Pay to) */
+  /* ===================== CR-33 §3.4–3.7 — rounds: a PR round = a payment run Submitted (to Accounting) → Paid (confirmed) ===================== */
+  /* what is owed to be billed now, by the payment term (Pay after post = posted · Prepaid = Confirm QT · 50/50 = each instalment · Package = Confirm QT) */
+  const dueToSubmit = (state, deal, today) => R.dueLines(state, deal, today).filter(i => i.reached && !i.paid);
+  /* the run of a round · a line in it · lines live in it */
+  const roundLines = (state, runId) => R.runLines(state, runId).filter(l => l.status !== 'cancelled');
+  /* Create round (Staff): the rows Ready to send only (the others skipped and counted) → a round "PR-yyyy-mm-dd" (a name can be given) Submitted at once ·
+     o: { name, expectedPayDate, today, addTo (a round to add the rows to) } → { run, lines, events, skipped, undo } */
+  function createRound(state, items, o, ctx) {
+    const live = items.filter(x => !['paid', 'on_hold', 'submitted', 'in_run', 'cancelled'].includes(x.status) && !(x.line && ['paid', 'cancelled', 'on_hold', 'submitted', 'in_run'].includes(x.line.status)));
+    const ready = live.filter(x => paymentReadiness(state, x).ready), skipped = items.length - ready.length;
+    if (!ready.length) return { run: null, lines: [], events: [], skipped, undo: null };
+    let run = o.addTo ? runOf(state, o.addTo) : null, made = false;
+    if (!run) {
+      run = Object.assign(R.newRun(state, { pay_date: o.today, user: ctx.user, now: ctx.now }), { status: 'submitted', submitted_at: ctx.now, submitted_by: ctx.user || null, round: true });
+      Object.assign(run, { name: trim(o.name) || run.run_id, label: trim(o.name) || run.run_id, pay_date: isISODate(o.expectedPayDate) ? o.expectedPayDate : run.pay_date, expected_pay_date: isISODate(o.expectedPayDate) ? o.expectedPayDate : null,
+        paid_at: null, paid_ref: null, confirmed_by: null, confirmed_at: null, external_ref: null, voucher_status: null });
+      state.payment_runs.push(run); made = true;
+    }
+    const events = [], lines = [], undo = { run_id: made ? run.run_id : null, created: [], lines: [] };
+    ready.forEach(x => {
+      let l = x.line;
+      if (!l) { const f = lineFor(state, x, ctx); l = f.line; if (f.prev) undo.lines.push({ line_id: l.line_id, prev: f.prev, full: true }); else { state.payment_lines.push(l); undo.created.push(l.line_id); } }
+      else undo.lines.push({ line_id: l.line_id, prev: JSON.parse(JSON.stringify(l)), full: true });
+      const p = R.payeeOfLine(state, l);
+      events.push(payEvent(l, l.status, 'submitted', ctx, run.run_id));
+      Object.assign(l, { run_id: run.run_id, status: 'submitted', sent_at: ctx.now, sent_by: ctx.user || null, sent_ref: null, payee_id: p ? p.payee_id : l.payee_id, payee_version_at_submit: p ? p.details_version || 0 : null,
+        verified_at: null, verified_by: null, returned_reason: null, returned_at: null, returned_by: null });
+      lines.push(l);
+    });
+    return { run, lines, events, skipped, undo };
+  }
+  /* Undo (10 seconds): the round and its lines as they were */
+  function undoRound(state, undo) {
+    if (!undo) return;
+    state.payment_lines = state.payment_lines.filter(l => !undo.created.includes(l.line_id));
+    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (l) restore(l, u.prev); });
+    if (undo.run_id) state.payment_runs = state.payment_runs.filter(r => r.run_id !== undo.run_id);
+  }
+  /* a round left with no lines goes (an automatic "Sent dd/mm" run too) */
+  const dropEmpty = (state, run) => { if (run && (run.auto || run.round) && !R.runLines(state, run.run_id).length) state.payment_runs = state.payment_runs.filter(r => r !== run); };
+  /* Accounting (§3.7): Verify — the documents are right (✓ Verified · who · when) · again = not verified */
+  function verifyLine(state, l, on, ctx) {
+    if (!l || l.status !== 'submitted') return null;
+    const ev = { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payment_verified', from: l.verified_at ? 'verified' : null, to: on ? 'verified' : null, changed_at: ctx.now, changed_by: ctx.user || null, note: l.run_id || null };
+    Object.assign(l, on ? { verified_at: ctx.now, verified_by: ctx.user || null } : { verified_at: null, verified_by: null });
+    return [ev];
+  }
+  /* Accounting: Return (a reason) — the line leaves the round and is back in To submit of the person who sent it (chip Returned) */
+  function returnLine(state, l, reason, ctx) {
+    if (!l || l.status !== 'submitted' || !trim(reason)) return null;
+    const run = runOf(state, l.run_id), ev = payEvent(l, 'submitted', 'open', ctx, C.pay.rounds.returnedNote(trim(reason)));
+    Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_ref: null, verified_at: null, verified_by: null, returned_reason: trim(reason), returned_at: ctx.now, returned_by: ctx.user || null });
+    dropEmpty(state, run);
+    return [ev];
+  }
+  /* Confirm paid (a round · optional): every line Paid on o.date with o.ref · o.exclude [line ids] "Not paid in this round" → back to To submit ·
+     the deals' flags follow → { events, undo } */
+  function confirmRoundPaid(state, run, o, ctx) {
+    if (!run || run.status !== 'submitted' || !isISODate(o.date)) return null;
+    const live = roundLines(state, run.run_id), ex = new Set(o.exclude || []);
+    const undo = { run: JSON.parse(JSON.stringify(run)), lines: live.map(l => ({ line_id: l.line_id, prev: JSON.parse(JSON.stringify(l)) })), deals: dealFlags(state, live.map(l => l.deal_id)) }, events = [];
+    live.forEach(l => {
+      if (ex.has(l.line_id)) { events.push(payEvent(l, l.status, 'open', ctx, C.pay.rounds.notPaidNote)); Object.assign(l, { status: 'open', run_id: null, sent_at: null, sent_ref: null, verified_at: null, verified_by: null }); return; }
+      if (l.status === 'paid') return;
+      events.push(payEvent(l, l.status, 'paid', ctx, [run.run_id, trim(o.ref)].filter(Boolean).join(' · ')));
+      Object.assign(l, { status: 'paid', paid_date: o.date, paid_by: ctx.user || null, paid_ref: trim(o.ref) || null, unpaid_reason: null });
+    });
+    Object.assign(run, { status: 'paid', paid_at: o.date, paid_ref: trim(o.ref) || null, confirmed_by: ctx.user || null, confirmed_at: ctx.now });
+    R.syncDeals(state, live.map(l => l.deal_id));
+    return { events, undo };
+  }
+  /* Undo confirm (a reason): the round is Submitted again, its lines too · the deals' flags go back */
+  function undoConfirmRound(state, run, reason, ctx) {
+    if (!run || run.status !== 'paid' || !trim(reason)) return null;
+    const events = [];
+    roundLines(state, run.run_id).filter(l => l.status === 'paid').forEach(l => { events.push(payEvent(l, 'paid', 'submitted', ctx, trim(reason))); Object.assign(l, { status: 'submitted', paid_date: null, paid_by: null, paid_ref: null }); });
+    Object.assign(run, { status: 'submitted', paid_at: null, paid_ref: null, confirmed_by: null, confirmed_at: null, unconfirm_reason: trim(reason) });
+    R.syncDeals(state, R.runLines(state, run.run_id).map(l => l.deal_id));
+    return events;
+  }
+  /* the undo of Confirm paid (10 seconds) */
+  function restoreConfirm(state, undo) {
+    const run = runOf(state, undo.run.run_id); if (run) { Object.keys(run).forEach(k => { delete run[k]; }); Object.assign(run, undo.run); }
+    undo.lines.forEach(u => { const l = lineOf(state, u.line_id); if (l) restore(l, u.prev); });
+    undo.deals.forEach(u => { const d = state.deals.find(x => x.deal_id === u.deal_id); if (d) Object.assign(d, u.flags); });
+  }
+  /* the head of a round: lines · Gross / WHT / Net · Verified n/m · days since it was sent (more than 7 = yellow) · who sent it */
+  function roundInfo(state, run, today) {
+    const lines = roundLines(state, run.run_id), t = R.runTotals(lines);
+    const at = run.submitted_at || (lines.map(l => l.sent_at).filter(Boolean).sort()[0]) || null, days = at ? R.dayDiff(today, R.dateOfTimestamp(at)) : null;
+    return { lines, totals: t, verified: lines.filter(l => l.verified_at).length, n: lines.length, sentAt: at, days, late: days != null && days > SENT_LATE_DAYS,
+      sender: run.submitted_by || run.prepared_by || (lines[0] && lines[0].sent_by) || null, name: run.name || run.label || run.run_id };
+  }
+  /* Print (§3.8): who printed and when, on each line · one event for the round ("printed PR-… · n lines" — nothing of the file) */
+  function markPrinted(state, lines, label, ctx) {
+    lines.forEach(l => Object.assign(l, { printed_at: ctx.now, printed_by: ctx.user || null }));
+    return lines.length ? [{ event_id: ctx.eventId(), deal_id: null, line_id: null, run_id: lines[0].run_id || null, type: 'payment_printed', from: null, to: label || null, changed_at: ctx.now, changed_by: ctx.user || null, note: C.pay.rounds.printedLog(label || '', lines.length) }] : [];
+  }
+  /* To submit › "Posted but not submitted": rows owed after their post, not in a round — red when one was posted more than 7 days ago */
+  function postedNotSubmitted(state, items, today) {
+    const rows = items.filter(x => x.deal && ['ready', 'missing_docs'].includes(x.status) && !x.run_id && R.firstPostDate(state, x.deal));
+    const oldest = rows.map(x => R.firstPostDate(state, x.deal)).sort()[0] || null;
+    return { n: rows.length, gross: Math.round(rows.reduce((a, x) => a + x.tax.gross, 0) * 100) / 100, late: !!oldest && R.dayDiff(today, oldest) > SENT_LATE_DAYS, oldest };
+  }
+
+  /* ===================== CR-27 · CR-32 · CR-33 §3.2 — Payment details › Documents ===================== */
+  /* the documents of a row: the payee's (ID copy · Bank book · Company certificate · VAT certificate — kept once on the payee and used by every round: "From payee") ·
+     the round's own: Post proof for an instalment paid after the post + any added by hand · All documents in one file (a file or a link) · one Note ·
+     each document is a file (encrypted in IndexedDB · KT.docfiles) or an https link · Bank details are the payee's (the vault — Pay to) */
   const afterPost = (x, deal) => !!deal && (x.milestone === 'final' || (x.milestone === 'full' && R.termOf(deal) !== 'prepaid'));
   const dealOfX = (state, x) => x.deal || (x.deal_id ? state.deals.find(d => d.deal_id === x.deal_id) || null : null);
+  const payeeOfX = (state, x) => (x.payee === undefined ? R.payeeOfLine(state, x.line || x) : x.payee);
   function docKeys(state, x) {
     if (!x || x.pay_to === 'reimburse') return [];
-    const p = x.payee === undefined ? R.payeeOfLine(state, x.line || x) : x.payee, company = !!p && p.payee_type === 'company';
-    return (company ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']).concat(afterPost(x, dealOfX(state, x)) ? ['post_proof'] : []);
+    return R.payeeDocKeys(payeeOfX(state, x)).concat(afterPost(x, dealOfX(state, x)) ? ['post_proof'] : []);
   }
-  /* what a line keeps, read the CR-32 way: an old "Post evidence" tick = Post proof · an old "Bank details" tick = a document of its own (kept) ·
+  /* a stored document → { kind: file | link, file_id, url, name, mime, bytes, received_at, … } (CR-32 kept "link") */
+  const asDoc = d => { if (!d) return {}; const o = Object.assign({}, d, { kind: d.file_id ? 'file' : 'link', url: d.url || d.link || '' }); delete o.link; return o; };   // CR-32 kept it as link
+  /* what a line keeps, read the CR-33 way: an old "Post evidence" tick = Post proof · an old "Bank details" tick = a document of its own (kept) ·
      the old notes of each document become the one Note (when there is none yet) */
   function lineDocsOf(l) {
     const raw = R.lineDocs(l);
-    const items = raw.map(d => (d.key === 'post_evidence' && !d.custom ? Object.assign({}, d, { key: 'post_proof' })
+    const items = raw.map(d => asDoc(d.key === 'post_evidence' && !d.custom ? Object.assign({}, d, { key: 'post_proof' })
       : d.key === 'bank_details' && !d.custom ? Object.assign({}, d, { custom: true, label: d.label || C.payee.missingBank }) : d));
     const oldNotes = raw.filter(d => trim(d.note)).map(d => `${d.custom ? d.label || '' : d.key === 'bank_details' ? C.payee.missingBank : R.docLabel(d.key === 'post_evidence' ? 'post_proof' : d.key)}: ${trim(d.note)}`);
     const one = (l && l.docs_one) || {};
-    return { items, note: l && l.docs_note != null ? l.docs_note : oldNotes.join(' · '), one: { on: !!one.on, link: one.link || '', received_at: one.received_at || null } };
+    return { items, note: l && l.docs_note != null ? l.docs_note : oldNotes.join(' · '), one: Object.assign(asDoc(one), { on: !!one.on, received_at: one.received_at || null }) };
   }
   /* the latest post date of the deal (Post proof › Posted on starts with it) */
   const lastPostDate = (state, dealId) => (dealId ? R.postsOf(state, dealId).map(p => p.post_date).filter(Boolean).sort().pop() || null : null);
-  /* the checklist of a row → [{ key, label, custom, auto (on file in the payee profile), received, received_at, link, posted_on (Post proof) }] ·
-     All in one file with a link: every one counts as received */
+  const docRow = (key, label, d, one, o) => Object.assign({ key, label, custom: false, fromPayee: false, attached: R.docAttached(d), received: one || R.docAttached(d) || !!d.received_at,
+    received_at: d.received_at || null, kind: d.file_id ? 'file' : d.url ? 'link' : null, file_id: d.file_id || null, url: d.url || '', name: d.name || '', mime: d.mime || null, bytes: d.bytes || null }, o || {});
+  /* the checklist of a row → [{ key, label, fromPayee, custom, attached (a file or a link), received, received_at, kind, file_id, url, name, posted_on (Post proof) }] ·
+     All in one file with a file or a link: every one counts as received */
   function docsChecklist(state, x) {
     if (!x || x.pay_to === 'reimburse') return [];
-    const p = x.payee === undefined ? R.payeeOfLine(state, x.line || x) : x.payee, v = lineDocsOf(x.line || x.docsLine || x), one = v.one.on && /^https:\/\//i.test(v.one.link);
-    const deal = dealOfX(state, x);
-    return docKeys(state, x).map(k => {
-      const d = v.items.find(y => y.key === k && !y.custom) || {}, onFile = k !== 'post_proof' && p && p.docs && isISODate(p.docs[k]) ? p.docs[k] : null;
-      const got = !!d.received_at || !!onFile || one;
-      return { key: k, label: R.docLabel(k), custom: false, auto: !d.received_at && !!onFile, received: got, received_at: d.received_at || onFile || (one ? v.one.received_at : null),
-        link: d.link || (onFile && p.docs_link ? p.docs_link : '') || '', posted_on: k === 'post_proof' ? d.posted_on || lastPostDate(state, deal && deal.deal_id) : null };
-    }).concat(v.items.filter(d => d.custom).map(d => ({ key: d.key, label: d.label || '', custom: true, auto: false, received: !!d.received_at || one, received_at: d.received_at || null, link: d.link || '', posted_on: null })));
+    const p = payeeOfX(state, x), v = lineDocsOf(x.line || x.docsLine || x), one = v.one.on && R.docAttached(v.one), deal = dealOfX(state, x);
+    const out = R.payeeDocKeys(p).map(k => { const d = asDoc(R.payeeDoc(p, k)); return docRow(k, R.docLabel(k), d.key ? d : {}, one, { fromPayee: true }); });
+    if (afterPost(x, deal)) { const d = v.items.find(y => y.key === 'post_proof' && !y.custom) || {}; out.push(docRow('post_proof', R.docLabel('post_proof'), d, one, { posted_on: d.posted_on || lastPostDate(state, deal && deal.deal_id) })); }
+    v.items.filter(d => d.custom).forEach(d => out.push(docRow(d.key, d.label || '', d, one, { custom: true })));
+    return out;
   }
-  /* All in one file · the Note (the section's own, read the CR-32 way) */
+  /* All in one file · the Note (the section's own) */
   const docsMeta = x => { const v = lineDocsOf(x && (x.line || x.docsLine || x)); return { one: v.one, note: v.note }; };
-  /* "Docs 2/3" (information · the readiness asks for the links) → { need, have, missing [keys] } */
+  /* "Docs 2/3" → { need, have, missing [keys] } */
   function docsTally(state, x) {
     if (!x || x.pay_to === 'reimburse') return null;
     const list = docsChecklist(state, x);
     return { need: list.length, have: list.filter(d => d.received).length, missing: list.filter(d => !d.received).map(d => d.key) };
   }
-  /* Note / Link: no ID-card, phone or bank-account number (9 or more digits in a row, - and spaces left out) · a link starts with https:// · an own document needs a name ·
-     CR-32: the one Note · the All-in-one link */
+  /* Note / Link: no ID-card, phone or bank-account number (9 or more digits in a row, - and spaces left out) · a link starts with https:// · an own document needs a name */
   const longDigits = v => /\d{9,}/.test(String(v == null ? '' : v).replace(/[-\s]/g, ''));
   const linkErr = v => (!trim(v) ? null : !/^https:\/\/\S+$/i.test(trim(v)) ? C.pay.docs.linkHttps : longDigits(v) ? C.pay.docs.noNumbers : null);
   function validateDocs(entries, meta) {
@@ -185,48 +290,51 @@ Object.assign(KT.rules, (function (R, C) {
     (entries || []).forEach((e, i) => {
       if (e.custom && !trim(e.label)) errs.push({ field: `doc${i}_label`, msg: C.pay.docs.nameRequired });
       if (e.custom && (R.looksSensitive(e.label) || longDigits(e.label))) errs.push({ field: `doc${i}_label`, msg: C.msg.sensitive });
-      if (trim(e.note) && (R.looksSensitive(e.note) || longDigits(e.note))) errs.push({ field: `doc${i}_note`, msg: C.pay.docs.noNumbers });
-      const le = linkErr(e.link); if (le) errs.push({ field: `doc${i}_link`, msg: le });
+      const le = linkErr(e.url != null ? e.url : e.link); if (le) errs.push({ field: `doc${i}_link`, msg: le });
       if (e.received_at && !isISODate(e.received_at)) errs.push({ field: `doc${i}_date`, msg: C.msg.dateInvalid(C.pay.docs.received) });
       if (e.posted_on && !isISODate(e.posted_on)) errs.push({ field: `doc${i}_posted`, msg: C.msg.dateInvalid(C.pay.docs.postedOn) });
     });
     if (meta) {
       if (trim(meta.note) && (R.looksSensitive(meta.note) || longDigits(meta.note))) errs.push({ field: 'docs_note', msg: C.pay.docs.noNumbers });
-      const one = meta.one || {}, le = linkErr(one.link); if (le) errs.push({ field: 'docs_onelink', msg: le });
+      const one = meta.one || {}, le = linkErr(one.url != null ? one.url : one.link); if (le) errs.push({ field: 'docs_onelink', msg: le });
       if (one.received_at && !isISODate(one.received_at)) errs.push({ field: 'docs_onedate', msg: C.msg.dateInvalid(C.pay.docs.received) });
     }
     return { errs, warns: [], infos: [] };
   }
   const docsText = list => { const n = list.filter(d => d.received).length; return `${n}/${list.length}`; };
-  /* entries = the checklist as edited ({key, label, custom, received_at, link, posted_on}) · meta = { note, one: {on, link, received_at} } (left out = as it is) →
-     the row's line keeps them (a row with no line gets a docs-only one) · an event 'payment_docs' "2/3 → 3/3" · the deal's Docs done follows · → { line, event, created } | { errs } */
+  const fileFields = d => ({ file_id: d.file_id || null, url: trim(d.url != null ? d.url : d.link) || null, name: d.file_id ? d.name || null : null, mime: d.file_id ? d.mime || null : null, bytes: d.file_id ? d.bytes || null : null });
+  /* entries = the round's own documents as edited ({key, label, custom, file_id | url, name, mime, bytes, received_at, posted_on}) · meta = { note, one: {on, file_id | url, …, received_at} }
+     (left out = as it is) → kept on the row's line (a row with no line gets a docs-only one) · an event 'payment_docs' "2/3 → 3/3" · the deal's Docs done follows ·
+     → { line, event, created, dropped [file_ids no longer used] } | { errs } */
   function setItemDocs(state, x, entries, ctx, meta) {
-    const cur = docsMeta(x), m = { note: meta && meta.note !== undefined ? meta.note : cur.note, one: Object.assign({}, cur.one, (meta && meta.one) || {}) };
+    const mo = Object.assign({}, (meta && meta.one) || {}); if (mo.link !== undefined && mo.url === undefined) mo.url = mo.link; delete mo.link;   // a CR-32 caller's link
+    const cur = docsMeta(x), m = { note: meta && meta.note !== undefined ? meta.note : cur.note, one: Object.assign({}, cur.one, mo) };
     const v = validateDocs(entries, m); if (v.errs.length) return { errs: v.errs };
-    const before = docsChecklist(state, x);
+    const before = docsChecklist(state, x), oldFiles = lineFiles(x.line || x.docsLine);
     let l = x.line || x.docsLine, created = false;
-    const keepIt = e => e.custom || e.received_at || trim(e.link) || (e.posted_on && e.key === 'post_proof');
-    const list = (entries || []).filter(keepIt).map((e, i) => ({ key: e.custom ? e.key || `own_${Date.now().toString(36)}_${i}` : e.key, label: e.custom ? trim(e.label) : null, custom: !!e.custom,
-      received_at: e.received_at || null, note: null, link: trim(e.link) || null, posted_on: e.key === 'post_proof' ? e.posted_on || null : undefined }))
-      .map(e => { if (e.posted_on === undefined) delete e.posted_on; return e; });
-    const one = { on: !!m.one.on, link: trim(m.one.link) || null, received_at: m.one.received_at || null }, note = trim(m.note) || null, anyOne = one.on || one.link;
+    const list = (entries || []).filter(e => !e.fromPayee).filter(e => e.custom || e.file_id || trim(e.url != null ? e.url : e.link) || e.received_at || (e.posted_on && e.key === 'post_proof'))
+      .map((e, i) => Object.assign({ key: e.custom ? e.key || `own_${Date.now().toString(36)}_${i}` : e.key, label: e.custom ? trim(e.label) : null, custom: !!e.custom, received_at: e.received_at || null, note: null },
+        fileFields(e), e.key === 'post_proof' ? { posted_on: e.posted_on || null } : {}));
+    const one = Object.assign({ on: !!m.one.on, received_at: m.one.received_at || null }, fileFields(m.one)), note = trim(m.note) || null, anyOne = one.on || one.url || one.file_id;
     if (!l) {
-      if (!list.length && !anyOne && !note) return { line: null, event: null, created: false };
+      if (!list.length && !anyOne && !note) return { line: null, event: null, created: false, dropped: [] };
       l = R.newLine(state, x, { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now });
       l.docs_only = true; state.payment_lines.push(l); created = true;
     }
     l.docs = list; l.docs_note = note; l.docs_one = anyOne ? one : null;
-    if (R.isDocsOnly(l) && !list.length && !anyOne && !note) state.payment_lines = state.payment_lines.filter(y => y !== l);   // nothing left to keep
-    const after = docsChecklist(state, Object.assign({}, x, x.line ? { line: l } : { docsLine: l }));
+    if (R.isDocsOnly(l) && !list.length && !anyOne && !note && !l.payee_confirmed_at) state.payment_lines = state.payment_lines.filter(y => y !== l);   // nothing left to keep
+    const after = docsChecklist(state, Object.assign({}, x, x.line ? { line: l } : { docsLine: l })), now = new Set(lineFiles(l));
     const ev = { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payment_docs', from: docsText(before), to: docsText(after), changed_at: ctx.now, changed_by: ctx.user || null,
-      note: (one.on && one.link && !(cur.one.on && cur.one.link) ? C.pay.docs.oneFile : after.filter(d => d.received && !before.some(b => b.key === d.key && b.received)).map(d => d.label).join(' · ')) || null };
+      note: (one.on && (one.url || one.file_id) && !(cur.one.on && (cur.one.url || cur.one.file_id)) ? C.pay.docs.oneFile : after.filter(d => d.received && !before.some(b => b.key === d.key && b.received)).map(d => d.label).join(' · ')) || null };
     if (l.deal_id) syncDocsDone(state, l.deal_id, String(ctx.now || '').slice(0, 10));
-    return { line: l, event: ev, created };
+    return { line: l, event: ev, created, dropped: oldFiles.filter(id => !now.has(id)) };
   }
-  /* Mark all received (a row or many): every document not received yet → received on date */
-  const allReceived = (state, x, date) => docsChecklist(state, x).map(d => Object.assign({}, d, d.auto || d.received ? {} : { received_at: date }));
+  /* the file ids a line keeps (its documents · All in one file) */
+  const lineFiles = l => (!l ? [] : R.lineDocs(l).map(d => d.file_id).concat(l.docs_one ? [l.docs_one.file_id] : []).filter(Boolean));
+  /* Mark all received (a row or many): every document of the round not received yet → received on date (the payee's stay as they are) */
+  const allReceived = (state, x, date) => docsChecklist(state, x).filter(d => !d.fromPayee).map(d => Object.assign({}, d, d.received ? {} : { received_at: date }));
 
-  /* ===================== CR-32 §2.5 — Ready to send ===================== */
+  /* ===================== CR-32 §2.5 · CR-33 — Ready to send ===================== */
   /* the products of a deal (its Products, else what its samples carried) — the "Project" of the PR file */
   function dealProjectNames(state, deal) {
     if (!deal) return [];
@@ -234,14 +342,16 @@ Object.assign(KT.rules, (function (R, C) {
     const from = codes.length ? codes : (state.sample_shipments || []).filter(sh => sh.deal_id === deal.deal_id && sh.status !== 'cancelled' && sh.status !== 'not_required').flatMap(sh => (sh.items || []).map(i => i.tr_code));
     return [...new Set(from.filter(Boolean))].map(c => { const p = R.productByCode(state, c); return p ? R.productShort(p) || p.tr_code : c; }).filter(Boolean);
   }
-  /* the documents' links of a row (All in one file, else one per document) — the Link column of the PR file · [] when a document has no link */
+  /* the documents of a row for the PR file's Link column: All in one file, else one per document (a link · a file kept in the app) */
   function docsLinks(state, x) {
-    const m = docsMeta(x); if (m.one.on && /^https:\/\//i.test(m.one.link)) return [m.one.link];
-    return docsChecklist(state, x).filter(d => !d.custom).map(d => d.link).filter(Boolean);
+    const m = docsMeta(x); if (m.one.on && R.docAttached(m.one)) return [m.one.url || C.pay.docs.fileInApp(C.pay.docs.oneFile)];
+    return docsChecklist(state, x).filter(d => !d.custom && d.attached).map(d => d.url || C.pay.docs.fileInApp(d.label));
   }
   /* the payee's encrypted fields are never read here — the payee keeps which ones are filled (details_filled, written each time they are saved;
      an older payee gets it the next time the vault is unlocked) */
   const filledOf = p => (p && p.secure ? (Array.isArray(p.details_filled) ? p.details_filled : null) : []);
+  /* CR-33 §3.3 — the payee of the row was confirmed (1 payee: Confirm · more: chosen) */
+  const payeeConfirmed = (state, x) => { const l = x.line || x.docsLine, p = x.payee; return !!(l && l.payee_confirmed_at && p && (l.payee_id || null) === p.payee_id); };
   /* → { ready, items [{ key, ok, warn (only a warning), unknown (unlock to check), act }], missing [keys that block], warns [keys] } ·
      a reimbursement needs only the amount and the PIC · a manual line has no posts or payment term to check */
   function paymentReadiness(state, x) {
@@ -250,13 +360,15 @@ Object.assign(KT.rules, (function (R, C) {
     if (!staff) {
       const p = x.payee, f = filledOf(p), has = k => !!f && f.includes(k), unk = !!p && p.secure && !f;
       put('payee', !!p && !!p.secure, { act: 'payee' });
+      if (p) put('payee_confirmed', payeeConfirmed(state, x), { act: 'confirm' });   // CR-33 §3.3
       if (p && p.secure) {
         put('full_name', has('full_name'), { unknown: unk, act: 'payee' });
         put('id_address', has('id_address'), { unknown: unk, act: 'payee' });
         put('bank', has('bank_name') && has('account_no') && has('account_name'), { unknown: unk, act: 'payee' });
+        if (p.payee_type === 'company') put('tax_id', has('tax_id'), { unknown: unk, act: 'payee' });   // CR-33 §3.1
       }
-      const list = docsChecklist(state, x), m = docsMeta(x), oneOk = m.one.on && /^https:\/\//i.test(m.one.link);
-      put('docs', oneOk || (list.length > 0 && list.filter(d => !d.custom).every(d => d.received && /^https:\/\//i.test(d.link))), { act: 'docs' });
+      const list = docsChecklist(state, x), m = docsMeta(x), oneOk = m.one.on && R.docAttached(m.one);
+      put('docs', oneOk || (list.length > 0 && list.filter(d => !d.custom).every(d => d.attached)), { act: 'docs' });
       if (deal && afterPost(x, deal)) { const ps = R.postsOf(state, deal.deal_id); put('posted', ps.length > 0 && ps.every(R.postDone), { act: 'posts' }); }
       put('project', deal ? dealProjectNames(state, deal).length > 0 : !!trim(x.project_label), { act: deal ? 'products' : null });
     }
@@ -265,6 +377,21 @@ Object.assign(KT.rules, (function (R, C) {
     if (!staff && x.tax && x.tax.wht > 0) { const f = filledOf(x.payee); put('wht_contact', !!f && f.includes('wht_contact'), { warn: true, unknown: !!x.payee && x.payee.secure && !f, act: x.payee ? 'payee' : null }); }
     const missing = items.filter(i => !i.ok && !i.warn).map(i => i.key), warns = items.filter(i => !i.ok && i.warn).map(i => i.key);
     return { ready: !missing.length, items, missing, warns };
+  }
+  /* CR-33 §3.3 — Pay to: the payee is confirmed on the row (1 payee: Confirm payee · more: chosen from an empty list — never a default) · a deal's row: the deal's
+     Pay to follows (its open lines too) · a row with no line keeps it on a docs-only line → { line, events, created } | null */
+  function confirmPayee(state, x, payeeId, ctx) {
+    const p = R.payeeById(state, payeeId); if (!p || p.archived || (x.kol_id && p.kol_id && p.kol_id !== x.kol_id)) return null;
+    let l = x.line || x.docsLine; if (l && R.linePayeeLocked(l)) return null;
+    const deal = dealOfX(state, x);
+    const events = [];
+    if (deal && (!x.payee || x.payee.payee_id !== p.payee_id)) { const def = R.defaultPayee(state, deal.kol_id), r = R.setDealPayee(state, deal, def && def.payee_id === p.payee_id ? null : p.payee_id, { eventId: ctx.eventId(), now: new Date(ctx.now || Date.now()), user: ctx.user }); if (r && r.event) events.push(r.event); }
+    let created = false;
+    if (!l) { l = R.newLine(state, Object.assign({}, x, { payee: p }), { lineId: ctx.lineId(), agreed_amount: x.agreed, price_basis: x.price_basis, wht_rate: x.tax.wht_rate, pay_to: x.pay_to, reimburse_user: x.reimburse_user, user: ctx.user, now: ctx.now }); l.docs_only = true; state.payment_lines.push(l); created = true; }
+    else if (!deal && l.payee_id !== p.payee_id) R.setLinePayee(state, l, p.payee_id);
+    const ev = { event_id: ctx.eventId(), deal_id: l.deal_id || null, line_id: l.line_id, type: 'payee_confirmed', from: l.payee_confirmed_at ? l.payee_id : null, to: p.payee_id, changed_at: ctx.now, changed_by: ctx.user || null, note: p.label || null };
+    Object.assign(l, { payee_id: p.payee_id, payee_type: p.payee_type, payee_confirmed_at: ctx.now, payee_confirmed_by: ctx.user || null });
+    return { line: l, events: events.concat([ev]), created };
   }
   /* a deal's Docs done: every instalment (not cancelled) has what it needs — set once all are in (the warning "Marked as paid, but documents aren't checked yet" goes) */
   function syncDocsDone(state, dealId, today) {
@@ -313,6 +440,84 @@ Object.assign(KT.rules, (function (R, C) {
     return [{ event_id: ctx.eventId(), deal_id: sh.deal_id, shipment_id: sh.shipment_id, type: 'sample', from: 'delivered', to: 'shipped', changed_at: ctx.now, changed_by: ctx.user || null, note: 'undo' }];
   }
 
+  /* ===================== CR-33 §3.8 — Print: what goes into the PDF, in order ===================== */
+  /* a row (a line or a To pay row) → { key, summary (the plain part — the personal fields are filled from the vault by the caller), parts [{ key, label, fromPayee, file_id | url, name, mime }]
+     in the PDF's order: All documents in one file · else ID copy → Bank book → Company certificate → VAT certificate → Post proof → others · files = what goes in · links = "Linked — not included" } */
+  const PRINT_ORDER = ['id_copy', 'bank_book', 'company_cert', 'vat_cert', 'post_proof'];
+  function printPlan(state, item) {
+    const x = item.line_id && !item.tax ? { line: item, payee: R.payeeOfLine(state, item), deal_id: item.deal_id, milestone: item.milestone, pay_to: item.pay_to, kol_id: item.kol_id } : item;
+    const l = x.line || x.docsLine || null, deal = dealOfX(state, x), p = x.payee || null, kol = x.kol_id ? R.kolById(state, x.kol_id) : null;
+    const names = deal ? dealProjectNames(state, deal) : [], run = l && l.run_id ? runOf(state, l.run_id) : null;
+    const tax = x.tax || (l ? { gross: l.gross, vat: l.vat, wht: l.wht, net: l.net, wht_rate: l.wht_rate } : { gross: 0, vat: 0, wht: 0, net: 0, wht_rate: 0 });
+    const posts = deal ? R.postsOf(state, deal.deal_id).filter(ps => ps.post_link).map(ps => ({ link: ps.post_link, date: ps.post_date || null })) : [];
+    const summary = { project: names.length ? names.join(', ') : (l && l.project_label) || x.project_label || (deal ? R.campaignName(state, deal.campaign_id) : ''),
+      account: (l && l.account_handle) || x.account_handle || '', type: (l && l.source === 'affiliate') || (kol && R.partnerTypeOf(kol) === 'affiliate') ? 'AFF' : 'KOL',
+      bank: p ? R.bankPr(state.lookups, p.bank_name) : '', gross: tax.gross, vat: tax.vat, wht: tax.wht, wht_rate: tax.wht_rate, net: tax.net,
+      pic: deal ? deal.pic || '' : x.pic || '', round: run ? run.name || run.label || run.run_id : '', round_id: run ? run.run_id : '', deal_id: x.deal_id || '', line_id: l ? l.line_id : '', posts, payee_id: p ? p.payee_id : '' };
+    const m = docsMeta(x), one = m.one.on && R.docAttached(m.one);
+    const part = d => ({ key: d.key, label: d.label, fromPayee: !!d.fromPayee, file_id: d.file_id || null, url: d.file_id ? null : d.url || null, name: d.name || '', mime: d.mime || null, posted_on: d.posted_on || null });
+    const parts = one ? [{ key: 'one', label: C.pay.docs.oneFile, fromPayee: false, file_id: m.one.file_id || null, url: m.one.file_id ? null : m.one.url || null, name: m.one.name || '', mime: m.one.mime || null }]
+      : docsChecklist(state, x).filter(d => d.attached).sort((a, b) => (PRINT_ORDER.indexOf(a.key) < 0 ? 99 : PRINT_ORDER.indexOf(a.key)) - (PRINT_ORDER.indexOf(b.key) < 0 ? 99 : PRINT_ORDER.indexOf(b.key))).map(part);
+    return { key: x.key || (l && l.line_id), summary, parts, files: parts.filter(q => q.file_id), links: parts.filter(q => !q.file_id && q.url), missing: docsChecklist(state, x).filter(d => !d.attached && !one).map(d => d.label) };
+  }
+
+  /* the Payment summary page, row by row (label · value · links) — the personal fields from rec (the payee's, decrypted by the caller, in memory only) */
+  function printRows(plan, rec) {
+    const P = C.pay.print, s = plan.summary, money = v => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), r = rec || {};
+    return [[P.project, s.project], [P.account, s.account], [P.type, s.type], [P.fullName, r.full_name || P.notAvailable], [P.idAddress, r.id_address || P.notAvailable],
+      [P.bank, s.bank || (r.bank_name ? R.bankPr({}, r.bank_name) : '')], [P.accountNo, r.account_no || P.notAvailable], [P.gross, money(s.gross)], [P.vat, money(s.vat)],
+      [P.wht(s.wht_rate || 0), money(s.wht)], [P.net, money(s.net)], [P.pic, s.pic], [P.round, s.round || P.noRound], [P.dealId, s.deal_id || '—'], [P.lineId, s.line_id || '—']]
+      .concat(s.posts.length ? s.posts.map((x, i) => [i ? '' : P.postLink, `${x.link}${x.date ? `  ·  ${P.postedOn} ${R.dmy(x.date)}` : ''}`, x.link]) : [[P.postLink, '—']]);
+  }
+
+  /* ===================== schema 24 (CR-33 §4 — once) ===================== */
+  /* payee documents → [{ key, kind, file_id, url, received_at }] (a date = "Received dd/mm · file not attached") · ID copy / Bank book kept on a payment line (CR-32) → the payee ·
+     lines with a payee → confirmed (the day of the migration) · the CR-33 fields null · rounds: every run gets a name · a run with every line paid → Paid ·
+     paid lines with no run → one Paid round a paid date (PR-<date>) · no amount changes */
+  function migrateV24(obj, nowIso) {
+    const at = nowIso || new Date().toISOString(), payees = obj.payee_profiles || [], lines = obj.payment_lines || [];
+    obj.payment_runs = obj.payment_runs || [];
+    payees.forEach(p => {
+      if (p.docs && !Array.isArray(p.docs)) p.docs = Object.entries(p.docs).filter(([, v]) => v).map(([key, v]) => ({ key, kind: 'link', file_id: null, url: null, name: null, received_at: isISODate(v) ? v : null }));
+      else if (!p.docs) p.docs = [];
+    });
+    const UP = ['id_copy', 'bank_book', 'company_cert', 'vat_cert'];
+    lines.forEach(l => {
+      const items = Array.isArray(l.docs) ? l.docs : [], up = items.filter(d => d && !d.custom && UP.includes(d.key));
+      if (up.length) {
+        const p = payees.find(x => x.payee_id === l.payee_id) || payees.find(x => x.kol_id && x.kol_id === l.kol_id && x.is_default) || null;
+        up.forEach(d => { if (p && !p.docs.some(x => x.key === d.key)) p.docs.push({ key: d.key, kind: 'link', file_id: null, url: d.url || d.link || null, name: null, received_at: d.received_at || null }); });
+        l.docs = items.filter(d => !up.includes(d));
+      }
+      ['payee_confirmed_at', 'payee_confirmed_by', 'verified_at', 'verified_by', 'returned_reason', 'returned_at', 'returned_by', 'printed_at', 'printed_by', 'external_ref', 'voucher_status'].forEach(k => { if (l[k] === undefined) l[k] = null; });
+      if (l.payee_id && !l.payee_confirmed_at) Object.assign(l, { payee_confirmed_at: at, payee_confirmed_by: 'system' });
+    });
+    /* a run made by Send to accounting (Simple) is named by its send date: PR-<date> (-2 · -3 when a day has more) · a Full-mode run keeps its label */
+    const taken = new Set(obj.payment_runs.map(r => r.name).filter(Boolean)), prName = d => { let id = 'PR-' + d, n = 2; while (taken.has(id)) id = `PR-${d}-${n++}`; taken.add(id); return id; };
+    obj.payment_runs.forEach(r => {
+      if (!r.name) r.name = r.auto === 'simple' && r.submitted_at ? prName(String(r.submitted_at).slice(0, 10)) : r.label || r.run_id;
+      ['expected_pay_date', 'paid_at', 'paid_ref', 'confirmed_by', 'confirmed_at', 'external_ref', 'voucher_status', 'submitted_by'].forEach(k => { if (r[k] === undefined) r[k] = null; });
+      const live = lines.filter(l => l.run_id === r.run_id && l.status !== 'cancelled');
+      if (live.length && live.every(l => l.status === 'paid') && r.status !== 'paid' && r.status !== 'closed') Object.assign(r, { status: 'paid', paid_at: live.map(l => l.paid_date).filter(Boolean).sort().pop() || null, confirmed_by: 'system' });
+      else if (r.status === 'paid' && !r.paid_at) r.paid_at = live.map(l => l.paid_date).filter(Boolean).sort().pop() || null;
+    });
+    /* lines Sent with no run → a Submitted round a send date · Paid with no run → a Paid round a paid date (PR-<date>) */
+    const ids = new Set(obj.payment_runs.map(r => r.run_id));
+    const group = (pick, dateOf) => { const m = new Map(); lines.filter(pick).forEach(l => { const d = dateOf(l); if (!m.has(d)) m.set(d, []); m.get(d).push(l); }); return m; };
+    const sent = group(l => l.status === 'submitted' && !l.run_id && !l.docs_only, l => String(l.sent_at || at).slice(0, 10));
+    const paid = group(l => l.status === 'paid' && !l.run_id && !l.docs_only, l => l.paid_date || at.slice(0, 10));
+    [[sent, 'submitted'], [paid, 'paid']].forEach(([m, st]) => [...m.keys()].sort().forEach(d => {
+      let id = 'PR-' + d, n = 2; while (ids.has(id)) id = `PR-${d}-${n++}`; ids.add(id); taken.add(id);
+      const first = m.get(d)[0];
+      obj.payment_runs.push({ run_id: id, name: id, label: id, pay_date: d, prepared_by: null, status: st, submitted_at: st === 'submitted' ? first.sent_at || at : null, submitted_by: st === 'submitted' ? first.sent_by || null : null,
+        note: null, created_at: at, round: true, migrated: true, expected_pay_date: null, paid_at: st === 'paid' ? d : null, paid_ref: null, confirmed_by: st === 'paid' ? 'system' : null, confirmed_at: st === 'paid' ? at : null,
+        external_ref: null, voucher_status: null });
+      m.get(d).forEach(l => { l.run_id = id; });
+    }));
+    obj.schema_version = Math.max(obj.schema_version || 0, 24);
+    return obj;
+  }
+
   /* ===================== schema 16 ===================== */
   /* ops_mode simple / simple · lines in a run that went to Accounting: sent_at = when the run was submitted · new line fields null · Campaigns / Phases approved */
   function migrateV16(obj) {
@@ -331,5 +536,6 @@ Object.assign(KT.rules, (function (R, C) {
   return { OPS_KINDS, OPS_MODES, OPS_DEFAULT, opsMode, isSimple, setOpsMode, simpleBucket, sentAt, sentDays, SENT_LATE_DAYS, canPaySimple, canUnpay,
     markItemsPaid, undoMarkPaid, markUnpaid, sendToAccounting, undoSend, moveBackToPay, docsTally, setWhtSent, paymentsToConfirm, simplePayTrack,
     docsChecklist, validateDocs, setItemDocs, allReceived, syncDocsDone, lineHistory, docKeys, lineDocsOf, docsMeta, dealProjectNames, docsLinks, paymentReadiness, afterPost,
-    shipQuick, undoDelivered, migrateV16 };
+    payeeConfirmed, confirmPayee, lineFiles, dueToSubmit, roundLines, createRound, undoRound, verifyLine, returnLine, confirmRoundPaid, undoConfirmRound, restoreConfirm, roundInfo, markPrinted, postedNotSubmitted,
+    shipQuick, undoDelivered, migrateV16, printPlan, printRows, migrateV24 };
 })(KT.rules, KT.content));

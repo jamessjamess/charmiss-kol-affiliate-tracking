@@ -93,7 +93,7 @@ Object.assign(KT.rules, (function (R, C) {
   const PAYEE_DOCS = ['id_copy', 'bank_book', 'company_cert', 'vat_cert'];
   /* what payee.secure holds (encrypted) — never stored in plain text */
   const BANK_FIELDS = ['account_name', 'bank_name', 'account_no', 'full_name', 'id_address', 'phone', 'wht_contact', 'tax_id'];
-  const BANK_REQUIRED = ['account_name', 'bank_name', 'account_no', 'full_name'];
+  const BANK_REQUIRED = ['account_name', 'bank_name', 'account_no', 'full_name', 'id_address'];   // CR-33 §3.1: + ID-card address (a company: Tax ID too)
   /* CR-16 §4.2 — a KOL may have more than one payee: this is its default (R.defaultPayee) */
   const payeeOfKol = (state, kolId) => R.defaultPayee(state, kolId);
   const payeeById = (state, id) => (state.payee_profiles || []).find(p => p.payee_id === id) || null;
@@ -111,11 +111,30 @@ Object.assign(KT.rules, (function (R, C) {
       details_version: 0, details_updated_at: null, details_updated_by: null, needs_verification: false, verified_at: null, verified_by: null,
       created_by: o.user || null, created_at: o.now || null, updated_at: o.now || null, updated_by: o.user || null };
   }
-  /* the documents a payee needs on file: Individual = ID copy · Bank book · Bank details · Company = Company certificate · Bank book · Bank details (+ VAT certificate when VAT registered) */
+  /* CR-33 §3.2 — the payee's documents (used again by every round): Individual = ID copy · Bank book · Company = Company certificate · Bank book (+ VAT certificate when VAT registered) */
+  const payeeDocKeys = p => (p && p.payee_type === 'company' ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book']);
+  /* payee.docs = [{ key, kind: file | link, file_id, url, name, mime, bytes, received_at }] (an older { key: date } reads as "Received dd/mm · file not attached") */
+  function payeeDocs(p) {
+    const d = p && p.docs; if (!d) return [];
+    if (Array.isArray(d)) return d.filter(x => x && x.key);
+    return Object.entries(d).filter(([, v]) => v).map(([key, v]) => ({ key, kind: 'link', file_id: null, url: null, name: null, received_at: isISODate(v) ? v : null }));
+  }
+  const payeeDoc = (p, key) => payeeDocs(p).find(x => x.key === key) || null;
+  /* a document is there when it has a file or an https link (a date alone = received, file not attached) */
+  const docAttached = d => !!d && (!!d.file_id || /^https:\/\//i.test(d.url || d.link || ''));
+  /* the documents a payee still needs (+ Bank details while nothing is encrypted) */
   function payeeDocsMissing(payee) {
     if (!payee) return ['id_copy', 'bank_book', 'bank_details'];   // no payee yet: what an Individual needs
-    const need = payee.payee_type === 'company' ? ['company_cert', 'bank_book'].concat(payee.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book'];
-    return need.filter(k => !(payee.docs && payee.docs[k])).concat(payee.secure ? [] : ['bank_details']);
+    return payeeDocKeys(payee).filter(k => !docAttached(payeeDoc(payee, k))).concat(payee.secure ? [] : ['bank_details']);
+  }
+  /* CR-33 §3.1 — what a payee is missing of its required fields (Tax & terms · Bank details · Personal data) → [keys] · null = not known yet (an older payee: unlock once) */
+  function payeeMissing(p) {
+    if (!p) return null;
+    const plain = ['payee_type', 'default_wht_rate', 'price_basis'].filter(k => isBlank(p[k]));
+    const need = BANK_REQUIRED.concat(p.payee_type === 'company' ? ['tax_id'] : []);
+    if (!p.secure) return plain.concat(need);
+    if (!Array.isArray(p.details_filled)) return null;
+    return plain.concat(need.filter(k => !p.details_filled.includes(k)));
   }
   /* CR-32 §2.5 — the banks: { name, short (KBank — on screen), pr (กสิกร — the PR file) } in lookups.banks · a name typed another way is matched by any of the three */
   const banksDefault = () => (C.payee.bankList || []).map(b => Object.assign({}, b));
@@ -146,12 +165,15 @@ Object.assign(KT.rules, (function (R, C) {
     }
     return { errs, warns: [], infos: [] };
   }
-  /* the encrypted part: holder, bank, account number (6–15 digits), full name · tax ID 13 digits when given */
-  function validateBankDetails(d) {
-    const errs = [];
-    BANK_REQUIRED.forEach(k => { if (isBlank(d[k])) errs.push(issue('b_' + k, M.payeeRequired(C.payee.bank[k]))); });
+  /* the encrypted part (CR-33 §3.1): holder · bank (from lookups.banks) · account number (digits / dashes, 10–15 digits) · full name · ID-card address ·
+     a company: Tax ID (13 digits) · o: { type, L (the bank list), only [keys] (New KOL: the bank part only) } */
+  function validateBankDetails(d, o = {}) {
+    const errs = [], need = o.only || BANK_REQUIRED.concat(o.type === 'company' ? ['tax_id'] : []);
+    const label = k => (o.type === 'company' && C.payee.bankCo && C.payee.bankCo[k]) || C.payee.bank[k];
+    need.forEach(k => { if (isBlank(d[k])) errs.push(issue('b_' + k, M.payeeRequired(label(k)))); });
+    if (!isBlank(d.bank_name) && o.L && !bankOf(o.L, d.bank_name)) errs.push(issue('b_bank_name', C.payee.bankFromList));
     const acc = digitsOf(d.account_no);
-    if (!isBlank(d.account_no) && (acc.length < 6 || acc.length > 15 || /[^\d\s-]/.test(d.account_no))) errs.push(issue('b_account_no', M.payeeAccountNo));
+    if (!isBlank(d.account_no) && (acc.length < 10 || acc.length > 15 || /[^\d\s-]/.test(d.account_no))) errs.push(issue('b_account_no', M.payeeAccountNo));
     if (!isBlank(d.tax_id) && digitsOf(d.tax_id).length !== 13) errs.push(issue('b_tax_id', M.payeeTaxId));
     return { errs, warns: [], infos: [] };
   }
@@ -190,7 +212,7 @@ Object.assign(KT.rules, (function (R, C) {
       seen.add(handle);
       const type = isBlank(row.payee_type) ? 'individual' : row.payee_type.toLowerCase();
       if (!PAYEE_TYPES.includes(type)) errs.push(M.payeeType);
-      validateBankDetails(row).errs.forEach(e => errs.push(e.msg));
+      validateBankDetails(row, { type, L: state.lookups }).errs.forEach(e => errs.push(e.msg));   // CR-33 §3.1
       if (!isBlank(row.docs_link) && (looksSensitive(row.docs_link) || !R.isHttpLink(row.docs_link))) errs.push(M.payeeLink);
       /* CR-16 §4.2 — payee_label: the label of a payee added to a KOL that has one already (Add as another payee) */
       const label = trim(row.payee_label) || null;
@@ -249,10 +271,11 @@ Object.assign(KT.rules, (function (R, C) {
   function payItem(state, today, o) {
     const l = o.line, deal = o.deal || dealOf(state, l && l.deal_id), pkg = o.pkg ? R.packagePayBase(state, o.pkg) : null;
     /* CR-20 §4.8 — a package's row: its payee, else the KOL's default */
-    const payee = l ? payeeOfLine(state, l) : pkg ? (pkg.payee_id ? payeeById(state, pkg.payee_id) : null) || payeeOfKol(state, pkg.kol_id) : deal ? R.payeeOfDeal(state, deal) : null;   // CR-16: the deal's payee
+    const conf = !l && o.docsLine && o.docsLine.payee_id ? payeeById(state, o.docsLine.payee_id) : null;   // CR-33 §3.3: the payee confirmed on the row
+    const payee = l ? payeeOfLine(state, l) : conf && !conf.archived ? conf : pkg ? (pkg.payee_id ? payeeById(state, pkg.payee_id) : null) || payeeOfKol(state, pkg.kol_id) : deal ? R.payeeOfDeal(state, deal) : null;   // CR-16: the deal's payee
     const base0 = l || pkg || { source: 'deal', deal_id: deal.deal_id, milestone: o.inst.milestone, kol_id: deal.kol_id, agreed_amount: o.inst.amount, due_date: o.inst.reached ? o.inst.due_date || null : expectedDue(state, deal, o.inst.milestone),
       price_basis: null, wht_rate: null, pay_to: 'payee', status: 'open' };
-    const base = !l && o.docsLine ? Object.assign({}, base0, { docs: o.docsLine.docs, docs_one: o.docsLine.docs_one, docs_note: o.docsLine.docs_note }) : base0;   // CR-27 · CR-32: the documents of a row not sent yet
+    const base = !l && o.docsLine ? Object.assign({}, base0, { docs: o.docsLine.docs, docs_one: o.docsLine.docs_one, docs_note: o.docsLine.docs_note, payee_id: o.docsLine.payee_id, payee_confirmed_at: o.docsLine.payee_confirmed_at }) : base0;   // CR-27 · CR-32 · CR-33
     const tax = l ? { gross: l.gross, vat: l.vat, wht: l.wht, net: l.net, wht_rate: l.wht_rate } : taxOf(state, base, payee);
     const status = l ? lineStatus(state, l, today) : !pkg && !o.inst.reached ? 'not_due' : docsRequired(state, base, payee).length ? 'missing_docs' : 'ready';
     const kol = base.kol_id ? R.kolById(state, base.kol_id) : null;
@@ -310,13 +333,15 @@ Object.assign(KT.rules, (function (R, C) {
       pay_to: o.pay_to === 'reimburse' ? 'reimburse' : 'payee', reimburse_user: o.pay_to === 'reimburse' ? o.reimburse_user || null : null, price_basis: o.price_basis || 'gross',
       agreed_amount: round2(o.agreed_amount), gross: tax.gross, vat: tax.vat, wht_rate: tax.wht_rate, wht: tax.wht, net: tax.net, due_date: item.due_date || null,
       docs_check: Object.fromEntries(['id_copy', 'bank_book', 'company_cert', 'vat_cert', 'post_proof'].map(k => [k, !miss.includes(k)])),
-      status: 'open', run_id: null, printed: false, paid_date: null, wht_cert_sent_date: null, cancel_reason: null, note: trim(o.note) || null, created_by: o.user || null, created_at: o.now || null };
+      status: 'open', run_id: null, printed: false, paid_date: null, wht_cert_sent_date: null, cancel_reason: null, note: trim(o.note) || null, created_by: o.user || null, created_at: o.now || null,
+      payee_confirmed_at: null, payee_confirmed_by: null, verified_at: null, verified_by: null, returned_reason: null, returned_at: null, returned_by: null, printed_at: null, printed_by: null, external_ref: null, voucher_status: null };   // CR-33
   }
   /* CR-27 — a row with a docs-only line becomes a full line (Send · Mark paid · Hold): today's amounts, its documents kept */
   function promoteDocsLine(state, item, o) {
     const l = item.docsLine; if (!isDocsOnly(l)) return null;
     const fresh = newLine(state, item, Object.assign({}, o, { lineId: l.line_id }));
-    Object.assign(l, fresh, { docs: lineDocs(l), docs_one: l.docs_one || null, docs_note: l.docs_note != null ? l.docs_note : null, created_by: l.created_by, created_at: l.created_at }); delete l.docs_only;
+    const keep = { payee_id: l.payee_confirmed_at ? l.payee_id : fresh.payee_id, payee_confirmed_at: l.payee_confirmed_at || null, payee_confirmed_by: l.payee_confirmed_by || null, returned_reason: l.returned_reason || null, returned_at: l.returned_at || null, returned_by: l.returned_by || null };
+    Object.assign(l, fresh, keep, { docs: lineDocs(l), docs_one: l.docs_one || null, docs_note: l.docs_note != null ? l.docs_note : null, created_by: l.created_by, created_at: l.created_at }); delete l.docs_only;
     return l;
   }
   function validateRequest(state, o) {
@@ -551,7 +576,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* the columns of a band's sheet: No · Project · ชื่อ Account · Type · ชื่อ-นามสกุล · ที่อยู่ตามบัตรประชาชน · ธนาคาร · เลขบัญชี · จำนวนเงิน · VAT 7% · WHT 3% ·
      จำนวนเงินที่ต้องชำระ · Link · PIC · Print · Email / ที่อยู่ส่งใบ WHT · Payee ID · Deal ID — under the first band there is no VAT / WHT (no tax under ฿1,000) */
   function prColumns(S, band) {
-    const P = C.pay, cols = ['no', 'project', 'account', 'type', 'full_name', 'id_address', 'bank', 'account_no', 'gross', 'vat', 'wht', 'net', 'link', 'pic', 'print', 'wht_contact', 'payee_id', 'deal_id'];
+    const P = C.pay, cols = ['no', 'project', 'account', 'type', 'full_name', 'id_address', 'bank', 'account_no', 'gross', 'vat', 'wht', 'net', 'link', 'pic', 'print', 'wht_contact', 'payee_id', 'deal_id', 'round_id', 'line_id'];   // CR-33 §3.7: + Round ID · Line ID
     return cols.filter(k => band > 0 || (k !== 'vat' && k !== 'wht')).map(k => ({ key: k, head: k === 'vat' ? P.prVat(S.vat_rate) : k === 'wht' ? P.prWht(S.default_wht_individual) : P.prCol[k] }));
   }
   /* one PR row of a line (details = the payee's decrypted fields, in memory only) — numbers stay numbers */
@@ -560,11 +585,12 @@ Object.assign(KT.rules, (function (R, C) {
     const names = deal ? R.dealProjectNames(state, deal) : [], kol = l.kol_id ? R.kolById(state, l.kol_id) : null;
     const x = { line: l, payee: p, deal, deal_id: l.deal_id, milestone: l.milestone, pay_to: l.pay_to };
     const link = l.pay_to === 'reimburse' && l.reimburse_user ? P.prReimburse(R.changedByName(state, l.reimburse_user)) : R.docsLinks(state, x).join('\n');
+    const printed = l.printed_at ? P.printedLine(R.dmy(String(l.printed_at).slice(0, 10)).slice(0, 5), R.changedByName(state, l.printed_by)) : '';   // CR-33 §3.8
     const type = l.source === 'affiliate' || (kol && R.partnerTypeOf(kol) === 'affiliate') ? 'AFF' : PR_TYPE[l.source] || 'Other';
     return { no: i + 1, project: names.length ? names.join(', ') : l.project_label || (deal ? R.campaignName(state, deal.campaign_id) : ''), account: l.account_handle || '', type,
       full_name: rec ? rec.full_name || '' : '', id_address: rec ? rec.id_address || '' : '', bank: rec ? bankPr(state.lookups, rec.bank_name) : p ? bankPr(state.lookups, p.bank_name) || '' : '',
       account_no: rec ? rec.account_no || '' : '', gross: { v: l.gross, money: true }, vat: { v: l.vat, money: true }, wht: { v: l.wht, money: true }, net: { v: l.net, money: true },
-      link, pic: picOfLine(state, l, deal) || '', print: { v: !!l.printed, t: 'b' }, wht_contact: rec ? rec.wht_contact || '' : '', payee_id: (p && p.payee_id) || '', deal_id: l.deal_id || '' };
+      link, pic: picOfLine(state, l, deal) || '', print: printed, wht_contact: rec ? rec.wht_contact || '' : '', payee_id: (p && p.payee_id) || '', deal_id: l.deal_id || '', round_id: l.run_id || '', line_id: l.line_id };
   }
   /* run → the sheets of the PR (one per band that has lines, the run line on top · "รวม" at the bottom) + Summary · details: Map payee_id → decrypted bank details, or null */
   function prSheets(state, run, details) {
@@ -579,7 +605,7 @@ Object.assign(KT.rules, (function (R, C) {
       total[1] = { v: P.prTotal, bold: true };
       cols.forEach((c, n) => { if (['gross', 'vat', 'wht', 'net'].includes(c.key)) total[n] = { v: `SUM(${colL(n)}3:${colL(n)}${last})`, t: 'f', bold: true, money: true }; });
       rows.push(total);
-      const W = { no: 6, project: 24, account: 20, type: 7, full_name: 24, id_address: 34, bank: 12, account_no: 18, gross: 14, vat: 12, wht: 12, net: 16, link: 40, pic: 10, print: 10, wht_contact: 26, payee_id: 11, deal_id: 11 };
+      const W = { no: 6, project: 24, account: 20, type: 7, full_name: 24, id_address: 34, bank: 12, account_no: 18, gross: 14, vat: 12, wht: 12, net: 16, link: 40, pic: 10, print: 18, wht_contact: 26, payee_id: 11, deal_id: 11, round_id: 16, line_id: 11 };
       sheets.push({ name: `${names[b]} ${ddmmyy}`, rows, freeze: 2, widths: cols.map(c => W[c.key]) });
       const t = runTotals(list); bandRows.push([amountLabels(S)[b], t.n, { v: t.gross, money: true }, { v: t.vat, money: true }, { v: t.wht, money: true }, { v: t.net, money: true }]);
     });
@@ -611,7 +637,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   return { PAYMENT_SETTINGS_DEFAULT, paymentSettingsDefault, paySettings, validatePaymentSettings, round2, calcPaymentTax, bandOf, reachedDates, dueLines,
-    PAYEE_TYPES, PRICE_BASES, PAYEE_DOCS, BANK_FIELDS, payeeOfKol, payeeById, mainHandle, blankPayee, payeeDocsMissing, last4, validatePayee, validateBankDetails, bankRecord,
+    PAYEE_TYPES, PRICE_BASES, PAYEE_DOCS, BANK_FIELDS, BANK_REQUIRED, payeeOfKol, payeeById, mainHandle, blankPayee, payeeDocsMissing, payeeDocKeys, payeeDocs, payeeDoc, docAttached, payeeMissing, last4, validatePayee, validateBankDetails, bankRecord,
     payeeHasPaid, canEditPayee, PAYEE_CSV_COLS, normHandle, planPayeeImport, scrubSensitive,
     LINE_STATUSES, payeeOfLine, postEvidence, docsRequired, lineDocs, isDocsOnly, promoteDocsLine, docLabel, lineStatus, taxOf, expectedDue, payItem, payQueue, payCards, canRequest, newLine, validateRequest, dealPayItems,
     RUN_STATUSES, nextRunDate, runIdFor, newRun, runLines, runTotals, runChecks, addToRun, removeFromRun, submitRun, syncDealPayment, syncDeals, markPaid, undoPaid, reopenRun, editLineAmount,

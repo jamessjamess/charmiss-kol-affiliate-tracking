@@ -123,7 +123,7 @@ KT.screens.overview = (function () {
   /* the order of the status parts (bar · caption) — the Campaign timeline's colours */
   const KPI_ST = ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   function kpiCards(k) {
-    const c = k.campaigns, d = k.deals, m = k.money, p = k.paid, PS = C.phaseStatus, X = R.fmtCompact;
+    const c = k.campaigns, d = k.deals, m = k.money, a = k.actual, PS = C.phaseStatus, X = R.fmtCompact;
     const sts = KPI_ST.filter(st => c.by[st]);
     const campaigns = kpiCard({ label: O.kCampaigns, tip: O.kCampaignsTip, value: R.fmtNum(c.n),
       bar: sts.map(st => seg(c.by[st] / Math.max(1, c.n) * 100, 'ks ' + st)).join(''),
@@ -136,8 +136,10 @@ KT.screens.overview = (function () {
     const committed = kpiCard({ label: O.committed, tip: MN.committed, value: R.baht(m.committed), suffix: m.budget == null ? O.noBudget : O.of(R.baht(m.budget)),
       bar: m.budget == null ? '' : seg(used, 'ok' + (used > 100 ? ' over' : '')) + seg(Math.min(pendPct, Math.max(0, 100 - used)), 'pend'),
       barTip: comTip, caption: comCap, capTip: comTip, capHTML: m.remaining != null && m.remaining < 0 ? `<span class="late">${esc(comCap)}</span>` : null });
-    const paidCap = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), X(p.outstanding)), paidTip = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), R.baht(p.outstanding));
-    const paid = kpiCard({ label: O.kPaid, tip: O.kPaidTip, value: R.baht(p.paid), bar: seg(p.pct || 0, 'ok'), barTip: paidTip, caption: paidCap, capTip: paidTip });
+    /* CR-33 §3.9 — Actual (posted) instead of Paid: the bar = % of committed · "฿x submitted for payment · ฿y not submitted" */
+    const actCap = O.kc.actual(X(a.submitted), X(a.notSubmitted)), actTip = O.kc.actualTip(Math.round(a.pct || 0), R.baht(a.submitted), R.baht(a.notSubmitted), R.baht(a.notPosted));
+    const paid = kpiCard({ label: O.kActual, tip: O.kActualTip, value: R.baht(a.actual), bar: seg(a.pct || 0, 'ok'), barTip: actTip, caption: actCap, capTip: actTip,
+      capHTML: O.kc.actualParts(X(a.submitted), X(a.notSubmitted)).map(t => `<span class="cdw">${esc(t)}</span>`).join('<span class="sep"> · </span>') });   // two parts: the caption goes onto two lines rather than "…"
     /* partners once (committed deals) · the bar: committed deals (dark) vs in List (faint — Shortlist / Contacted) · KOL / Affiliate in the value's tooltip ·
        an Affiliate there → the caption says KOL n · Affiliate n (CR-29 §6 #2) */
     const kk = k.kols, types = R.partnerTypesOf(state().lookups).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · ');
@@ -315,7 +317,7 @@ KT.screens.overview = (function () {
   /* Campaign portfolio (Row 3) — Days left · Deals · every column sorts (Days left: On going fewest first) */
   const PCOLS = () => [{ k: 'campaign', l: O.colCampaign }, { k: 'status', l: O.colStatus }, { k: 'period', l: O.colPeriod },
     { k: 'days', l: O.colDaysLeft, num: 1, tip: { h: O.colDaysLeft, d: O.daysLeftTip } }, { k: 'budget', l: MN.budget.h, num: 1, tip: MN.budget },
-    { k: 'committed', l: MN.committed.h, num: 1, tip: MN.committed }, { k: 'used', l: MN.used.h, cls: 'usedh', tip: MN.used },
+    { k: 'committed', l: MN.committed.h, num: 1, tip: MN.committed }, { k: 'actual', l: O.colActual, num: 1, tip: { h: O.colActual, d: O.kActualTip } }, { k: 'used', l: MN.used.h, cls: 'usedh', tip: MN.used },
     { k: 'remaining', l: MN.remaining.h, num: 1, tip: MN.remaining }, { k: 'pending', l: MN.pending.h, num: 1, tip: MN.pending }, { k: 'deals', l: O.deals, num: 1 }];
   const daysCell = d => `<span class="dleft ${d.kind}${d.soon ? ' soon' : ''}">${esc(KT.export.daysText(d))}</span>`;
   /* Used %: a 72px bar on the left and the % in a fixed 48px on the right — the same in every row (CR-09 §4.8) */
@@ -330,9 +332,9 @@ KT.screens.overview = (function () {
     const t = m.total;
     $('ov_port').innerHTML = `<div class="tablewrap"><table class="tbl port"><thead><tr>${PCOLS().map(th).join('')}</tr></thead><tbody>` +
       m.rows.map(r => `<tr class="click" tabindex="0" data-gocamp="${esc(r.campaign.campaign_id)}"><td class="nm"><b>${esc(r.campaign.campaign_name)}</b></td><td>${phaseChip(r.status)}</td><td class="nowrap">${esc(r.from ? `${dm(r.from)} – ${dm(r.to)}` : '')}</td>` +
-        `<td class="num">${daysCell(r.days)}</td><td class="num">${r.budget == null ? `<span class="muted">${esc(O.noBudget)}</span>` : R.baht(r.budget)}${KT.budget.pendingTagHTML(r.campaign.campaign_id) ? `<div>${KT.budget.pendingTagHTML(r.campaign.campaign_id)}</div>` : ''}</td><td class="num">${R.baht(r.committed)}</td><td>${usedBar72(r.usedPct)}</td>` +
+        `<td class="num">${daysCell(r.days)}</td><td class="num">${r.budget == null ? `<span class="muted">${esc(O.noBudget)}</span>` : R.baht(r.budget)}${KT.budget.pendingTagHTML(r.campaign.campaign_id) ? `<div>${KT.budget.pendingTagHTML(r.campaign.campaign_id)}</div>` : ''}</td><td class="num">${R.baht(r.committed)}</td><td class="num${r.actual ? '' : ' muted'}">${r.actual ? R.baht(r.actual) : '—'}</td><td>${usedBar72(r.usedPct)}</td>` +
         `<td class="num">${remainingText(r.remaining)}</td><td class="num${r.pending ? '' : ' muted'}">${r.pending ? R.baht(r.pending) : '—'}</td><td class="num">${R.fmtNum(r.deals)}</td></tr>`).join('') +
-      `<tr class="total"><td>${esc(O.colTotal)}</td><td></td><td></td><td></td><td class="num">${t.budget == null ? '—' : R.baht(t.budget)}</td><td class="num">${R.baht(t.committed)}</td><td>${usedBar72(t.usedPct)}</td>` +
+      `<tr class="total"><td>${esc(O.colTotal)}</td><td></td><td></td><td></td><td class="num">${t.budget == null ? '—' : R.baht(t.budget)}</td><td class="num">${R.baht(t.committed)}</td><td class="num">${R.baht(t.actual || 0)}</td><td>${usedBar72(t.usedPct)}</td>` +
         `<td class="num">${remainingText(t.remaining)}</td><td class="num">${R.baht(t.pending)}</td><td class="num">${R.fmtNum(t.deals)}</td></tr></tbody></table></div>`;
   }
   /* KOL tier mix (CR-13 Row 4, right) — donut of committed deals by tier · Spend / Deals · total in the middle · legend table beside it */

@@ -5,7 +5,7 @@
 KT.payee = (function () {
   'use strict';
   const U = KT.ui, V = KT.vault;
-  const { C, R, $, esc, state, commit, toast, openDialog, closeDialog, dateHTML, optionsHTML, can, store, userId, ICON } = U;
+  const { C, R, $, esc, state, commit, toast, openDialog, closeDialog, dateHTML, optionsHTML, can, store, userId, ICON, today } = U;
   const PY = C.payee, VT = C.vault, SM = C.samples;
   const vaultOf = () => state().lookups.payee_vault || null;
   const userName = id => R.changedByName(state(), id);
@@ -41,8 +41,13 @@ KT.payee = (function () {
     const verify = p.needs_verification ? `<div class="chip err-chip" style="margin-top:6px">${esc(PY.needsVerify(R.dmy((p.details_updated_at || '').slice(0, 10)), userName(p.details_updated_by)))}</div>` +
         (can('payee.verify') ? ` <button type="button" class="btn small" data-payee-verify="${esc(p.payee_id)}">${esc(PY.markVerified)}</button>` : '')
       : p.verified_at ? `<div class="muted small">${esc(PY.verifiedBy(R.dmy(p.verified_at.slice(0, 10)), userName(p.verified_by)))}</div>` : '';
-    const need = p.payee_type === 'company' ? ['company_cert', 'bank_book'].concat(p.vat_registered ? ['vat_cert'] : []) : ['id_copy', 'bank_book'];
-    const docs = need.map(k => { const d = (p.docs || {})[k]; return `<span class="chip${d ? ' ok-chip' : ''}" title="${esc(d ? PY.received(R.dmy(d)) : '')}">${d ? '✓ ' : ''}${esc(PY.docs[k])}${d ? ` ${esc(R.dmy(d).slice(0, 5))}` : ''}</span>`; }).join('');
+    /* CR-33 §3.2 — each document: ✓ a file / a link · "Received dd/mm · file not attached" · missing */
+    const docs = R.payeeDocKeys(p).map(k => { const d = R.payeeDoc(p, k), att = R.docAttached(d);
+      return `<span class="chip${att ? ' ok-chip' : d && d.received_at ? '' : ' warn-chip'}" title="${esc(att ? (d.file_id ? d.name || '' : d.url) : d && d.received_at ? C.pay.docs.receivedNoFile(R.dmy(d.received_at).slice(0, 5)) : '')}">${att ? (d.file_id ? '📄 ' : '🔗 ') : ''}${esc(PY.docs[k])}${d && d.received_at ? ` ${esc(R.dmy(d.received_at).slice(0, 5))}` : ''}</span>`; }).join('');
+    /* CR-33 §3.1 — Incomplete · n missing (+ Complete) · an older payee: unlock once to know */
+    const gaps = R.payeeMissing(p);
+    const incomplete = p.archived ? '' : gaps == null ? `<div class="py-inc"><span class="chip">🔒 ${esc(PY.unlockToCheck)}</span></div>`
+      : gaps.length ? `<div class="py-inc"><span class="chip warn-chip" title="${esc(gaps.map(k => PY.bank[k] || PY.plainField[k] || k).join(' · '))}">${esc(PY.incomplete(gaps.length))}</span>${ok ? ` <button type="button" class="btn small" data-payee-edit="${esc(p.payee_id)}">${esc(PY.complete)}</button>` : ''}</div>` : '';
     const sum = !miss.length ? `<span class="chip ok-chip">✓ ${esc(PY.docsOnFile)}</span>` : `<span class="chip warn-chip">${esc(PY.missing(miss.map(k => (k === 'bank_details' ? PY.missingBank : PY.docs[k])).join(' · ')))}</span>`;
     const menu = ok ? menuHTML([
       a.canSetDefault ? mi('data-payee-act', p.payee_id, 'default', PY.setDefault) : '',
@@ -52,7 +57,7 @@ KT.payee = (function () {
     ]) : '';
     return `<div class="pcard${p.archived ? ' arch' : ''}" data-pcard="${esc(p.payee_id)}"><div class="pc-h"><b class="pc-l">${esc(p.label || PY.primary)}</b>${p.is_default ? defChip() : ''}${p.archived ? `<span class="chip">${esc(PY.archived)}</span>` : ''}` +
       `<span class="spacer"></span>${ok && !p.archived ? `<button type="button" class="btn small" data-payee-edit="${esc(p.payee_id)}">${esc(PY.editBtn)}</button>` : ''}${menu}</div>` +
-      `<div class="pc-m">${esc(terms)}</div><div class="py-bank">${bank}</div>${verify}` +
+      `<div class="pc-m">${esc(terms)}</div><div class="py-bank">${bank}</div>${incomplete}${verify}` +
       (p.secure && unlockedView() ? `<div class="py-secure" data-payee-secure="${esc(p.payee_id)}"><span class="muted small">…</span></div>` : '') +
       `<div class="py-docs">${sum}${docs}</div>` + (p.docs_link ? `<div class="small" style="margin-top:6px"><a href="${esc(p.docs_link)}" target="_blank" rel="noopener">${esc(PY.openFolder)}</a></div>` : '') + `</div>`;
   }
@@ -82,7 +87,7 @@ KT.payee = (function () {
         (o.mask ? `<button type="button" class="icon-btn sm" data-payee-reveal aria-label="${esc(PY.show)}" title="${esc(PY.show)}">👁</button>` : '') +
         (o.copy ? `<button type="button" class="copybtn" data-payee-copy="${esc(v)}" data-label="${esc(PY.bank[k])}" title="${esc(PY.copyField(PY.bank[k]))}" aria-label="${esc(PY.copyField(PY.bank[k]))}">${COPY}</button>` : '') + `</span></div>`);
       box.innerHTML = row('account_name', rec.account_name, { copy: 1 }) + row('bank_name', rec.bank_name) + row('account_no', rec.account_no, { mask: 1, copy: 1 }) + row('full_name', rec.full_name, { copy: 1 }) +
-        row('id_address', rec.id_address) + row('phone', rec.phone) + row('wht_contact', rec.wht_contact) + row('tax_id', rec.tax_id);
+        row('id_address', rec.id_address) + row('phone', rec.phone) + row('wht_contact', rec.wht_contact) + row('tax_id', rec.tax_id, { mask: 1 });   // CR-33: Tax ID ••• 4 last
     }
   }
   const COPY = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg>';
@@ -197,115 +202,163 @@ KT.payee = (function () {
     });
   }
 
-  /* ===================== the Payee dialog (the profile · Payments chips) ===================== */
-  /* o: {kolId (its default payee, made when there is none) | kolId + newPayee (+ Add payee) | payeeId | newPayee (a payee outside KOL Master), onSaved, opener} ·
-     CR-11 §4.3: a modal (M) — Add payee for a new one, Save for one that exists · CR-16 §4.2: Label · Set as default */
+  /* ===================== CR-33 §3.1 — payeeForm: the Payee details (KOL Master › Payee & shipping · Payments › Pay to — the same form) ===================== */
+  /* o: {kolId (its default payee, made when there is none) | kolId + newPayee (+ Add payee) | payeeId | newPayee (a payee outside KOL Master), onSaved(rec), opener,
+     inPanel (Payments: in place of the modal that is open — ← Back), onBack} · Tax & terms · Bank details 🔒 · Personal data 🔒 (its own frame) · Documents (a file or a link each) ·
+     Save always works: what is missing turns red with a summary · a new payee starts with Payee type · Default WHT · Price basis empty (chosen, not assumed) */
+  const SECURE_BANK = ['account_name', 'bank_name', 'account_no'], SECURE_PERSONAL = ['full_name', 'id_address', 'phone', 'wht_contact', 'tax_id'];
   function openDialog_(o) {
     const s = state(), byId = o.payeeId ? R.payeeById(s, o.payeeId) : null, kol = byId ? (byId.kol_id ? R.kolById(s, byId.kol_id) : null) : o.kolId ? R.kolById(s, o.kolId) : null;
     const stored = byId || (kol && !o.newPayee ? R.payeeOfKol(s, kol.kol_id) : null);
     if (!R.canEditPayee(s, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
-    const S = R.paySettings(s.lookups), vault = vaultOf();
+    const S = R.paySettings(s.lookups), vault = vaultOf(), L = s.lookups;
     const others = kol ? R.payeesOfKol(s, kol.kol_id).filter(p => !stored || p.payee_id !== stored.payee_id) : [], first = !!kol && !others.length;
-    const p = stored ? JSON.parse(JSON.stringify(stored)) : R.blankPayee(s, { kol_id: kol ? kol.kol_id : null, user: userId(), now: nowISO(), label: first ? PY.primary : '' });
+    const p = stored ? JSON.parse(JSON.stringify(stored)) : Object.assign(R.blankPayee(s, { kol_id: kol ? kol.kol_id : null, user: userId(), now: nowISO(), label: first ? PY.primary : '' }), { payee_type: '', default_wht_rate: null, price_basis: '' });
     if (!stored && kol && !first) p.label = '';
     const name = kol ? kol.display_name : p.account_handle || PY.newPayeeTitle;
-    /* how the bank part works now: none (no vault / no crypto) · saved (locked, details saved) · edit (empty or unlocked) · replace */
+    /* the encrypted part: none (no vault / no crypto) · saved (locked, details saved) · edit (empty or unlocked) · replace */
     let mode = !V.available() ? 'nocrypto' : !vault ? 'novault' : p.secure && !V.isUnlocked(vault) ? 'saved' : 'edit';
-    let original = null;
-    const bankInputs = () => R.BANK_FIELDS.map(k => `<div class="field${k === 'id_address' || k === 'wht_contact' ? ' wide' : ''}"><label for="py_b_${k}">${esc(PY.bank[k])}${['account_name', 'bank_name', 'account_no', 'full_name'].includes(k) ? ' <span class="req">*</span>' : ''}</label>` +
-      `<input id="py_b_${k}" data-bank="${k}" autocomplete="off" spellcheck="false"${k === 'bank_name' ? ' list="py_banks"' : ''}${k === 'account_no' || k === 'tax_id' || k === 'phone' ? ' inputmode="numeric"' : ''}${mode === 'edit' || mode === 'replace' ? '' : ' disabled'}></div>`).join('') +
-      `<datalist id="py_banks">${PY.banks.map(b => `<option value="${esc(b)}">`).join('')}</datalist>`;
-    const bankHTML = () => {
-      if (mode === 'nocrypto') return `<div class="check warn">! <span>${esc(PY.noCrypto)}</span></div><div class="fields">${bankInputs()}</div>`;
-      if (mode === 'novault') return `<div class="check warn">! <span>${esc(PY.vaultNotSetUp)}</span>${can('vault.admin') ? ` <button type="button" class="btn small" data-py-setup>${esc(PY.setUpVault)}</button>` : ''}</div><div class="fields">${bankInputs()}</div>`;
-      if (mode === 'saved') return `<div class="py-saved"><b>${esc(PY.savedLast4(R.bankShort(state().lookups, p.bank_name), p.account_last4))}</b><span class="spacer"></span>` +
-        (can('payee.unlock') ? `<button type="button" class="btn small" data-py-unlock>${esc(PY.unlockToEdit)}</button>` : '') + `<button type="button" class="btn small" data-py-replace>${esc(PY.replace)}</button></div>`;
-      return (mode === 'replace' ? `<div class="hint" style="margin-bottom:8px">${esc(PY.replaceHint)} <button type="button" class="link" data-py-keep>${esc(PY.keepSaved)}</button></div>` : '') + `<div class="fields">${bankInputs()}</div>`;
+    let original = null, typed = false;
+    const docs = R.payeeDocs(p).map(d => Object.assign({}, d)), added = [], removed = [];
+    const company = () => (($('py_type') || {}).value || p.payee_type) === 'company';
+    const vatOn = () => !!(($('py_vat') || {}).checked);
+    const lbl = k => (company() && PY.bankCo[k]) || PY.bank[k];
+    const req = k => SECURE_BANK.includes(k) || ['full_name', 'id_address'].includes(k) || (k === 'tax_id' && company());
+    const banks = () => (L.banks && L.banks.length ? L.banks : R.banksDefault());
+    const off = () => (mode === 'edit' || mode === 'replace' ? '' : ' disabled');
+    const input = k => {
+      if (k === 'bank_name') return `<select id="py_b_bank_name" data-bank="bank_name"${off()}><option value="">${esc(PY.chooseBank)}</option>${banks().map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('')}</select>`;
+      if (k === 'id_address') return `<textarea id="py_b_id_address" data-bank="id_address" rows="2" autocomplete="off" spellcheck="false"${off()}></textarea>`;
+      return `<input id="py_b_${k}" data-bank="${k}" autocomplete="off" spellcheck="false"${k === 'account_no' || k === 'tax_id' || k === 'phone' ? ' inputmode="numeric"' : ''}${off()}>`;
     };
+    const fieldOf = k => `<div class="field${['id_address', 'wht_contact', 'full_name'].includes(k) ? ' wide' : ''}"><label for="py_b_${k}">${esc(lbl(k))}${req(k) ? ' <span class="req">*</span>' : ''}</label>${input(k)}` +
+      (k === 'tax_id' && !company() ? `<div class="hint">${esc(PY.taxIdOptional)}</div>` : '') + `<div class="mv-err" data-err="b_${k}"></div></div>`;
+    const secureHTML = keys => {
+      if (mode === 'nocrypto') return `<div class="check warn">! <span>${esc(PY.noCrypto)}</span></div>`;
+      if (mode === 'novault') return `<div class="check warn">! <span>${esc(PY.vaultNotSetUp)}</span>${can('vault.admin') ? ` <button type="button" class="btn small" data-py-setup>${esc(PY.setUpVault)}</button>` : ''}</div>`;
+      if (mode === 'saved') return keys === SECURE_BANK ? `<div class="py-saved"><b>${esc(PY.savedLast4(R.bankShort(L, p.bank_name), p.account_last4))}</b><span class="spacer"></span>` +
+        (can('payee.unlock') ? `<button type="button" class="btn small" data-py-unlock>${esc(PY.unlockToEdit)}</button>` : '') + `<button type="button" class="btn small" data-py-replace>${esc(PY.replace)}</button></div>`
+        : `<div class="py-saved"><span class="muted small">🔒 ${esc(PY.personalSaved)}</span></div>`;
+      return (mode === 'replace' && keys === SECURE_BANK ? `<div class="hint" style="margin-bottom:8px">${esc(PY.replaceHint)} <button type="button" class="link" data-py-keep>${esc(PY.keepSaved)}</button></div>` : '') +
+        `<div class="fields">${keys.map(fieldOf).join('')}</div>`;
+    };
+    const docSlots = () => R.payeeDocKeys({ payee_type: company() ? 'company' : 'individual', vat_registered: vatOn() }).map(k => KT.docs.slotHTML({ id: 'pyd_' + k, label: R.docLabel(k), doc: docs.find(d => d.key === k), edit: true })).join('');
     const rates = S.wht_rates.map(r => ({ value: String(r), label: `${r}%` }));
-    let typed = false;
-    U.createModal({ size: 'M', title: PY.title(name), opener: o.opener, isDirty: () => typed, onClose: () => wipe(),
-      foot: [`<div class="checks" id="py_checks"></div>`, U.cmButtons(stored ? C.common.save : PY.addOk, 'py_ok')], body: `<div class="py-dlg">
-      ${kol ? `<div class="fields"><div class="field"><label for="py_label">${esc(PY.label)} <span class="req">*</span></label><input id="py_label" maxlength="${R.PAYEE_LABEL_MAX}" value="${esc(p.label || '')}" placeholder="${esc(PY.labelPh)}" autocomplete="off"><div class="hint">${esc(PY.labelHint)}</div></div>
+    const body = `<div class="py-dlg">
+      ${kol ? `<div class="fields"><div class="field"><label for="py_label">${esc(PY.label)} <span class="req">*</span></label><input id="py_label" maxlength="${R.PAYEE_LABEL_MAX}" value="${esc(p.label || '')}" placeholder="${esc(PY.labelPh)}" autocomplete="off"><div class="hint">${esc(PY.labelHint)}</div><div class="mv-err" data-err="label"></div></div>
         <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" id="py_default"${stored ? (stored.is_default ? ' checked disabled' : '') : first ? ' checked disabled' : ''}> ${esc(PY.makeDefault)}</label></div></div>` : ''}
       <div class="sec-h"${kol ? ' style="margin-top:14px"' : ''}><span>${esc(PY.groupTax)}</span></div>
       <div class="fields">
-        ${kol ? '' : `<div class="field wide"><label for="py_handle">${esc(PY.handle)} <span class="req">*</span></label><input id="py_handle" value="${esc(p.account_handle || '')}" autocomplete="off" placeholder="${esc(PY.handlePh)}"></div>`}
-        <div class="field"><label for="py_type">${esc(PY.type)}</label><select id="py_type">${optionsHTML(R.PAYEE_TYPES.map(t => ({ value: t, label: PY.types[t] })), p.payee_type)}</select></div>
-        <div class="field"><label for="py_wht">${esc(PY.wht)}</label><select id="py_wht">${optionsHTML(rates, String(p.default_wht_rate))}</select></div>
-        <div class="field"><label for="py_basis">${esc(PY.basis)}</label><select id="py_basis">${optionsHTML(R.PRICE_BASES.map(b => ({ value: b, label: PY.bases[b] })), p.price_basis)}</select></div>
+        ${kol ? '' : `<div class="field wide"><label for="py_handle">${esc(PY.handle)} <span class="req">*</span></label><input id="py_handle" value="${esc(p.account_handle || '')}" autocomplete="off" placeholder="${esc(PY.handlePh)}"><div class="mv-err" data-err="handle"></div></div>`}
+        <div class="field"><label for="py_type">${esc(PY.type)} <span class="req">*</span></label><select id="py_type">${optionsHTML(R.PAYEE_TYPES.map(t => ({ value: t, label: PY.types[t] })), p.payee_type || '', PY.choose)}</select><div class="mv-err" data-err="payee_type"></div></div>
+        <div class="field"><label for="py_wht">${esc(PY.wht)} <span class="req">*</span></label><select id="py_wht">${optionsHTML(rates, p.default_wht_rate == null ? '' : String(p.default_wht_rate), PY.choose)}</select><div class="mv-err" data-err="default_wht_rate"></div></div>
+        <div class="field"><label for="py_basis">${esc(PY.basis)} <span class="req">*</span></label><select id="py_basis">${optionsHTML(R.PRICE_BASES.map(b => ({ value: b, label: PY.bases[b] })), p.price_basis || '', PY.choose)}</select><div class="mv-err" data-err="price_basis"></div></div>
         <div class="field"><label>&nbsp;</label><label class="tick"><input type="checkbox" id="py_vat"${p.vat_registered ? ' checked' : ''}> ${esc(PY.vat)}</label></div>
       </div>
-      <div class="sec-h" style="margin-top:14px"><span>${esc(PY.groupBank)}</span></div><p class="hint" style="margin-top:0">🔒 ${esc(PY.groupBankHint)}</p>
-      <div id="py_bank">${bankHTML()}</div>
-      <div class="sec-h" style="margin-top:14px"><span>${esc(PY.groupDocs)}</span></div>
-      <div class="fields">${R.PAYEE_DOCS.map(k => `<div class="field"><label>${esc(PY.docs[k])}</label>${dateHTML(`id="py_d_${k}"`, (p.docs || {})[k], { label: PY.docs[k] })}</div>`).join('')}
-        <div class="field wide"><label for="py_link">${esc(PY.docsLink)}</label><input id="py_link" type="url" value="${esc(p.docs_link || '')}" placeholder="${esc(PY.docsLinkPh)}" autocomplete="off"></div></div></div>` });
+      <div class="py-frame"><div class="sec-h"><span>🔒 ${esc(PY.groupBank)}</span></div><p class="hint" style="margin-top:0">${esc(PY.groupBankHint)}</p><div id="py_bank">${secureHTML(SECURE_BANK)}</div></div>
+      <div class="py-frame"><div class="sec-h"><span>🔒 ${esc(PY.groupPersonal)}</span></div><p class="hint" style="margin-top:0">${esc(PY.groupPersonalHint)}</p><div id="py_personal">${secureHTML(SECURE_PERSONAL)}</div></div>
+      <div class="sec-h" style="margin-top:14px"><span>${esc(PY.groupDocs)}</span></div><p class="hint" style="margin-top:0">${esc(PY.docsHint)}</p>
+      <div id="py_docs" class="py-docs2">${docSlots()}</div>
+      <div class="fields"><div class="field wide"><label for="py_link">${esc(PY.docsLink)} <span class="muted small">${esc(C.pay.simple.optional)}</span></label><input id="py_link" type="url" value="${esc(p.docs_link || '')}" placeholder="${esc(PY.docsLinkPh)}" autocomplete="off"><div class="mv-err" data-err="docs_link"></div></div></div></div>`;
+    const title = PY.title(name), okLabel = stored ? C.common.save : PY.addOk, left = `<div class="checks" id="py_checks"></div>`;
+    const cleanup = () => { wipe(); added.forEach(id => KT.docfiles.del(id)); added.length = 0; };   // files picked but never saved go
+    if (o.inPanel && U.modalOpen()) {
+      const cmEl = document.getElementById('cmodal'), onX = () => { cleanup(); cmEl.removeEventListener('close', onX); };
+      cmEl.addEventListener('close', onX);
+      U.modalPanel({ title, body, left, buttons: U.cmButtons(okLabel, 'py_ok', { back: true }), back: () => { cmEl.removeEventListener('close', onX); cleanup(); if (o.onBack) o.onBack(); } });
+    }
+    else U.createModal({ size: 'M', title, opener: o.opener, isDirty: () => typed, onClose: () => cleanup(), foot: [left, U.cmButtons(okLabel, 'py_ok')], body });
     const dlg = $('cm_root');
-    dlg.addEventListener('input', () => { typed = true; }); dlg.addEventListener('change', () => { typed = true; });
+    const touch = () => { typed = true; };
+    dlg.querySelector('.py-dlg').addEventListener('input', touch); dlg.querySelector('.py-dlg').addEventListener('change', touch);
     const fillOriginal = async () => {
       if (mode !== 'edit' || !p.secure) return;
       original = await V.decrypt(p.secure);
-      if (original) R.BANK_FIELDS.forEach(k => { const el = $('py_b_' + k); if (el) el.value = original[k] || ''; });
+      if (!original) return;
+      R.BANK_FIELDS.forEach(k => { const el = $('py_b_' + k); if (!el) return;
+        if (k === 'bank_name' && el.tagName === 'SELECT' && original[k] && ![...el.options].some(x => x.value === original[k])) { const b = R.bankOf(L, original[k]); if (b) { el.value = b.name; return; } el.insertAdjacentHTML('beforeend', `<option value="${esc(original[k])}">${esc(original[k])}</option>`); }
+        el.value = original[k] || ''; });
     };
-    const redrawBank = () => { $('py_bank').innerHTML = bankHTML(); fillOriginal(); };
+    const redrawSecure = () => { $('py_bank').innerHTML = secureHTML(SECURE_BANK); $('py_personal').innerHTML = secureHTML(SECURE_PERSONAL); fillOriginal(); };
+    const redrawDocs = () => { $('py_docs').innerHTML = docSlots(); };
     fillOriginal();
-    $('py_type').addEventListener('change', e => { const t = e.target.value; $('py_wht').value = String(t === 'company' ? S.default_wht_company : S.default_wht_individual); });
-    dlg.querySelector('#py_bank').addEventListener('click', e => {
-      if (e.target.closest('[data-py-replace]')) { mode = 'replace'; redrawBank(); const f = $('py_b_account_name'); if (f) f.focus(); return; }
-      if (e.target.closest('[data-py-keep]')) { mode = 'saved'; redrawBank(); return; }
-      if (e.target.closest('[data-py-unlock]')) { U.closeModal(); unlockDialog(() => openDialog_(o)); return; }
+    /* the labels follow the payee type (a company: company name · registered address · Tax ID *) · the documents follow the type and VAT */
+    const relabel = () => { const keep = Object.fromEntries(R.BANK_FIELDS.map(k => [k, ($('py_b_' + k) || {}).value])); redrawSecureKeep(keep); redrawDocs(); };
+    const redrawSecureKeep = keep => { $('py_bank').innerHTML = secureHTML(SECURE_BANK); $('py_personal').innerHTML = secureHTML(SECURE_PERSONAL); Object.entries(keep).forEach(([k, v]) => { const el = $('py_b_' + k); if (el && v != null) el.value = v; }); };
+    $('py_type').addEventListener('change', e => { const t = e.target.value; if (t) $('py_wht').value = String(t === 'company' ? S.default_wht_company : S.default_wht_individual); relabel(); });
+    $('py_vat').addEventListener('change', redrawDocs);
+    ['py_bank', 'py_personal'].forEach(id => $(id).addEventListener('click', e => {
+      if (e.target.closest('[data-py-replace]')) { mode = 'replace'; redrawSecure(); const f = $('py_b_account_name'); if (f) f.focus(); return; }
+      if (e.target.closest('[data-py-keep]')) { mode = 'saved'; redrawSecure(); return; }
+      if (e.target.closest('[data-py-unlock]')) { unlockDialog(() => { mode = 'edit'; redrawSecure(); }); return; }
       if (e.target.closest('[data-py-setup]')) { U.closeModal(); location.hash = '#settings/payments'; }
+    }));
+    /* documents: a file (encrypted now · kept when the payee is saved) or a link */
+    KT.docs.wire($('py_docs'), {
+      async onFile(slot, file) { const key = slot.replace(/^pyd_/, ''), r = await KT.docs.upload(file, { type: 'payee', id: p.payee_id || null, key });
+        added.push(r.file_id); const old = docs.find(d => d.key === key); if (old && old.file_id) removed.push(old.file_id);
+        const i = docs.indexOf(old), d = Object.assign({ key, kind: 'file', url: null, received_at: today() }, r); if (i >= 0) docs[i] = d; else docs.push(d); typed = true; redrawDocs(); },
+      onLink(slot, url) { const key = slot.replace(/^pyd_/, ''), old = docs.find(d => d.key === key); if (old && old.file_id) removed.push(old.file_id);
+        const d = { key, kind: 'link', file_id: null, url, name: null, received_at: today() }, i = docs.indexOf(old); if (i >= 0) docs[i] = d; else docs.push(d); typed = true; redrawDocs(); },
+      onRemove(slot) { const key = slot.replace(/^pyd_/, ''), old = docs.find(d => d.key === key); if (!old) return; if (old.file_id) removed.push(old.file_id); docs.splice(docs.indexOf(old), 1); typed = true; redrawDocs(); },
+      onDate(slot, date) { const d = docs.find(x => x.key === slot.replace(/^pyd_/, '')); if (d) { d.received_at = date; typed = true; } },
     });
-    /* the typed values leave the page as soon as the modal closes */
+    /* the typed values leave the page as soon as the form closes */
     function wipe() { dlg.querySelectorAll('[data-bank]').forEach(el => { el.value = ''; }); original = null; }
-    const read = () => {
-      const docs = Object.fromEntries(R.PAYEE_DOCS.map(k => [k, $('py_d_' + k).value || null]));
-      return Object.assign({ payee_type: $('py_type').value, default_wht_rate: Number($('py_wht').value), price_basis: $('py_basis').value, vat_registered: $('py_vat').checked, docs, docs_link: R.trim($('py_link').value) || null },
-        kol ? { label: R.trim($('py_label').value) } : { account_handle: R.trim($('py_handle').value).replace(/^@+/, '') });
-    };
+    const read = () => Object.assign({ payee_type: $('py_type').value, default_wht_rate: $('py_wht').value === '' ? null : Number($('py_wht').value), price_basis: $('py_basis').value, vat_registered: $('py_vat').checked,
+      docs_link: R.trim($('py_link').value) || null }, kol ? { label: R.trim($('py_label').value) } : { account_handle: R.trim($('py_handle').value).replace(/^@+/, '') });
     const readBank = () => (mode === 'edit' || mode === 'replace' ? Object.fromEntries(R.BANK_FIELDS.map(k => [k, ($('py_b_' + k) || {}).value || ''])) : null);
     $('py_ok').addEventListener('click', async () => {
       const s2 = state(), plain = read(), bank = readBank();
-      const res = R.validatePayee(s2, plain);
-      const typed = bank && R.BANK_FIELDS.some(k => R.trim(bank[k]));
-      const changed = typed && (!original || R.BANK_FIELDS.some(k => R.trim(bank[k]) !== R.trim(original[k] || '')));
-      if (mode === 'replace' && !typed) res.errs.push({ field: 'b_account_name', msg: C.msg.payeeRequired(PY.bank.account_name) });
+      const res = R.validatePayee(s2, Object.assign({}, plain, { docs: {} }));
+      if (!plain.payee_type) res.errs.push({ field: 'payee_type', msg: C.msg.payeeRequired(PY.type) });
+      if (plain.default_wht_rate == null) res.errs.push({ field: 'default_wht_rate', msg: C.msg.payeeRequired(PY.wht) });
+      if (!plain.price_basis) res.errs.push({ field: 'price_basis', msg: C.msg.payeeRequired(PY.basis) });
+      res.errs = res.errs.filter((e, i, a) => a.findIndex(x => x.field === e.field) === i);
+      const typedBank = bank && R.BANK_FIELDS.some(k => R.trim(bank[k]));
+      const changed = typedBank && (!original || R.BANK_FIELDS.some(k => R.trim(bank[k]) !== R.trim(original[k] || '')));
+      /* CR-33 §3.1 — a new payee (or Replace) needs the whole encrypted part · an edit checks what is there */
+      if (bank && (!stored || !stored.secure || mode === 'replace' || changed)) R.validateBankDetails(bank, { type: plain.payee_type, L: s2.lookups }).errs.forEach(x => res.errs.push(x));
+      if ((mode === 'novault' || mode === 'nocrypto') && !stored) res.errs.push({ field: 'b_account_name', msg: mode === 'novault' ? PY.vaultNotSetUp : PY.noCrypto });
       if (!kol && !plain.account_handle) res.errs.push({ field: 'handle', msg: C.msg.payeeRequired(PY.handle) });
       if (!kol && R.looksSensitive(plain.account_handle)) res.errs.push({ field: 'handle', msg: C.msg.sensitive });
       if (kol) R.validatePayeeLabel(s2, kol.kol_id, plain.label, stored ? stored.payee_id : null).forEach(x => res.errs.push(x));   // CR-16 §4.2
-      if ($('py_label')) $('py_label').classList.toggle('invalid', res.errs.some(x => x.field === 'label'));
-      if (changed) R.validateBankDetails(bank).errs.forEach(x => res.errs.push(x));
-      dlg.querySelectorAll('[data-bank]').forEach(el => el.classList.toggle('invalid', res.errs.some(x => x.field === 'b_' + el.dataset.bank)));
+      /* every field missing turns red, its message under it, and the summary */
+      const has = f => res.errs.some(x => x.field === f);
+      dlg.querySelectorAll('[data-bank]').forEach(el => el.classList.toggle('invalid', has('b_' + el.dataset.bank)));
+      [['py_type', 'payee_type'], ['py_wht', 'default_wht_rate'], ['py_basis', 'price_basis'], ['py_label', 'label'], ['py_handle', 'handle'], ['py_link', 'docs_link']].forEach(([id, f]) => { if ($(id)) $(id).classList.toggle('invalid', has(f)); });
+      dlg.querySelectorAll('.py-dlg [data-err]').forEach(el => { const e = res.errs.find(x => x.field === el.dataset.err); el.innerHTML = e ? `<span class="err">${esc(e.msg)}</span>` : ''; });
       $('py_checks').innerHTML = U.checksHTML(res, '');
-      if (res.errs.length) return;
+      if (res.errs.length) { const f = dlg.querySelector('.py-dlg .invalid'); if (f) f.focus(); return; }
       if (!R.canEditPayee(s2, U.actor(), stored, kol)) { toast(PY.noPermission); return; }
       const makeDefault = !!($('py_default') && $('py_default').checked && !$('py_default').disabled);
-      const plainChanged = !stored || makeDefault || ['payee_type', 'default_wht_rate', 'price_basis', 'vat_registered', 'docs_link', 'account_handle', 'label'].some(k => k in plain && plain[k] !== stored[k]) || R.PAYEE_DOCS.some(k => (plain.docs[k] || null) !== ((stored.docs || {})[k] || null));
-      if (!changed && !plainChanged) { wipe(); U.closeModal(); toast(PY.nothingChanged); return; }
       $('py_ok').disabled = true; $('py_ok').textContent = PY.encrypting;
       let secure = null;
-      if (changed) { try { secure = await V.encrypt(vaultOf(), R.bankRecord(bank)); } catch (e) { $('py_ok').disabled = false; $('py_ok').textContent = C.common.save; toast(PY.noCrypto); return; } }
+      if (changed) { try { secure = await V.encrypt(vaultOf(), R.bankRecord(Object.assign({}, bank, { bank_name: (R.bankOf(s2.lookups, bank.bank_name) || {}).name || bank.bank_name }))); } catch (e) { $('py_ok').disabled = false; $('py_ok').textContent = okLabel; toast(PY.noCrypto); return; } }
       const s3 = state(), now = nowISO(), uid = userId();
       let rec = stored ? R.payeeById(s3, stored.payee_id) : null;
       if (!rec) { rec = Object.assign(p, { payee_id: store.newId('payee'), is_default: false }); s3.payee_profiles.push(rec); }
-      Object.assign(rec, plain, { updated_at: now, updated_by: uid });
-      /* CR-16 §4.2 — one default a KOL: the first payee is it · ticked = it takes over */
+      Object.assign(rec, plain, { docs: docs.map(d => Object.assign({}, d)), updated_at: now, updated_by: uid });
       if (kol && (makeDefault || !R.payeesOfKol(s3, kol.kol_id).some(x => x.is_default && x.payee_id !== rec.payee_id))) R.withDefault(s3.payee_profiles, 'payee_id', rec.payee_id);
       if (changed) {
-        Object.assign(rec, { secure, bank_name: R.trim(bank.bank_name) || null, account_last4: R.last4(bank.account_no), details_filled: R.filledFields(R.bankRecord(bank)), details_version: (rec.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid });   // CR-32: the names of the filled fields
-        /* §4.4 — bank details changed after a payment was made to them → verify with the KOL before the next submit */
+        Object.assign(rec, { secure, bank_name: (R.bankOf(s3.lookups, bank.bank_name) || {}).name || R.trim(bank.bank_name) || null, account_last4: R.last4(bank.account_no), details_filled: R.filledFields(R.bankRecord(bank)),
+          details_version: (rec.details_version || 0) + 1, details_updated_at: now, details_updated_by: uid });
         if (R.payeeHasPaid(s3, rec.payee_id)) Object.assign(rec, { needs_verification: true, verified_at: null, verified_by: null });
         s3.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: rec.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
       }
-      wipe(); U.closeModal(); commit(PY.savedToast(kol && rec.label ? `${name} · ${rec.label}` : name));
+      removed.forEach(id => KT.docfiles.del(id)); added.length = 0;   // the files replaced / removed go · the new ones are now the payee's
+      wipe();
+      commit(PY.savedToast(kol && rec.label ? `${name} · ${rec.label}` : name));
+      if (o.inPanel) { if (o.onSaved) o.onSaved(rec); return; }
+      U.closeModal();
       if (o.onSaved) o.onSaved(rec);
     });
   }
 
   /* ===================== vault: unlock · set up · change passphrase ===================== */
-  function unlockDialog(after) {
-    const vault = vaultOf(); if (!vault || !U.guard('payee.unlock')) return;
+  /* o.for = 'export': someone allowed to export (CR-32 payment.export) unlocks for the file only — the details still show only to payee.unlock */
+  function unlockDialog(after, o = {}) {
+    const vault = vaultOf(); if (!vault || !(o.for === 'export' && can('payment.export') ? true : U.guard('payee.unlock'))) return;
     openDialog(`<div class="dlg-h">${esc(VT.unlockTitle)}</div><div class="dlg-b"><p class="hint" style="margin-top:0">${esc(VT.unlockExplain)}</p>
       <div class="field"><label for="vu_pass">${esc(VT.pass)}</label><input type="password" id="vu_pass" autocomplete="off"></div><div class="checks" id="vu_checks" style="margin-top:8px"></div></div>
       <div class="dlg-f"><button type="button" class="btn" id="vu_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="vu_ok">${esc(VT.unlockOk)}</button></div>`);
@@ -405,7 +458,8 @@ KT.payee = (function () {
       else if (R.looksSensitive(x.ship.label)) errs.push({ field: 'nkv_label', msg: C.msg.sensitive });
       R.validateShip(x.ship).forEach(e => errs.push({ field: 'nkv_' + e.field, msg: e.msg }));
     }
-    if (x.bank) R.validateBankDetails(Object.assign({ full_name: '-' }, x.bank)).errs.forEach(e => errs.push({ field: 'nkv_' + e.field.replace(/^b_/, ''), msg: e.msg }));
+    /* the bank part only (holder · bank from the list · 10–15 digits) — Full name · ID-card address · the rest: later, in Payee details (CR-33 §3.1 · the card says Incomplete) */
+    if (x.bank) R.validateBankDetails(x.bank, { only: NKV_BANK, L: state().lookups }).errs.forEach(e => errs.push({ field: 'nkv_' + e.field.replace(/^b_/, ''), msg: e.msg }));
     return errs;
   }
   /* after the KOL is pushed: the address and the payee, encrypted, each the KOL's default → { address, payee } (null for a part not given) · throws when the browser cannot encrypt */
@@ -472,51 +526,6 @@ KT.payee = (function () {
   /* the labels left on screen (never the details) */
   const nkVaultLabels = out => [out.address ? out.address.label : '', out.payee ? R.bankLine(state().lookups, out.payee) : ''].filter(Boolean).join(' · ');
 
-  /* ===================== CR-32 §2.1 — + Add payee, in place (Payments › Payment details › Pay to) ===================== */
-  /* locked until the vault is unlocked (Unlock to add) · Full name (as on ID) · ID-card address · Bank · Account name · Account number · Email / address for WHT certificate ·
-     ☑ Default · what is typed goes straight into KT.vault.encrypt (payeeInlineSave) and the boxes are wiped — only "KBank ••• 1234" stays on screen */
-  const PI_FIELDS = ['full_name', 'id_address', 'bank_name', 'account_name', 'account_no', 'wht_contact'];
-  const PI_REQ = ['full_name', 'id_address', 'bank_name', 'account_name', 'account_no'];
-  function payeeInlineHTML(prefix, kolId) {
-    const st = nkvState(), id = k => `${prefix}_pi_${k}`, first = !R.payeesOfKol(state(), kolId).length;
-    if (st === 'none') return `<div class="ai-box hint">${esc(C.newKol.vaultNone)}</div>`;
-    if (st === 'locked') return `<div class="ai-box nk-lock">🔒 <span>${esc(C.newKol.vaultLocked)}</span>${can('payee.unlock') ? `<button type="button" class="btn small" data-piunlock>${esc(C.newKol.unlockToAdd)}</button>` : ''}</div>`;
-    const inp = (k, o = {}) => `<div class="field${o.wide ? ' wide' : ''}"><label for="${id(k)}">${esc(PY.bank[k])}${PI_REQ.includes(k) ? ' <span class="req">*</span>' : ''}</label>` +
-      (o.area ? `<textarea id="${id(k)}" data-pi="${k}" rows="2" spellcheck="false" autocomplete="off"></textarea>` : `<input id="${id(k)}" data-pi="${k}" autocomplete="off" spellcheck="false"${o.list ? ` list="${prefix}_pibanks"` : ''}${o.num ? ' inputmode="numeric"' : ''}>`) +
-      `<div class="mv-err" data-err="pi_${k}"></div></div>`;
-    return `<div class="ai-box pi-box"><div class="ai-h">🔓 ${esc(PY.addPayeeH)}</div><div class="fields">${inp('full_name', { wide: 1 })}${inp('id_address', { area: 1, wide: 1 })}${inp('bank_name', { list: 1 })}${inp('account_name')}${inp('account_no', { num: 1 })}${inp('wht_contact', { wide: 1 })}` +
-      `<div class="field wide"><label class="tick"><input type="checkbox" data-pi="default"${first ? ' checked disabled' : ' checked'}> ${esc(PY.makeDefault)}</label></div></div>` +
-      `<datalist id="${prefix}_pibanks">${(PY.banks || []).map(b => `<option value="${esc(b)}">`).join('')}</datalist></div>`;
-  }
-  /* what is typed · null while locked */
-  function payeeInlineRead(root) {
-    if (!root || nkvState() !== 'open' || !root.querySelector('[data-pi="full_name"]')) return null;
-    const out = Object.fromEntries(PI_FIELDS.map(k => [k, (root.querySelector(`[data-pi="${k}"]`) || {}).value || '']));
-    out.default = !!(root.querySelector('[data-pi="default"]') || {}).checked;
-    return out;
-  }
-  /* → [{ field: pi_<key>, msg }] */
-  function payeeInlineCheck(x) {
-    if (!x) return [{ field: 'pi_box', msg: nkvState() === 'none' ? C.newKol.vaultNone : C.newKol.vaultLocked }];
-    const errs = [];
-    PI_REQ.forEach(k => { if (R.isBlank(R.trim(x[k]))) errs.push({ field: 'pi_' + k, msg: C.msg.payeeRequired(PY.bank[k]) }); });
-    R.validateBankDetails(Object.assign({}, x)).errs.filter(e => !errs.some(y => y.field === 'pi_' + e.field.replace(/^b_/, ''))).forEach(e => errs.push({ field: 'pi_' + e.field.replace(/^b_/, ''), msg: e.msg }));
-    return errs;
-  }
-  /* encrypted → a new payee of the KOL (its label: Primary for the first, else the bank's short name) · default when ticked or it is the first → the payee */
-  async function payeeInlineSave(kolId, x) {
-    const v = vaultOf(), s = state(), now = nowISO(), uid = userId(), rec0 = R.bankRecord(x);
-    const secure = await V.encrypt(v, rec0);
-    const taken = new Set(R.payeesOfKol(s, kolId, true).map(p => R.trim(p.label).toLowerCase()));
-    let label = !taken.size ? PY.primary : R.bankShort(s.lookups, x.bank_name) || PY.primary, n = 2; const base = label;
-    while (taken.has(label.toLowerCase())) label = `${base} ${n++}`;
-    const p = R.blankPayee(s, { payee_id: store.newId('payee'), kol_id: kolId, user: uid, now, label });
-    Object.assign(p, { is_default: false, secure, bank_name: R.trim(x.bank_name) || null, account_last4: R.last4(x.account_no), details_filled: R.filledFields(rec0), details_version: 1, details_updated_at: now, details_updated_by: uid });
-    s.payee_profiles.push(p);
-    if (x.default || !R.payeesOfKol(s, kolId).some(y => y.is_default && y.payee_id !== p.payee_id)) R.withDefault(s.payee_profiles, 'payee_id', p.payee_id);
-    s.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: p.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
-    return p;
-  }
   /* an older payee (before CR-32) does not say which fields it has: the next time the vault is unlocked they are read in memory and only their names kept */
   async function backfillFilled() {
     const v = vaultOf(); if (!v || !V.isUnlocked(v)) return 0;
@@ -531,5 +540,5 @@ KT.payee = (function () {
 
   return { tabHTML, fillSecure, onClick, openDialog: openDialog_, addressDialog, unlockDialog, setupDialog, changeDialog, resetDialog,
     nkVaultHTML, nkVaultRead, nkVaultCheck, nkVaultSave, nkVaultWipe, nkVaultLabels, nkVaultState: nkvState, addrInlineHTML, addrInlineUnlock, addrInlineRead, addrInlineCheck, addrInlineSave,
-    payeeInlineHTML, payeeInlineRead, payeeInlineCheck, payeeInlineSave, backfillFilled };
+    backfillFilled };
 })();

@@ -83,8 +83,26 @@ KT.vault = (function () {
       return JSON.parse(td.decode(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(secure.iv) }, key, unb64(secure.ciphertext))));
     } catch (e) { return null; }
   }
+  /* CR-33 §3.2 — a document file (bytes) → { key_id, wrapped_key, iv, data (ArrayBuffer) } · needs only the public key (anyone allowed can upload) */
+  async function encryptBytes(vault, bytes) {
+    const pub = await subtle.importKey('jwk', vault.public_key_jwk, RSA, false, ['encrypt']);
+    const key = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+    const iv = rand(12), data = await subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes);
+    const wrapped = await subtle.encrypt(RSA, pub, await subtle.exportKey('raw', key));
+    return { key_id: vault.key_id, wrapped_key: b64(wrapped), iv: b64(iv), data };
+  }
+  /* → the bytes (Uint8Array), in memory only · null when locked / another vault */
+  async function decryptBytes(enc) {
+    if (!session || !enc || enc.key_id !== session.keyId) return null;
+    touch();
+    try {
+      const raw = await subtle.decrypt(RSA, session.privateKey, unb64(enc.wrapped_key));
+      const key = await subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
+      return new Uint8Array(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(enc.iv) }, key, enc.data));
+    } catch (e) { return null; }
+  }
   const onChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
   if (typeof document !== 'undefined' && document.addEventListener) ['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, touch, true));
 
-  return { ITERATIONS, IDLE_MS, available, setup, unlock, lock, isUnlocked, touch, idleCheck, changePassphrase, encrypt, decrypt, onChange };
+  return { ITERATIONS, IDLE_MS, available, setup, unlock, lock, isUnlocked, touch, idleCheck, changePassphrase, encrypt, decrypt, encryptBytes, decryptBytes, onChange };
 })();

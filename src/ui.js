@@ -735,7 +735,7 @@ KT.ui = (function () {
       openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b">${esc(body)}</div>
         <div class="dlg-f">${buttons.map(b => `<button type="button" class="btn${b.cls ? ' ' + b.cls : ''}" data-r="${esc(b.key)}">${esc(b.label)}</button>`).join('')}</div>`);
       const done = v => { dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); };
-      const onClose = () => done(null);
+      const onClose = () => { if (!dlg.open) done(null); };   // CR-33: a late close event of the dialog before (still open = not this one)
       dlg.addEventListener('close', onClose);
       dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r)));
       const p = dlg.querySelector('.btn.primary'); if (p) p.focus();
@@ -746,7 +746,7 @@ KT.ui = (function () {
       openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b">${esc(body)}</div>
         <div class="dlg-f"><button type="button" class="btn" data-r="0">${esc(noLabel || C.common.cancel)}</button><button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-r="1">${esc(okLabel)}</button></div>`);
       const done = v => { dlg.removeEventListener('close', onClose); closeDialog(); resolve(v); };
-      const onClose = () => done(false);
+      const onClose = () => { if (!dlg.open) done(false); };   // CR-33: a late close event of the dialog before (still open = not this one)
       dlg.addEventListener('close', onClose);
       dlg.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r === '1')));
     });
@@ -1143,22 +1143,27 @@ KT.ui = (function () {
   window.addEventListener('storage', e => { if (e.key === S.KEY) { otherTabChanged = true; renderBanners(); } });
 
   /* ===================== Backup / Restore / Reset / Export all ===================== */
-  /* CR-16 §4.4 — with photos in this browser: Include photos (on) · the size of the file with / without them first */
-  function doBackup() {
+  /* CR-16 §4.4 — with photos in this browser: Include photos (on) · the size of the file with / without them first ·
+     CR-33 §3.2 — payee documents (encrypted files in this browser): Include payee documents (encrypted) — off unless ticked */
+  async function doBackup() {
     const ph = KT.photos && KT.photos.available() ? KT.photos.totals() : { n: 0, bytes: 0 };
-    if (!ph.n) { saveBackup(false); return; }
-    const K = C.data, plain = store.sizeChars ? store.sizeChars() : 0, withPh = plain + Math.ceil(ph.bytes * 4 / 3) + ph.n * 40;
-    const mb = n => R.fmtNum(Math.max(0.1, Math.round(n / 104857.6) / 10));
-    const sizeText = on => K.backupSize(mb(on ? withPh : plain));
+    let dc = { n: 0, bytes: 0 }; try { if (KT.docfiles && KT.docfiles.available()) dc = await KT.docfiles.sizes(); } catch (e) { /* no IndexedDB */ }
+    if (!ph.n && !dc.n) { saveBackup(false, false); return; }
+    const K = C.data, plain = store.sizeChars ? store.sizeChars() : 0, phB = Math.ceil(ph.bytes * 4 / 3) + ph.n * 40, dcB = Math.ceil(dc.bytes * 4 / 3) + dc.n * 400;
+    const mb = n => R.fmtNum(Math.max(0.1, Math.round(n / 104857.6) / 10)), sz = b => (b < 1048576 ? `${R.fmtNum(Math.max(1, Math.round(b / 1024)))} KB` : `${mb(b)} MB`);
+    const sizeText = () => K.backupSize(mb(plain + ($('bk_photos') && $('bk_photos').checked ? phB : 0) + ($('bk_docs') && $('bk_docs').checked ? dcB : 0)));
     createModal({ size: 'S', title: K.backupTitle, foot: ['', cmButtons(K.backupDownload, 'bk_ok')],
-      body: `<label class="tick block"><input type="checkbox" id="bk_photos" checked> ${esc(K.includePhotos)}</label>` +
-        `<p class="hint">${esc(K.includePhotosHint(R.fmtNum(ph.n), ph.bytes < 1048576 ? `${R.fmtNum(Math.max(1, Math.round(ph.bytes / 1024)))} KB` : `${mb(ph.bytes)} MB`))}</p><p class="muted small" id="bk_size">${esc(sizeText(true))}</p>` });
-    $('bk_photos').addEventListener('change', e => { $('bk_size').textContent = sizeText(e.target.checked); });
-    $('bk_ok').addEventListener('click', async () => { const on = $('bk_photos').checked; $('bk_ok').disabled = true; await saveBackup(on); closeModal(); });
+      body: (ph.n ? `<label class="tick block"><input type="checkbox" id="bk_photos" checked> ${esc(K.includePhotos)}</label><p class="hint">${esc(K.includePhotosHint(R.fmtNum(ph.n), sz(ph.bytes)))}</p>` : '') +
+        (dc.n ? `<label class="tick block"><input type="checkbox" id="bk_docs"> ${esc(K.includeDocs)}</label><p class="hint">${esc(K.includeDocsHint(R.fmtNum(dc.n), sz(dc.bytes)))}</p>` : '') +
+        `<p class="muted small" id="bk_size"></p>` });
+    $('bk_size').textContent = sizeText();
+    ['bk_photos', 'bk_docs'].forEach(id => { if ($(id)) $(id).addEventListener('change', () => { $('bk_size').textContent = sizeText(); }); });
+    $('bk_ok').addEventListener('click', async () => { const on = !!($('bk_photos') && $('bk_photos').checked), docs = !!($('bk_docs') && $('bk_docs').checked); $('bk_ok').disabled = true; await saveBackup(on, docs); closeModal(); });
   }
-  async function saveBackup(withPhotos) {
+  async function saveBackup(withPhotos, withDocs) {
     const b = store.backup();
     let text = b.text;
+    if (withDocs) { const files = await KT.docfiles.exportAll(); if (files.length) text = text.replace(/}\s*$/, () => `,"doc_files":${JSON.stringify(files)}}`); }   // CR-33: still encrypted (the vault's key) — never decrypted for this
     if (withPhotos) { const photos = await KT.photos.exportAll(); if (Object.keys(photos).length) text = text.replace(/}\s*$/, () => `,"photos":${JSON.stringify(photos)}}`); }   // base64 pictures under "photos" (never in localStorage)
     if (withPhotos && KT.photos.exportStepImages) { const imgs = await KT.photos.exportStepImages(); if (Object.keys(imgs).length) text = text.replace(/}\s*$/, () => `,"step_images":${JSON.stringify(imgs)}}`); }   // CR-20 §4.13: the draft images too
     download(b.filename, text, 'application/json');
@@ -1185,7 +1190,9 @@ KT.ui = (function () {
         <div class="check warn">! <span>${esc(K.restorePreview)}</span></div>
         <div class="tablewrap"><table class="tbl"><thead><tr><th></th><th class="num">${esc(K.restoreColNow)}</th><th class="num">${esc(K.restoreColFile)}</th></tr></thead><tbody>` +
         S.COLLECTIONS.map(k => `<tr><td>${esc(C.counts[k])}</td><td class="num">${R.fmtNum(p.current[k])}</td><td class="num">${R.fmtNum(p.counts[k])}</td></tr>`).join('') +
-        `<tr><td>${esc(K.photosRow)}</td><td class="num">${R.fmtNum(KT.photos && KT.photos.available() ? KT.photos.totals().n : 0)}</td><td class="num">${p.photos ? R.fmtNum(p.photos) : `<span class="muted" title="${esc(K.photosKept)}">—</span>`}</td></tr>` + `</tbody></table></div>`;
+        `<tr><td>${esc(K.photosRow)}</td><td class="num">${R.fmtNum(KT.photos && KT.photos.available() ? KT.photos.totals().n : 0)}</td><td class="num">${p.photos ? R.fmtNum(p.photos) : `<span class="muted" title="${esc(K.photosKept)}">—</span>`}</td></tr>` +
+        `<tr><td>${esc(K.docsRow)}</td><td class="num" id="rs_docnow">—</td><td class="num">${p.docFiles ? R.fmtNum(p.docFiles) : `<span class="muted" title="${esc(K.docsKept)}">—</span>`}</td></tr>` + `</tbody></table></div>`;
+      if (KT.docfiles && KT.docfiles.available()) KT.docfiles.sizes().then(z => { const el = $('rs_docnow'); if (el) el.textContent = R.fmtNum(z.n); }).catch(() => {});
       $('rs_ok').disabled = false;
     });
     $('rs_ok').addEventListener('click', () => {
@@ -1196,6 +1203,7 @@ KT.ui = (function () {
       /* CR-16 §4.4 — a backup with photos writes them back (a backup without keeps the ones in this browser) */
       if (r.photos && KT.photos.available()) KT.photos.importAll(r.photos).then(n => { if (n) toast(K.photosRestored(R.fmtNum(n))); });
       if (r.stepImages && KT.photos.available()) KT.photos.importStepImages(r.stepImages);   // CR-20 §4.13
+      if (r.docFiles && KT.docfiles && KT.docfiles.available()) KT.docfiles.importAll(r.docFiles).then(n => { if (n) toast(K.docsRestored(R.fmtNum(n))); });   // CR-33: back into IndexedDB, still encrypted
     });
   }
   function openReset() {

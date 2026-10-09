@@ -1,5 +1,7 @@
 # Payments — Charmiss KOL Tracker (CR-08 · CR-09)
 
+> **CR-33 (09/10/2026) — Simple mode:** tabs **To submit · Submitted · Paid (confirmed)** · work goes in **PR rounds** (Create round from the Ready rows → Accounting Verify / Return → Confirm paid) · Print one PDF a round · documents are encrypted files or https links · see `docs/CR-33.md`. Full mode (payment runs) is unchanged.
+
 The Payments page (side menu, between Deals and KOL Master) is where payments to KOLs, affiliates and others are prepared, sent to Accounting and recorded.
 It replaces the old Deals › Payments view (CR-06 §4.8) and the Docs / Deposit / Paid ticks on a deal (CR-02 §4.3).
 Spec: `docs/CR-08.md` (v1.1) · CR-09 §4.14–4.16 (`docs/CR-09.md`: Group by Amount · tabs To pay / Payment runs / Accounting · role Accounting). Rules: `src/rules-pay.js` (pure functions, tests in `tests/cr08.spec.js`, `tests/cr09.spec.js`). Screens: `src/screen-payments.js`, `src/screen-payee.js`, Settings › Payments.

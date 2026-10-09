@@ -22,7 +22,7 @@ KT.export = (function (R, C) {
   /* Campaign portfolio (§4.1 Row 3): the rows on screen, in the order on screen */
   const SORTS = {
     campaign: r => r.campaign.campaign_name.toLowerCase(), status: r => statusLabel(r.status), period: r => r.from || '', days: r => R.daysLeftRank(r.days),
-    budget: r => (r.budget == null ? -Infinity : r.budget), committed: r => r.committed, used: r => (r.usedPct == null ? -Infinity : r.usedPct),
+    budget: r => (r.budget == null ? -Infinity : r.budget), committed: r => r.committed, actual: r => r.actual || 0, used: r => (r.usedPct == null ? -Infinity : r.usedPct),
     remaining: r => (r.remaining == null ? -Infinity : r.remaining), pending: r => r.pending, deals: r => r.deals,
   };
   const cmp = (a, b) => (Array.isArray(a) ? (a[0] - b[0]) || (a[1] - b[1]) : typeof a === 'string' ? a.localeCompare(b, 'th') : a - b);
@@ -35,9 +35,9 @@ KT.export = (function (R, C) {
   function portfolio(x) {
     const m = portfolioModel(x), t = m.total;
     return { key: 'portfolio', name: O.sheet.portfolio,
-      header: [O.colCampaign, O.colStatus, O.colFrom, O.colTo, O.colDaysLeft, MN.budget.h, MN.committed.h, MN.used.h, MN.remaining.h, MN.pending.h, O.deals],
-      rows: m.rows.map(r => [r.campaign.campaign_name, statusLabel(r.status), dmy(r.from), dmy(r.to), daysCell(r.days), r.budget, r2(r.committed), dec(r.usedPct), r2(r.remaining), r2(r.pending), r.deals]),
-      total: [O.colTotal, '', '', '', '', t.budget, r2(t.committed), dec(t.usedPct), r2(t.remaining), r2(t.pending), t.deals] };
+      header: [O.colCampaign, O.colStatus, O.colFrom, O.colTo, O.colDaysLeft, MN.budget.h, MN.committed.h, O.colActual, MN.used.h, MN.remaining.h, MN.pending.h, O.deals],   // CR-33 §3.9: + Actual
+      rows: m.rows.map(r => [r.campaign.campaign_name, statusLabel(r.status), dmy(r.from), dmy(r.to), daysCell(r.days), r.budget, r2(r.committed), r2(r.actual || 0), dec(r.usedPct), r2(r.remaining), r2(r.pending), r.deals]),
+      total: [O.colTotal, '', '', '', '', t.budget, r2(t.committed), r2(t.actual || 0), dec(t.usedPct), r2(t.remaining), r2(t.pending), t.deals] };
   }
   /* KOL tier mix (§4.1 Row 2): every tier with a committed deal — spend and deals with their shares */
   /* CR-31 §2.1 — By campaign: the committed deals of the Campaign (its Phase) */
@@ -103,7 +103,7 @@ KT.export = (function (R, C) {
     ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'].forEach(st => { if (k.campaigns.by[st]) add(O.kCampaigns, statusLabel(st), k.campaigns.by[st]); });   // CR-29: no Next to end
     add(O.committed, MN.committed.h, r2(k.money.committed)); add(O.committed, MN.budget.h, k.money.budget); add(O.committed, MN.used.h, dec(k.money.usedPct));
     add(O.committed, MN.remaining.h, r2(k.money.remaining)); add(O.committed, MN.pending.h, r2(k.money.pending));
-    add(O.kPaid, O.kPaid, r2(k.paid.paid)); add(O.kPaid, O.pctOfCommitted, dec(k.paid.pct)); add(O.kPaid, O.outstanding, r2(k.paid.outstanding));
+    add(O.kActual, O.kActual, r2(k.actual.actual)); add(O.kActual, O.pctOfCommitted, dec(k.actual.pct)); add(O.kActual, O.submittedForPay, r2(k.actual.submitted)); add(O.kActual, O.notSubmitted, r2(k.actual.notSubmitted)); add(O.kActual, O.notYetPosted, r2(k.actual.notPosted));   // CR-33 §3.9
     const E = O.kEngaged;
     add(E, O.partnersL, k.kols.n); R.partnerTypesOf(x.state.lookups).forEach(t => add(E, t.label, k.kols.byType[t.key]));
     add(E, O.committedDeals, k.kols.deals); add(E, O.avgPerDeal, k.kols.avg); add(E, O.notCommitted, k.kols.notCommitted);
