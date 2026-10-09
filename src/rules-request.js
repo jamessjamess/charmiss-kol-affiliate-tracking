@@ -3,7 +3,8 @@
    Phase) · a Budget increase / decrease (a campaign_budget_changes row). Its states: draft → pending → approved (Return to draft and Withdraw to draft
    go back from pending · a draft may be deleted · a change / budget change may be cancelled) — never back from approved.
    requestTransition() is the only place a request changes state (and the only place that writes its approval events) · requestDiff() is the only diff
-   (the Planner footer · What changed since last round). Each request carries submit_round · returned_reason / returned_by / returned_at (while it is a
+   (the Planner footer · What changed since last round). CR-29 §3.5: + Close campaign ('close:<campaign id>' — campaign.close_request; approved = the
+   Campaign is closed, Complete). Each request carries submit_round · returned_reason / returned_by / returned_at (while it is a
    returned draft) · last_submitted { round, at, by, reason, values } (what the manager saw when it was returned — What changed compares with it).
    Pure functions; adds to KT.rules (load after rules-budget.js). */
 Object.assign(KT.rules, (function (R, C) {
@@ -41,6 +42,10 @@ Object.assign(KT.rules, (function (R, C) {
       const c = campaignOf(state, key), p = c ? null : phaseOf(state, key), rec = c || p; if (!rec || !rec.pending_change) return null;
       const pc = rec.pending_change;
       return make('change', rec, pc, { kind: p ? 'phase' : 'campaign', campaign_id: rec.campaign_id, phase_id: p ? key : null, status: pc.status || 'pending', by: pc.requested_by || null, at: pc.requested_at || '', note: pc.note || null });
+    }
+    if (kind === 'close') {
+      const c = campaignOf(state, key); if (!c || !c.close_request) return null; const cr = c.close_request;
+      return make('close', c, cr, { campaign_id: key, status: cr.status || 'pending', by: cr.requested_by || null, at: cr.requested_at || '', note: cr.note || null });
     }
     if (kind === 'budget') {
       const x = budgetRows(state).find(b => b.change_id === key); if (!x) return null;
@@ -89,6 +94,10 @@ Object.assign(KT.rules, (function (R, C) {
         phaseRows(R.sortPhases((state.phases || []).filter(p => p.campaign_id === c.campaign_id))));
     }
     if (req.type === 'new_phase') return planSnapshot(state, null, phaseRows([req.rec]));
+    if (req.type === 'close') {   // CR-29: the note · cancel the open deals before Confirm QT
+      const cr = req.carrier;
+      return { note: E(RQ.fCloseNote, trim(cr.note) || null), cancel_open: E(RQ.fCancelOpen, cr.cancel_open ? true : null, cr.cancel_open ? RQ.yes : RQ.no) };
+    }
     if (req.type === 'change') {
       const f = req.carrier.fields || {}, rec = req.rec, out = {};
       if (req.kind === 'phase') {
@@ -142,6 +151,10 @@ Object.assign(KT.rules, (function (R, C) {
       if (R.syncInitial) R.syncInitial(state, c.campaign_id, ctx.user, ctx.now);
     } else if (req.type === 'new_phase') { req.rec.approval_status = st; req.rec.approval = Object.assign({}, req.rec.approval, sent); }
     else if (req.type === 'change') { req.carrier.status = st; if (st === 'pending') req.carrier.requested_at = ctx.now; }
+    else if (req.type === 'close') {   // CR-29: what was still open when it was sent (the review shows it next to now)
+      req.carrier.status = st;
+      if (st === 'pending') { req.carrier.requested_at = ctx.now; req.carrier.checklist = R.checklistSnapshot(R.closeChecklist(state, req.campaign_id, ctx.today || R.dateOfTimestamp(ctx.now))); }
+    }
     else { req.rec.status = st; if (st === 'pending') req.rec.requested_at = ctx.now; }
   }
   /* approved: the record takes it (a change is applied · a budget change moves the money) → the event */
@@ -152,6 +165,11 @@ Object.assign(KT.rules, (function (R, C) {
       list.forEach(r => { r.approval_status = 'approved'; r.approval = Object.assign({}, r.approval, dec); });
       if (req.type === 'new_campaign' && R.syncInitial) R.syncInitial(state, req.campaign_id, ctx.user, ctx.now);
       return [ev('approved', { note: o.note })];
+    }
+    if (req.type === 'close') {   // CR-29: closed — Complete from now (closed_by = the manager who approved · requested_by in the event)
+      const note = req.carrier.note;
+      R.applyClose(req.rec, { at: ctx.now, by: ctx.user, note });
+      return [ev('approved', { note: o.note }), R.closeStatusEvent(ctx, req.campaign_id, 'closed', note, { requested_by: req.by })];
     }
     if (req.type === 'change') {
       const f = R.applyChange(state, req.kind, req.rec);
@@ -173,6 +191,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (R.dropBudgetChanges) R.dropBudgetChanges(state, cid);
     } else if (req.type === 'new_phase') { state.phases = state.phases.filter(p => p !== req.rec); clearPosts(new Set([req.phase_id])); }
     else if (req.type === 'change') req.rec.pending_change = null;
+    else if (req.type === 'close') req.rec.close_request = null;
     else state.campaign_budget_changes = budgetRows(state).filter(x => x !== req.rec);
   }
   /* ref (an id / a card) · to 'draft' | 'pending' | 'approved' | 'cancelled' | 'deleted' · ctx { eventId(), now, user } ·
@@ -193,10 +212,10 @@ Object.assign(KT.rules, (function (R, C) {
       const first = !(car.submit_round > 0);
       if (first || car.returned_at) car.submit_round = (car.submit_round || 0) + 1;
       clearReturned(car);
-      if (trim(o.note) && req.type !== 'change' && !req.change_id) req.rec.approval = Object.assign({}, req.rec.approval, { note: trim(o.note) });
+      if (trim(o.note) && req.type !== 'change' && req.type !== 'close' && !req.change_id) req.rec.approval = Object.assign({}, req.rec.approval, { note: trim(o.note) });
       else if (trim(o.note)) car.note = trim(o.note);
       setState(state, req, 'pending', ctx);
-      return okEv([ev(first ? (req.type === 'change' ? 'change_requested' : 'submitted') : 'resubmitted', { note: o.note, fields: req.type === 'change' ? car.fields : null })]);
+      return okEv([ev(first ? (req.type === 'change' ? 'change_requested' : req.type === 'close' ? 'close_requested' : 'submitted') : 'resubmitted', { note: o.note, fields: req.type === 'change' ? car.fields : null })]);
     }
     if (to === 'draft' && from === 'pending') {
       if (o.withdraw) { setState(state, req, 'draft', ctx); return okEv([ev('withdrawn')]); }
@@ -214,7 +233,8 @@ Object.assign(KT.rules, (function (R, C) {
       return okEv(applyApproved(state, req, ctx, ev, o));
     }
     if (to === 'cancelled') {
-      if (req.type !== 'change' && !req.change_id) return fail('kind');
+      if (req.type !== 'change' && req.type !== 'close' && !req.change_id) return fail('kind');
+      if (req.type === 'close') { req.rec.close_request = null; return okEv([ev('close_cancelled')]); }   // CR-29: Cancel request
       const f = req.type === 'change' ? car.fields : { type: req.rec.type, amount: req.rec.amount, allocations: req.rec.allocations };
       if (req.type === 'change') req.rec.pending_change = null;
       else Object.assign(req.rec, { status: 'cancelled', decided_by: ctx.user || null, decided_at: ctx.now });
@@ -246,6 +266,7 @@ Object.assign(KT.rules, (function (R, C) {
     (state.campaigns || []).forEach(c => {
       if (!R.isApproved(c)) { add(requestIdOf('campaign', c.campaign_id)); return; }
       if (c.pending_change) add(requestIdOf('change', c.campaign_id));
+      if (c.close_request) add(requestIdOf('close', c.campaign_id));   // CR-29
       R.sortPhases((state.phases || []).filter(p => p.campaign_id === c.campaign_id)).forEach(p => {
         if (!R.isApproved(p)) add(requestIdOf('phase', p.phase_id)); else if (p.pending_change) add(requestIdOf('change', p.phase_id));
       });
@@ -264,7 +285,7 @@ Object.assign(KT.rules, (function (R, C) {
     return (state.campaign_events || []).filter(e => e.type === 'approval' && e.from === 'pending' && (OK.includes(e.to) || BACK.includes(e.to)))
       .map(e => {
         const ok = OK.includes(e.to);
-        const type = e.change_id ? e.request || 'budget_' + ((e.fields || {}).type || 'increase') : e.request === 'change' || e.to.startsWith('change_') ? 'change' : e.phase_id ? 'new_phase' : 'new_campaign';
+        const type = e.request === 'close' ? 'close' : e.change_id ? e.request || 'budget_' + ((e.fields || {}).type || 'increase') : e.request === 'change' || e.to.startsWith('change_') ? 'change' : e.phase_id ? 'new_phase' : 'new_campaign';
         return { id: 'ev:' + e.event_id, type, campaign_id: e.campaign_id, phase_id: e.phase_id || null, change_id: e.change_id || null, by: e.requested_by || null, decided_by: e.changed_by || null,
           decided_at: e.changed_at, result: ok ? 'approved' : 'returned', reason: ok ? null : e.note || null, note: ok ? e.note || null : null, fields: e.fields || null, round: e.round || 1, seq: Number(e.event_id) || 0 };
       }).sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at)) || b.seq - a.seq);
@@ -272,7 +293,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* a request's own approval rows, oldest first (History of the review) */
   function requestHistory(state, ref) {
     const req = requestOf(state, ref); if (!req) return [];
-    return (state.campaign_events || []).filter(e => e.type === 'approval' && e.campaign_id === req.campaign_id && (req.change_id ? e.change_id === req.change_id
+    return (state.campaign_events || []).filter(e => e.type === 'approval' && e.campaign_id === req.campaign_id && (req.type === 'close' ? e.request === 'close' : e.request === 'close' ? false : req.change_id ? e.change_id === req.change_id
       : !e.change_id && (req.type === 'new_phase' ? e.phase_id === req.phase_id : req.type === 'change' ? (e.request === 'change' || String(e.to).startsWith('change_')) && (e.phase_id || null) === (req.phase_id || null)
         : !e.phase_id && e.request !== 'change' && !String(e.to).startsWith('change_'))))
       .sort((a, b) => String(a.changed_at).localeCompare(String(b.changed_at)));

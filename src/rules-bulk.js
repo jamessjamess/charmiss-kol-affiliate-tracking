@@ -19,28 +19,36 @@ Object.assign(KT.rules, (function (R, C) {
       return score < 0 ? null : { k, score };
     }).filter(Boolean).sort((a, b) => a.score - b.score || a.k.display_name.localeCompare(b.k.display_name, 'th')).slice(0, limit || 20).map(x => x.k);
   }
-  /* §4.10 — a KOL already in KOL Master with this name or handle (as a name or as a handle) → {kol, handle} | null */
-  function findDuplicateKol(state, name, handle) {
-    const keys = [normKey(name), normKey(handle)].filter(Boolean); if (!keys.length) return null;
+  /* CR-30 §3.5 — a profile link for comparing: no scheme · no www. / m. · no query or # · no / at the end · lower case */
+  const profileKey = link => String(link == null ? '' : link).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^(www|m)\./, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+  /* §4.10 — a KOL already in KOL Master with this name or handle (as a name or as a handle) — CR-30: or this profile link → {kol, handle, link} | null */
+  function findDuplicateKol(state, name, handle, link) {
+    const keys = [normKey(name), normKey(handle)].filter(Boolean), lk = profileKey(link);
+    const byLink = lk ? state.kol_accounts.find(x => x.profile_link && profileKey(x.profile_link) === lk) : null;
+    if (byLink) { const kl = R.kolById(state, byLink.kol_id); if (kl) return { kol: kl, handle: byLink.handle || '', link: true }; }
+    if (!keys.length) return null;
     const k = state.kol_master.find(x => keys.includes(normKey(x.display_name)));
     const a = k ? null : state.kol_accounts.find(x => keys.includes(normKey(x.handle)));
     const kol = k || (a && R.kolById(state, a.kol_id)); if (!kol) return null;
     return { kol, handle: (a && a.handle) || handlesOf(state, kol.kol_id)[0] || '' };
   }
   /* the Create KOL form from what was typed: the name and handle without the @ in front · TikTok · PIC = you · Partner type KOL (CR-25) */
-  const createKolDraft = (text, user) => { const t = trim(text).replace(/^@+/, ''); return { display_name: t, platform: 'TikTok', handle: t.replace(/\s+/g, ''), followers: '', profile_link: '',
+  const createKolDraft = (text, user) => { const t = trim(text).replace(/^@+/, ''); return { display_name: t, platform: '', handle: t.replace(/\s+/g, ''), followers: '', profile_link: '',   // CR-30: the platform from the link
     kol_type: '', kol_category: '', gender: '', contact_channel: '', contact_id: '', pic: R.picName(user) || '', default_payment_term: '', partner_type: 'kol' }; };
 
-  /* §4.10 — Create KOL from New deal: Name and PIC are needed · a handle without spaces or @ · followers ≥ 0 · a link that is a link */
+  /* §4.10 — Create KOL from New deal: Name and PIC are needed · a handle without spaces or @ · followers ≥ 0 · a link that is a link ·
+     CR-30 §3.5: Partner type KOL / Affiliate (Both is set later) · Platform * · Profile link * (https://) · Username * (taken from the link · no @) */
   function validateCreateKol(state, x) {
-    const errs = [], h = trim(x.handle);
+    const errs = [], h = trim(x.handle), NK = C.newKol;
     if (!trim(x.display_name)) errs.push({ field: 'ck_display_name', msg: M.kolNameRequired });
     if (!trim(x.pic)) errs.push({ field: 'ck_pic', msg: M.ckPicRequired });
-    if (!R.PARTNER_TYPES.includes(x.partner_type == null ? 'kol' : x.partner_type)) errs.push({ field: 'ck_partner_type', msg: C.partner.required });   // CR-25 §3.1
-    if (h && (/\s/.test(h) || h.startsWith('@'))) errs.push({ field: 'ck_handle', msg: M.accHandleFormat(1) });
-    if (h && !x.platform) errs.push({ field: 'ck_platform', msg: M.accPlatform(1) });
+    if (!['kol', 'affiliate'].includes(x.partner_type == null ? 'kol' : x.partner_type)) errs.push({ field: 'ck_partner_type', msg: C.partner.required });   // CR-25 §3.1 · CR-30: no Both here
+    if (!x.platform) errs.push({ field: 'ck_platform', msg: NK.platformRequired });
+    if (isBlank(x.profile_link)) errs.push({ field: 'ck_profile_link', msg: NK.linkRequired });
+    else if (!/^https:\/\/\S+$/i.test(trim(x.profile_link))) errs.push({ field: 'ck_profile_link', msg: NK.linkHttps });
+    if (!h) errs.push({ field: 'ck_handle', msg: NK.usernameRequired });
+    else if (/\s/.test(h) || h.startsWith('@')) errs.push({ field: 'ck_handle', msg: M.accHandleFormat(1) });
     if (!isBlank(x.followers) && (isNaN(x.followers) || Number(x.followers) < 0)) errs.push({ field: 'ck_followers', msg: M.accFollowersFormat(1) });
-    if (!isBlank(x.profile_link) && !R.isHttpLink(x.profile_link)) errs.push({ field: 'ck_profile_link', msg: M.accLinkFormat(1) });
     if (!isBlank(x.default_payment_term) && !isTerm(x.default_payment_term)) errs.push({ field: 'ck_default_payment_term', msg: M.termInvalid });
     const cp = R.contactIdProblem(x.contact_id);   // CR-14 §4.5
     if (cp) errs.push({ field: 'ck_contact_id', msg: cp === 'phone' ? M.contactPhone : M.contactLong(R.CONTACT_ID_MAX) });
@@ -52,7 +60,7 @@ Object.assign(KT.rules, (function (R, C) {
     const kol = { kol_id: ids.kolId, display_name: trim(x.display_name), kol_category: v(x.kol_category), kol_type: v(x.kol_type), gender: x.gender || null, pic: v(x.pic),
       kol_status: 'Active', status_reason: null, contact_channel: x.contact_channel || null, contact_id: v(x.contact_id), note: null, sources: ['manual'],
       default_payment_term: isTerm(x.default_payment_term) ? x.default_payment_term : null, kol_type_legacy: null, partner_type: R.partnerTypeOf(x) };
-    const account = trim(x.handle) ? { account_id: ids.accountId, kol_id: ids.kolId, platform: x.platform, handle: trim(x.handle), profile_link: v(x.profile_link),
+    const account = trim(x.handle) || trim(x.profile_link) ? { account_id: ids.accountId, kol_id: ids.kolId, platform: x.platform || null, handle: R.cleanUsername(x.handle) || R.usernameFromLink(x.profile_link) || '', profile_link: v(x.profile_link),
       followers: isBlank(x.followers) ? null : Number(x.followers), is_legacy: false } : null;
     return { kol, account };
   }
@@ -138,6 +146,6 @@ Object.assign(KT.rules, (function (R, C) {
   const newAccountRecord = (kolId, a, id) => ({ account_id: id, kol_id: kolId, platform: a.platform, handle: trim(a.handle), profile_link: trim(a.profile_link) || null,
     followers: isBlank(a.followers) ? null : Number(a.followers), is_legacy: false });
 
-  return { kolPickerFilter, PICKER_KEYS, pickerActive, MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan,
+  return { profileKey, kolPickerFilter, PICKER_KEYS, pickerActive, MAX_BULK, normKey, kolMatches, findDuplicateKol, createKolDraft, validateCreateKol, createKolRecords, bulkShortlistPlan, bulkShortlistDeals, batchUntouched, canMoveToStage, DETAIL_FIELDS, setDetailsPlan,
     validateAddAccount, newAccountRecord };
 })(KT.rules, KT.content));

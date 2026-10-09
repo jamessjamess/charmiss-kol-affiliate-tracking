@@ -204,8 +204,11 @@ Object.assign(KT.rules, (function (R, C) {
   const campaignStatusOf = (state, c, today) => (R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today) : R.campaignStatus(R.phasesOfCampaign(state, c.campaign_id), today));
   /* CR-14 §4.1 — All campaigns › Status: the effective status of a Campaign today (CR-05 §4.7) · default = all but Cancelled ·
      statuses = a list, or the old includeCancelled (true = all · false = the default) */
-  const DASH_STATUS_KEY = 'dash.all.statuses';
-  const DASH_STATUS_DEFAULT = ['ongoing', 'not_started', 'on_hold', 'complete'];
+  /* CR-29 §3.5: + Wrap-up (in the default) · a list saved before it (dash.all.statuses) that had Complete gets Wrap-up too — what was Complete by its
+     dates is Wrap-up now (upgradeDashStatuses) · saved under a new key so a later choice without Wrap-up stays as it was chosen */
+  const DASH_STATUS_KEY = 'dash.all.statuses.v29', DASH_STATUS_KEY_OLD = 'dash.all.statuses';
+  const DASH_STATUS_DEFAULT = ['ongoing', 'wrap_up', 'not_started', 'on_hold', 'complete'];
+  const upgradeDashStatuses = v => (Array.isArray(v) && v.includes('complete') && !v.includes('wrap_up') ? v.concat(['wrap_up']) : v);
   const statusSet = x => new Set(Array.isArray(x) ? x : x === true ? R.CAMPAIGN_STATUSES : DASH_STATUS_DEFAULT);
   /* a stored / linked list → the statuses that exist, in §4.7 order · nothing valid → the default */
   function normDashStatuses(v) { const set = new Set(Array.isArray(v) ? v : []), out = R.CAMPAIGN_STATUSES.filter(k => set.has(k)); return out.length ? out : DASH_STATUS_DEFAULT.slice(); }
@@ -449,7 +452,7 @@ Object.assign(KT.rules, (function (R, C) {
   const stuckDaysOf = lookups => { const n = Number((lookups || {}).ops_stuck_days); return Number.isInteger(n) && n >= 1 && n <= 365 ? n : STUCK_DAYS; };
   const WORK_BUCKETS = ['overdue', 'today', 'week', 'later', 'none'];
   const workBucket = (due, today) => (!due ? 'none' : due < today ? 'overdue' : due === today ? 'today' : due <= addDays(today, 7) ? 'week' : 'later');
-  const WORK_KINDS = ['deal', 'shipment', 'payment', 'metrics', 'approval'];
+  const WORK_KINDS = ['deal', 'shipment', 'payment', 'metrics', 'gencode', 'close', 'approval'];   // CR-29 (S): + Close campaign   // CR-30: + Collect gencode
   /* the day a deal came into its stage: its last log into that stage (with a date) · else the stage's own date (Brief · Draft k …) · null when not known
      (deals from the old files have neither) */
   function stageSince(state, deal) {
@@ -499,6 +502,19 @@ Object.assign(KT.rules, (function (R, C) {
     if (R.metricsDue) R.metricsDue(state, {}, today).forEach(m => {
       push({ kind: 'metrics', key: 'met:' + m.post.post_id, deal: m.deal, kol_id: m.deal.kol_id, campaign_id: m.deal.campaign_id, stage: m.deal.sub_status, action: 'metrics', waiting: 'us',
         due: m.info.checkpointDate || null, field: null, pic: m.deal.pic || null, since: m.info.checkpointDate || null, inStage: daysSince(m.info.checkpointDate, today), sincePost: daysSince(m.post.post_date, today), ref: m.post });
+    });
+    /* CR-30 §3.1 — Collect gencode: a Gencode paid for, posted, no code yet — waiting on the KOL · due = the first post date + 3 days */
+    if (R.needsGencode) state.deals.forEach(d => { const g = R.needsGencode(state, d, today); if (!g) return;
+      push({ kind: 'gencode', key: 'gc:' + d.deal_id, deal: d, kol_id: d.kol_id, campaign_id: d.campaign_id, stage: d.sub_status, action: 'gencode', waiting: 'kol', due: g.due, field: null,
+        pic: d.pic || null, since: g.first, inStage: daysSince(g.first, today), sincePost: daysSince(g.first, today), ref: d }); });
+    /* CR-29 §3.5 (S) — Close campaign: a Campaign in Wrap-up more than 7 days (its End date + 7 passed · not asked yet) · waiting on us · due = End date + 7 ·
+       for those who may close it or ask (a manager · Staff) */
+    if (!o.viewer || R.can(o.viewer, 'campaign.draft') || (R.canApprove && R.canApprove(o.viewer))) (state.campaigns || []).forEach(c => {
+      if (!R.campaignEffectiveStatus || R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today) !== 'wrap_up' || (R.closeRequested && R.closeRequested(c))) return;
+      const end = campaignDates(state, c)[1]; if (!R.isISODate(end)) return;
+      const due = addDays(end, 7); if (!(today > due)) return;
+      push({ kind: 'close', key: 'close:' + c.campaign_id, deal: null, kol_id: null, campaign_id: c.campaign_id, stage: null, action: 'close_campaign', waiting: 'us', due, field: null,
+        pic: null, approver: true, since: end, inStage: daysSince(end, today), ref: c });
     });
     /* requests waiting for approval — only for those who approve (due: sent + 2 days) */
     if (o.viewer && R.canApprove && R.canApprove(o.viewer)) R.approvalRequests(state).forEach(q => {
@@ -556,7 +572,7 @@ Object.assign(KT.rules, (function (R, C) {
     const today = o.today || R.todayISO(), camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '';
     const mine = d => (!camps || camps.has(d.campaign_id)) && (!person || (person === '__none' ? isBlank(d.pic) : d.pic === person));
     const deals = state.deals.filter(d => mine(d) && !R.isImportedClosed(d)), rows = [];
-    deals.forEach(d => { const miss = R.dealMissing(state, d); if (miss.length) rows.push({ kind: 'missing', deal: d, keys: miss }); });
+    deals.forEach(d => { const miss = R.dealMissing(state, d).filter(k => k !== 'gencode'); if (miss.length) rows.push({ kind: 'missing', deal: d, keys: miss }); });   // CR-30: Gencode is work (Collect gencode), not data
     const dealOf = new Map(state.deals.map(d => [d.deal_id, d]));
     (state.sample_shipments || []).forEach(sh => { if (sh.status !== 'to_ship' || R.shipByDate(sh) || R.isLegacyDelivered(sh)) return; const d = sh.deal_id ? dealOf.get(sh.deal_id) : null;
       if (d ? !mine(d) || R.isCancelled(d) : (camps && sh.campaign_id && !camps.has(sh.campaign_id))) return; rows.push({ kind: 'noShipBy', deal: d, shipment: sh }); });
@@ -578,7 +594,7 @@ Object.assign(KT.rules, (function (R, C) {
 
   return { PILLARS, PILLAR_KEY, NOT_SET, AWARE_CONSIDER, STUCK_DAYS, stuckDaysOf, WORK_BUCKETS, workBucket, WORK_KINDS, WORK_TILES, workTileHas, stageSince, dealWork, workQueue, workActionText, workSummary, teamLoad, stageFlow, dataToFix, opsCampaigns, opsCampaignsDefault, productsGiven, productsGivenFor, cancelledReport, cancelledReportFor, pillarShort, campaignDates, migrateV18, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
     activityRange, autoGran, activityBins, activitySeries, DEFAULT_TARGET, pillarTargetOf, validatePillarTarget,
-    portfolioScope: campaignsInRange, DASH_STATUS_KEY, DASH_STATUS_DEFAULT, normDashStatuses, dashStatusText, isDefaultStatuses, statusCounts, filterCampaignTree, highlightParts,
+    portfolioScope: campaignsInRange, DASH_STATUS_KEY, DASH_STATUS_KEY_OLD, upgradeDashStatuses, DASH_STATUS_DEFAULT, normDashStatuses, dashStatusText, isDefaultStatuses, statusCounts, filterCampaignTree, highlightParts,
     phaseSteps, phaseStep, pillarShares,
     moneyOf, campaignMoney, moneyTotal, PRESETS, dateRangePreset, presetRange, workloadByPic, campaignsInRange, portfolio, allKpis, swimlanes, QUEUES, opsDeals, opsQueues, queueRows, upcomingDues, workload };
 })(KT.rules, KT.content));

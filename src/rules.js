@@ -23,6 +23,17 @@ KT.rules = (function (C) {
   const num = v => (isBlank(v) || isNaN(v)) ? 0 : Number(v);
   const fmtNum = n => (isBlank(n) || isNaN(n)) ? '' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
   const baht = n => { const v = Number(n) || 0; return (v < 0 ? '-' : '') + '฿' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 }); };
+  /* CR-29 §3.1 — money said short (a caption · a month label; the full amount is in its tooltip): ฿5.46M · ฿109K · ฿4.4K · ฿4K · ฿950 · a minus is "−" (U+2212) ·
+     millions with 2 decimals (1.20M) · thousands: 10K and up whole (109K · 207K), under 10K one decimal at most (4.4K · 4K) */
+  function fmtCompact(n) {
+    const v = Number(n) || 0, a = Math.abs(v), sign = v < 0 ? '\u2212' : '';
+    let t;
+    if (a >= 999500) t = (a / 1e6).toFixed(2) + 'M';
+    else if (a >= 9950) t = Math.round(a / 1e3) + 'K';
+    else if (a >= 999.5) t = String(Math.round(a / 100) / 10).replace(/\.0$/, '') + 'K';
+    else t = String(Math.round(a));
+    return sign + '฿' + t;
+  }
   const dmy = iso => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
   const todayISO = (now = new Date()) => now.toLocaleDateString('en-CA', { timeZone: TZ });
   const isISODate = s => {
@@ -69,6 +80,20 @@ KT.rules = (function (C) {
     const m = String(url || '').match(/(?:tiktok\.com\/@|instagram\.com\/|x\.com\/|twitter\.com\/)([A-Za-z0-9._-]+)/i);
     return m && !['reel', 'p', 'share', 'stories'].includes(m[1].toLowerCase()) ? m[1].toLowerCase() : '';
   };
+  /* CR-30 §3.5 — the Username (the account's name on its platform, no @) from a profile link: tiktok.com/@3decox → 3decox · instagram.com/abc/ → abc ·
+     x.com/abc · facebook.com/abc · youtube.com/@abc (/c/abc · /user/abc) · lemon8-app.com/@abc · a link that names no account (a post, profile.php?id=…) → '' */
+  const cleanUsername = v => String(v == null ? '' : v).trim().replace(/^@+/, '').replace(/\s+/g, '');
+  function usernameFromLink(url) {
+    let u; try { u = new URL(/^https?:\/\//i.test(String(url || '').trim()) ? String(url).trim() : 'https://' + String(url || '').trim()); } catch (e) { return ''; }
+    const host = u.hostname.toLowerCase().replace(/^(www|m|mobile|vt)\./, ''), parts = u.pathname.split('/').filter(Boolean).map(x => decodeURIComponent(x));
+    const first = parts[0] || '', skip = ['p', 'reel', 'reels', 'stories', 'explore', 'share', 'watch', 'shorts', 'channel', 'i', 'home', 'intent', 'hashtag', 'search', 'video', 'groups', 'events', 'pages', 'people', 'profile.php', 'permalink.php', 'story.php', 'photo', 'photos', 'tv', 'post'];
+    let name = '';
+    if (/tiktok\.com$|lemon8-app\.com$/.test(host)) name = first.startsWith('@') ? first : '';
+    else if (/youtube\.com$/.test(host)) name = first.startsWith('@') ? first : ['c', 'user'].includes(first) ? parts[1] || '' : '';
+    else if (/instagram\.com$|(^|\.)x\.com$|twitter\.com$|facebook\.com$|fb\.com$/.test(host)) name = first && !skip.includes(first.toLowerCase()) ? first : '';
+    name = cleanUsername(name);
+    return /^[A-Za-z0-9._-]+$/.test(name) ? name.toLowerCase() : '';
+  }
   const platformFromLink = url => {
     const u = String(url || '').toLowerCase();
     if (u.includes('tiktok.com')) return 'TikTok';
@@ -91,7 +116,7 @@ KT.rules = (function (C) {
   };
 
   /* ===================== costs & payment ===================== */
-  const COST_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee'];
+  const COST_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee', 'other_fee'];   // CR-30 §3.2: + Other fee (with its note)
   /* CR-22 §3.3 — + Product purchase (a KOL who buys the product: the amount paid back to them) */
   const totalCost = d => COST_KEYS.reduce((s, k) => s + num(d && d[k]), 0) + num(d && d.product_purchase_fee);
   const gencodeEndDate = d => (d && isISODate(d.gencode_start_date) && num(d.gencode_period) > 0)
@@ -389,16 +414,23 @@ KT.rules = (function (C) {
     || String(a.end_date || '9999').localeCompare(String(b.end_date || '9999')));
   /* CR-05 §4.7 — a Campaign may be put On hold or Cancelled (status_override); that wins over its dates */
   /* CR-17 §4.5 — + Pending approval (a Campaign Staff made): not in the Dashboard by default · v1.2: the order of the tabs, and which wins ·
-     CR-21: Cancelled > Draft > Pending approval > On hold > by the dates (Not started · On going · Complete) — a Draft is in no status tab */
-  const CAMPAIGN_STATUSES = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
+     CR-21: Cancelled > Draft > Pending approval > On hold > by the dates (Not started · On going · Complete) — a Draft is in no status tab ·
+     CR-29 §3.5: Complete only once it is closed (closed_at) — past its End date and not closed = Wrap-up · Cancelled > Draft > Pending approval >
+     Complete (closed) > On hold > (Close requested: a chip on the status by the dates) > Wrap-up / On going / Not started */
+  const CAMPAIGN_STATUSES = ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   const CAMPAIGN_OVERRIDES = ['on_hold', 'cancelled'];
+  const isClosed = c => !!c && !!c.closed_at;
+  /* by the dates only (a Campaign's Phases): the last day passed → Wrap-up (never Complete by itself) */
+  const campaignDateStatus = (phases, today) => { const st = campaignStatus(phases, today); return st === 'complete' ? 'wrap_up' : st; };
   const campaignEffectiveStatus = (campaign, phases, today) => (campaign && campaign.status_override === 'cancelled' ? 'cancelled'
     : isDraft(campaign) ? 'draft' : campaign && !isApproved(campaign) ? 'pending'
-    : campaign && CAMPAIGN_OVERRIDES.includes(campaign.status_override) ? campaign.status_override : campaignStatus(phases, today));
-  /* a Campaign that takes no new deal: On hold · Cancelled → the message, else null */
+    : isClosed(campaign) ? 'complete'
+    : campaign && CAMPAIGN_OVERRIDES.includes(campaign.status_override) ? campaign.status_override : campaignDateStatus(phases, today));
+  /* a Campaign that takes no new deal: On hold · Cancelled · Complete (closed) → the message, else null */
   function campaignBlocksNew(state, campaignId) {
     const c = state.campaigns.find(x => x.campaign_id === campaignId); if (!c) return null;
     if (!isApproved(c)) return M.campaignNotApproved(c.campaign_name);   // CR-17 §4.5: no deal before a manager approves it
+    if (c.status_override !== 'cancelled' && isClosed(c)) return M.campaignClosedNew(c.campaign_name);   // CR-29 §3.5
     return c.status_override === 'on_hold' ? M.campaignOnHold(c.campaign_name) : c.status_override === 'cancelled' ? M.campaignCancelledNew(c.campaign_name) : null;
   }
   const campaignCancelled = (state, campaignId) => { const c = state.campaigns.find(x => x.campaign_id === campaignId); return !!c && c.status_override === 'cancelled'; };
@@ -414,9 +446,9 @@ KT.rules = (function (C) {
      start date (oldest first) · 'start_asc' Start date · earliest first (ties by name) · 'start_desc' latest first — a Campaign's start = its start_date,
      else its earliest Phase (a draft Phase of an approved Campaign does not count) · none = last */
   const SORT_MODES = ['status', 'start_asc', 'start_desc'];
-  const SORT_RANK = { ongoing: 0, not_started: 1, pending: 2, on_hold: 3, complete: 4, cancelled: 5, draft: 6 };
+  const SORT_RANK = { ongoing: 0, wrap_up: 0.5, not_started: 1, pending: 2, on_hold: 3, complete: 4, cancelled: 5, draft: 6 };   // CR-29: Wrap-up after On going
   function sortCampaigns(campaigns, phases, today, mode) {
-    const RANK = { ongoing: 0, not_started: 1, pending: 1.5, on_hold: 2, complete: 3, draft: 3.5, cancelled: 4 };
+    const RANK = { ongoing: 0, wrap_up: 0.5, not_started: 1, pending: 1.5, on_hold: 2, complete: 3, draft: 3.5, cancelled: 4 };
     const info = new Map(campaigns.map(c => {
       const ps = phases.filter(p => p.campaign_id === c.campaign_id), dated = ps.filter(p => !isDraft(p) || isDraft(c));
       const starts = dated.map(p => p.start_date).filter(Boolean).sort(), ends = ps.map(p => p.end_date).filter(Boolean).sort();
@@ -432,7 +464,7 @@ KT.rules = (function (C) {
     return [...campaigns].sort((a, b) => {
       const x = info.get(a.campaign_id), y = info.get(b.campaign_id);
       if (x.st !== y.st) return RANK[x.st] - RANK[y.st];
-      const c = x.st === 'ongoing' ? x.end.localeCompare(y.end) : x.st === 'not_started' || x.st === 'on_hold' || x.st === 'pending' ? x.start.localeCompare(y.start) : y.end.localeCompare(x.end);
+      const c = x.st === 'ongoing' || x.st === 'wrap_up' ? x.end.localeCompare(y.end) : x.st === 'not_started' || x.st === 'on_hold' || x.st === 'pending' ? x.start.localeCompare(y.start) : y.end.localeCompare(x.end);
       return c || x.start.localeCompare(y.start) || String(a.campaign_name).localeCompare(String(b.campaign_name));
     });
   }
@@ -560,7 +592,7 @@ KT.rules = (function (C) {
     deal_id: null, campaign_id: null, legacy_phase_id: null, kol_id: null, pillar: null, status: null, sub_status: null,
     docs_done: false, docs_done_date: null, paid_50: false, paid_50_date: null, paid_full: false, paid_full_date: null,
     pic: null, rate_card: null, gencode_expense: null, gencode_period: null, gencode_start_date: null,
-    basket_fee: null, asset_fee: null, expediting_fee: null, delivered: false, delivery_date: null,
+    basket_fee: null, asset_fee: null, expediting_fee: null, other_fee: 0, other_fee_note: null, delivered: false, delivery_date: null,   // CR-30 §3.2
     brief_date: null, expected_script_date: null, script_date: null, expected_draft1_date: null, approved_draft1_date: null, expected_draft2_date: null, approved_draft2_date: null,
     expected_draft3_date: null, approved_draft3_date: null, expected_approve_date: null, approved_date: null, expected_post_date: null, link_brief: null, cta: null,
     cancel_reason: null, remark: null, legacy_job_ids: [], source_record_ids: [], is_legacy: false,
@@ -679,8 +711,8 @@ KT.rules = (function (C) {
   }
 
   return {
-    TZ, looksSensitive, isBlank, trim, num, fmtNum, baht, dmy, todayISO, isISODate, addDays, dayDiff, weekStart, fmtDateTime, dateOfTimestamp,
-    TRACKING_PARAMS, normLink, tiktokDate, isShortTiktok, handleFromLink, platformFromLink, isHttpLink,
+    TZ, looksSensitive, isBlank, trim, num, fmtNum, baht, fmtCompact, dmy, todayISO, isISODate, addDays, dayDiff, weekStart, fmtDateTime, dateOfTimestamp,
+    TRACKING_PARAMS, normLink, tiktokDate, isShortTiktok, handleFromLink, usernameFromLink, cleanUsername, platformFromLink, isHttpLink,
     tierOf,
     COST_KEYS, totalCost, gencodeEndDate, isCancelled, paidEstimate, extrasOf, paidUp, PAYMENT_PROGRESS, paymentProgress, BASIC_TERMS,
     PAYMENT_TERMS, isTerm, termOf, paymentMilestones, reachedBrief, PAYMENT_STATES, paymentState, isOpenDeal, termEvent, applyTermToOpenDeals, checkNewDealTerm,
@@ -690,7 +722,7 @@ KT.rules = (function (C) {
     nextStep, dueInfo, dueDate, dueStep, stepShort, isOverdue, daysInStep, stepBeforeCancel, planEvent, planLimits, checkPlan, applyPlan,
     validateCampaign, canDeleteCampaign, campaignIdFor, phaseIdFor, defaultPhaseId, defaultCampaignId,
     PHASE_STATUSES, phaseStatus, campaignStatus, sortPhases, sortCampaigns, orderedPhases, kolTerm,
-    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignBlocksNew, isApproved, isDraft, campaignCancelled, validateCampaignStatus, SORT_MODES,
+    CAMPAIGN_STATUSES, CAMPAIGN_OVERRIDES, campaignEffectiveStatus, campaignDateStatus, isClosed, campaignBlocksNew, isApproved, isDraft, campaignCancelled, validateCampaignStatus, SORT_MODES,
     KOL_STATUSES, GENDERS, CONTACT_CHANNELS, ACCOUNT_FIELDS, PRICE_KEYS, kolById, accountsOfKol, dealsOfKol, postsOnAccount, maxFollowers,
     sortQuotes, quotesOfKol, latestQuote, latestPricedQuote, prefillFromQuote, kolDealAverage, kolIndex,
     validateKol, accountComplete, validateQuote, DEAL_TEMPLATE, shortlistStep, openDealsInCampaign, checkAddToCampaign, planShortlist, shortlistDeal,

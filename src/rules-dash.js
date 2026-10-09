@@ -44,17 +44,53 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== KOL tier mix (§4.1) ===================== */
   /* committed deals (Confirm QT on, not cancelled) of the Campaigns in range by the deal's tier (CR-04 §4.2) — Mega → … → Nano → Unknown,
      each with its followers range, spend, deals and their shares */
-  function tierMix(state, from, to, today, statuses, ctxIn) {
+  /* CR-31 §2.1 — the committed deals of a scope: the Campaigns in a range (All campaigns) · one Campaign, or a Phase of it (By campaign) */
+  const committedOf = (state, list) => list.filter(d => !isCancelled(d) && !R.isShortlist(state.lookups, d));
+  const rangeDeals = (state, from, to, today, statuses) => { const ids = new Set(R.campaignsInRange(state, from, to, today, statuses).map(c => c.campaign_id)); return committedOf(state, state.deals.filter(d => ids.has(d.campaign_id))); };
+  function campaignMixDeals(state, campaignId, phaseId) {
+    if (!campaignId) return [];
+    const list = phaseId ? R.scopeDeals(state, { campaignId, phaseIds: [phaseId] }, R.phaseIndex(state)) : state.deals.filter(d => d.campaign_id === campaignId);
+    return committedOf(state, list);
+  }
+  function tierMix(state, from, to, today, statuses, ctxIn) { return tierMixOf(state, rangeDeals(state, from, to, today, statuses), ctxIn); }
+  function tierMixOf(state, deals, ctxIn) {
     const ctx = ctxIn || R.dealContext(state), rules = state.lookups.tier_rules || [];
-    const ids = new Set(R.campaignsInRange(state, from, to, today, statuses).map(c => c.campaign_id));
     const by = new Map(R.tierOrder(rules).map(t => [t, { tier: t, range: t === R.UNKNOWN_TIER ? null : R.tierRange(rules, t), deals: 0, spend: 0 }]));
-    state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(state.lookups, d)).forEach(d => {
+    deals.forEach(d => {
       const t = (ctx.tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER, x = by.get(t) || by.get(R.UNKNOWN_TIER);
       x.deals++; x.spend = round2(x.spend + totalCost(d));
     });
     const rows = [...by.values()], total = { deals: rows.reduce((a, x) => a + x.deals, 0), spend: round2(rows.reduce((a, x) => a + x.spend, 0)) };
     rows.forEach(x => { x.spendPct = total.spend ? x.spend / total.spend * 100 : 0; x.dealsPct = total.deals ? x.deals / total.deals * 100 : 0; });
     return { rows, total };
+  }
+
+  /* ===================== CR-29 §3.4 — Platform mix: committed deals by the platform of the account they are on ===================== */
+  /* the same scope as the KOL tier mix (committed deals of the Campaigns in range) · a deal's platform = the platform of the account used in its posts —
+     posts on more than one platform: the account the deal's tier comes from (the most followers among them — CR-04 §4.2), so every deal is in one row and
+     Spend adds up to Committed · no post with an account = Not set · rows TikTok · Instagram · Facebook · X · Lemon8 · YouTube · Other (any other) · Not set */
+  const PLATFORM_ROWS = ['TikTok', 'Instagram', 'Facebook', 'X', 'Lemon8', 'YouTube'];
+  const PLATFORM_OTHER = 'Other';
+  function dealPlatform(state, d, ctx) {
+    const accs = (ctx.postsByDeal.get(d.deal_id) || []).map(p => ctx.accounts.get(p.account_id)).filter(Boolean);
+    if (!accs.length) return { platform: R.NOT_SET, multi: false };
+    const plats = new Set(accs.map(a => a.platform || ''));
+    const best = accs.reduce((m, a) => (!m || Number(a.followers) > Number(m.followers) ? a : m), null) || accs[0];
+    const p = best.platform || '';
+    return { platform: PLATFORM_ROWS.includes(p) ? p : PLATFORM_OTHER, multi: plats.size > 1 };
+  }
+  function platformMix(state, from, to, today, statuses, ctxIn) { return platformMixOf(state, rangeDeals(state, from, to, today, statuses), ctxIn); }
+  function platformMixOf(state, deals, ctxIn) {
+    const ctx = ctxIn || R.dealContext(state);
+    const keys = PLATFORM_ROWS.concat([PLATFORM_OTHER, R.NOT_SET]), by = new Map(keys.map(k => [k, { platform: k, deals: 0, spend: 0 }]));
+    let multi = 0;
+    deals.forEach(d => {
+      const x = dealPlatform(state, d, ctx), row = by.get(x.platform);
+      row.deals++; row.spend = round2(row.spend + totalCost(d)); if (x.multi) multi++;
+    });
+    const all = [...by.values()], total = { deals: all.reduce((a, x) => a + x.deals, 0), spend: round2(all.reduce((a, x) => a + x.spend, 0)) };
+    all.forEach(x => { x.spendPct = total.spend ? x.spend / total.spend * 100 : 0; x.dealsPct = total.deals ? x.deals / total.deals * 100 : 0; });
+    return { rows: all.filter(x => x.deals > 0), total, multi };
   }
 
   /* ===================== CR-13 §4.2 — Pillar mix: where the committed money went, by pillar ===================== */
@@ -70,10 +106,10 @@ Object.assign(KT.rules, (function (R, C) {
   /* the same scope as the KPI cards and the KOL tier mix: committed deals (Confirm QT on, not cancelled) of the Campaigns whose dates touch the range ·
      rows Awareness → Consideration → Conversion → Not set (always last) · % of total · % of the money that has a pillar and its gap to the target
      (R.pillarShares — the same as Pillar allocation) · CR-19: no target · mostNoPillar: the Campaign with the most spend without a pillar */
-  function pillarMix(state, from, to, today, statuses) {
-    const camps = R.campaignsInRange(state, from, to, today, statuses), ids = new Set(camps.map(c => c.campaign_id));
+  function pillarMix(state, from, to, today, statuses) { return pillarMixOf(state, rangeDeals(state, from, to, today, statuses)); }
+  function pillarMixOf(state, deals) {
     const keys = R.PILLARS.concat([R.NOT_SET]), by = new Map(keys.map(k => [k, { pillar: k, deals: 0, spend: 0 }])), noneBy = new Map();
-    state.deals.filter(d => ids.has(d.campaign_id) && !isCancelled(d) && !R.isShortlist(state.lookups, d)).forEach(d => {
+    deals.forEach(d => {
       const k = R.PILLARS.includes(d.pillar) ? d.pillar : R.NOT_SET, x = by.get(k);
       x.deals++; x.spend = round2(x.spend + totalCost(d));
       if (k === R.NOT_SET) noneBy.set(d.campaign_id, (noneBy.get(d.campaign_id) || 0) + totalCost(d));
@@ -103,11 +139,11 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* the order of the rows (§4.3): On going (ends soonest, then starts first) → Pending approval → Not started (starts soonest) → On hold →
      Complete (ended last first) → Cancelled (CR-21: a draft is never a row) */
-  const TL_RANK = { ongoing: 0, pending: 1, not_started: 2, on_hold: 3, complete: 4, draft: 5, cancelled: 6 };
+  const TL_RANK = { ongoing: 0, wrap_up: 0.5, pending: 1, not_started: 2, on_hold: 3, complete: 4, draft: 5, cancelled: 6 };   // CR-29: Wrap-up (ended last first) after On going
   function timelineOrder(rows) {
     const k = (a, b) => String(a || '9999').localeCompare(String(b || '9999'));
     return rows.slice().sort((a, b) => (TL_RANK[a.status] - TL_RANK[b.status])
-      || (a.status === 'ongoing' ? k(a.end, b.end) || k(a.start, b.start) : a.status === 'complete' || a.status === 'cancelled' ? k(b.end, a.end) : k(a.start, b.start))
+      || (a.status === 'ongoing' ? k(a.end, b.end) || k(a.start, b.start) : a.status === 'complete' || a.status === 'cancelled' || a.status === 'wrap_up' ? k(b.end, a.end) : k(a.start, b.start))
       || String(a.campaign.campaign_name).localeCompare(String(b.campaign.campaign_name)));
   }
   /* the card: a row a Campaign (status · dates · Phase starts · bars · money for the tooltip) · bars by week when the range is longer than 45 days,
@@ -306,5 +342,6 @@ Object.assign(KT.rules, (function (R, C) {
   }
 
   return { budgetVsActualByMonth, budgetItems, postDueOf, firstPostDate, BVA_OVER: OVER, BVA_BEHIND: BEHIND, bvaStatus, teamWorkload, teamWorkloadTotal,
-    campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
+    campaignActivityBuckets, timelineOrder, campaignTimeline, portfolioPillarTarget, pillarMix, PLATFORM_ROWS, PLATFORM_OTHER, dealPlatform, platformMix,
+    campaignMixDeals, tierMixOf, pillarMixOf, platformMixOf, daysLeft, daysLeftRank, campaignItem, portfolioKpis, tierMix, timeAxis, validateRange, rangeDays, fitRange };
 })(KT.rules, KT.content));

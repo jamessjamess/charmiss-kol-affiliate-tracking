@@ -104,6 +104,14 @@ Object.assign(KT.rules, (function (R, C) {
   const STEP_NOTE_KEYS = ['draft_1', 'draft_2', 'draft_3'];
   const MAX_STEP_IMAGES = 6, STEP_IMAGE_SIDE = 1600, STEP_IMAGE_QUALITY = 0.8;
   const draftKey = n => `draft_${n}`;
+  /* CR-31 §2.5 — every step has its note: Draft k → draft_k (as before) · any other step → step_<name> (step_brief · step_contacted · step_confirm_qt …) */
+  const stepKeyOf = step => (!step ? null : R.draftNo(step) ? draftKey(R.draftNo(step)) : 'step_' + String(step.sub_status || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''));
+  /* the step a key is (for a label): Draft n · else the step whose key it is */
+  function stepOfKey(lookups, key) {
+    const m = /^draft_(\d)$/.exec(String(key || '')); if (m) return R.stepsOf(lookups).find(x => R.draftNo(x) === Number(m[1])) || null;
+    return R.stepsOf(lookups).find(x => stepKeyOf(x) === key) || null;
+  }
+  const stepNoteLabel = (lookups, key) => { const st = stepOfKey(lookups, key), m = /^draft_(\d)$/.exec(String(key || '')); return st ? st.sub_status : m ? `Draft ${m[1]}` : String(key || ''); };
   const stepNoteOf = (state, dealId, key) => (state.step_notes || []).find(x => x.deal_id === dealId && x.step_key === key) || null;
   const noteCounts = n => ({ links: ((n && n.links) || []).length, images: ((n && n.image_ids) || []).length });
   const isHttps = v => /^https:\/\/\S+$/i.test(trim(v));
@@ -153,6 +161,6 @@ Object.assign(KT.rules, (function (R, C) {
 
   return { PKG_STATUSES, PKG_PAY, packagesOf, packageById, unitPrice, unitsOf, isPackageDeal, usesPackage, packageUsed, packageRemaining, packageStatus, packageLabel, packageChoices,
     validatePackage, nextPackageId, newPackage, PKG_FIELDS, packageEvent, packageLine, packagePayStatus, syncPackages, packageBalance, packagePayBase,
-    STEP_NOTE_KEYS, MAX_STEP_IMAGES, STEP_IMAGE_SIDE, STEP_IMAGE_QUALITY, draftKey, stepNoteOf, noteCounts, isHttps, validateStepNote, stepNoteRecord, stepNoteEmpty, putStepNote, sameNote, stepNoteEvent, fitImage,
+    STEP_NOTE_KEYS, stepKeyOf, stepOfKey, stepNoteLabel, MAX_STEP_IMAGES, STEP_IMAGE_SIDE, STEP_IMAGE_QUALITY, draftKey, stepNoteOf, noteCounts, isHttps, validateStepNote, stepNoteRecord, stepNoteEmpty, putStepNote, sameNote, stepNoteEvent, fitImage,
     migrateV19 };
 })(KT.rules, KT.content));

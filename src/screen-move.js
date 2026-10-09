@@ -56,11 +56,13 @@ KT.move = (function () {
   function initForm(s, d, to) {
     const prods = R.dealProductList(s, d.deal_id).map(x => ({ tr_code: x.tr_code, qty: '1' }));
     const f = { date: today(), note: '', cancelReason: '', addRound: false, nextRound: false,
-      pillar: d.pillar || '', paymentTerm: R.termOf(d) || R.kolTerm(s, d.kol_id) || '', packageId: d.package_id || '', packageUnits: str(d.package_units || 1),
-      rateCard: !R.isBlank(d.rate_card) ? str(d.rate_card) : '',   // CR-22 §3.1: never filled in for you
+      pillar: d.pillar || '', paymentTerm: R.beforeQt(s.lookups, to) ? '' : R.termOf(d) || R.kolTerm(s, d.kol_id) || '', packageId: d.package_id || '', packageUnits: str(d.package_units || 1),
+      rateCard: !R.beforeQt(s.lookups, to) && !R.isBlank(d.rate_card) ? str(d.rate_card) : '',   // CR-31 §2.6: Contacted starts empty (empty keeps the deal's)
       cta: d.cta || '', ship: { method: '', items: prods, address_id: '', purchase_amount: '', note: '', ship_by: '' },   // CR-23 §3.4: Ship by starts empty
       cancelReasonKey: '', cancelShipments: true,   // CR-23 §3.6
-      costs: { gencode_expense: str(d.gencode_expense), gencode_period: str(d.gencode_period), gencode_start_date: d.gencode_start_date || '', asset_fee: str(d.asset_fee), expediting_fee: str(d.expediting_fee) },
+      costs: { gencode_expense: str(d.gencode_expense), gencode_period: str(d.gencode_period), gencode_start_date: d.gencode_start_date || '', asset_fee: str(d.asset_fee), expediting_fee: str(d.expediting_fee),
+        other_fee: Number(d.other_fee) > 0 ? str(d.other_fee) : '', other_fee_note: d.other_fee_note || '' },   // CR-30 §3.2
+      gencodes: '',   // CR-30 §3.1: pasted at Post
       postDue: d.expected_post_date || '', linkBrief: d.link_brief || '', scriptLink: d.script_link || '', expected: {}, steps: {}, alsoContacted: false, contactedDate: '',
       drafts: {}, approveDate: '', posts: null, markDelivered: null };   // (null: ticked when the move goes to Post and the sample is not delivered)
     EXP.forEach(k => { f.expected[k] = d[k] || ''; });
@@ -73,12 +75,13 @@ KT.move = (function () {
     if (req.kind !== 'forward') return out;
     if (F.pillar) out.pillar = f.pillar;
     if (F.cta) out.cta = f.cta;
-    if (F.ship_method) out.ship = { method: f.ship.method, items: f.ship.items.filter(x => x.tr_code).map(x => ({ tr_code: x.tr_code, qty: x.qty })), address_id: f.ship.address_id || null,
+    if (F.ship_method) out.ship = { method: f.ship.method, items: f.ship.items.filter(x => x.tr_code).map(x => ({ tr_code: x.tr_code, qty: x.qty })), address_id: f.ship.address_id && f.ship.address_id !== '__new' ? f.ship.address_id : null,   // (a new one: made at Move)
       purchase_amount: f.ship.method === 'self_purchase' ? money(f.ship.purchase_amount) : '', note: f.ship.note, ship_by: f.ship.ship_by || '' };
     if (F.payment_term) out.paymentTerm = f.paymentTerm;
     if (F.package_id) { out.packageId = f.packageId; out.packageUnits = f.packageUnits; }
     if (F.rate_card && F.rate_card !== 'auto') out.rateCard = money(f.rateCard);
-    const costs = {}; ['gencode_expense', 'gencode_period', 'gencode_start_date', 'asset_fee', 'expediting_fee'].forEach(k => { if (F[k]) costs[k] = k === 'gencode_start_date' ? f.costs[k] : money(f.costs[k]); });
+    const costs = {}; ['gencode_expense', 'gencode_period', 'gencode_start_date', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note'].forEach(k => { if (F[k]) costs[k] = k === 'gencode_start_date' || k === 'other_fee_note' ? f.costs[k] : money(f.costs[k]); });
+    if (F.gencodes && R.trim(f.gencodes)) out.gencodes = f.gencodes;   // CR-30 §3.1
     if (Object.keys(costs).length) out.costs = costs;
     if (F.expected_post_date) out.postDue = f.postDue;
     if (F.link_brief) out.linkBrief = f.linkBrief;
@@ -92,7 +95,7 @@ KT.move = (function () {
     if (R.isPostStep(req.to)) { out.drafts = {}; req.drafts.forEach(k => { out.drafts[k] = f.drafts[k] === 'done' ? 'done' : 'not_needed'; }); }
     if (req.approve) out.approveDate = f.approveDate || f.date;
     if (req.post) out.posts = (f.posts || []).map(r => ({ post_id: r.post_id || null, account_id: r.account_id || null, link: r.link }));
-    if (req.notesDraft && mv.ed) out.notes = { note: mv.ed.note, links: mv.ed.links, image_ids: mv.ed.image_ids };
+    if (req.notesDraft && mv.ed) { out.notes = { note: mv.ed.note, links: mv.ed.links, image_ids: mv.ed.image_ids }; out.note = mv.ed.note; }   // CR-31 §2.5: one Note
     return out;
   }
   const draftStep = (s, k) => R.stepsOf(s.lookups).find(x => R.draftNo(x) === k) || null;
@@ -115,7 +118,7 @@ KT.move = (function () {
     const head = `<p class="muted small mv-now">${esc(MV.now)} ${stageChip(d)}</p><div class="fields">` +
       (mv.cancelOnly ? '' : fld('to', MV.to, `<select id="mv_to" data-mvsel="to" data-key="to">${optionsHTML(opts, mv.to, D.chooseStep)}</select>`, { req: 1, wide: 1 })) +
       (isCancel ? cancelFieldsHTML(s, d) : '') +
-      fld('date', isPost ? MV.postDate : isCancel ? C.cancel.date : MV.date, dateHTML('id="mv_date" data-mv="date" data-key="date"', f.date, { label: isPost ? MV.postDate : MV.date }), { req: 1, hint: isPost ? '<span class="mv-phase" data-phasefor="date"></span>' : '' }) +
+      fld('date', isCancel ? C.cancel.date : R.moveDateLabel(req.to), dateHTML('id="mv_date" data-mv="date" data-key="date"', f.date, { label: isCancel ? C.cancel.date : R.moveDateLabel(req.to) }), { req: 1, hint: isPost ? '<span class="mv-phase" data-phasefor="date"></span>' : '' }) +   // CR-31 §2.4
       (beyond ? `<div class="field wide"><label class="tick"><input type="checkbox" data-mvtick="addRound"${f.addRound ? ' checked' : ''}> ${esc(MV.addTargetRound(k))}</label></div>` : '') + `</div>`;
     const parts = [head];
     if (isCancel) parts.push(cancelImpactHTML(s, d));
@@ -134,9 +137,9 @@ KT.move = (function () {
       if (done.length) parts.splice(1, 0, `<div class="mv-done">${done.join('')}</div>`);
     }
     const noteReq = F.note === 'req';
-    if (!isCancel && !(mv.compact && isPost)) parts.push(`<div class="fields">${fld('note', MV.note, `<textarea id="mv_note" data-mv="note" data-key="note">${esc(f.note)}</textarea>`, { req: noteReq, wide: 1, hint: esc(D.moveNoteHint) })}</div>`);
+    if (!isCancel && !(mv.compact && isPost) && !(req.notesDraft && mv.ed)) parts.push(`<div class="fields">${fld('note', MV.noteHistory, `<textarea id="mv_note" data-mv="note" data-key="note">${esc(f.note)}</textarea>`, { req: noteReq, wide: 1, hint: esc(D.moveNoteHint) })}</div>`);
     mv.m.setBody(`<div class="mv" id="mv_root">${parts.join('')}</div>`, keep);
-    mv.m.setFoot(`<div class="mv-foot"><div class="mv-list" id="mv_list"></div><div class="checks" id="mv_checks"></div>${mv.compact && isPost ? `<span class="muted small mv-enter">${esc(MV.enterHint)}</span>` : ''}</div>`,
+    mv.m.setFoot(`<div class="mv-foot"><div class="mv-list" id="mv_list"></div><div class="mv-foot1" id="mv_round"></div><div class="checks" id="mv_checks"></div>${mv.compact && isPost ? `<span class="muted small mv-enter">${esc(MV.enterHint)}</span>` : ''}</div>`,
       isCancel ? `<button type="button" class="btn" data-cmclose>${esc(C.cancel.keep)}</button><button type="button" class="btn danger" id="mv_ok" data-mvok>${esc(C.cancel.ok)}</button>`
         : `<button type="button" class="btn" data-cmclose>${esc(MV.cancel)}</button><button type="button" class="btn primary" id="mv_ok" data-mvok>${esc(MV.move)}</button>`);
     wire(); live(); fillThumbs($('mv_root'));
@@ -149,7 +152,7 @@ KT.move = (function () {
     const res = R.checkMove(s, d, mv.to, formFor(s, d, req)), bad = keys => res.errs.some(e => keys.some(k => e.field === k || String(e.field).startsWith(k)));
     const out = new Set();
     if (!bad(['step:', 'approve_date'])) out.add('steps');
-    if (!bad(['cta', 'pillar', 'payment_term', 'package_id', 'package_units', 'rate_card', 'gencode_expense', 'gencode_period', 'asset_fee', 'expediting_fee', 'expected_post_date'])) out.add('qt');
+    if (!bad(['cta', 'pillar', 'payment_term', 'package_id', 'package_units', 'rate_card', 'gencode_expense', 'gencode_period', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note', 'expected_post_date'])) out.add('qt');
     if (!req.ship && req.shipSummary) out.add('ship');
     return (mv.folded = out);
   }
@@ -192,6 +195,7 @@ KT.move = (function () {
   /* §4.7 · §4.11 — Confirm QT details (Contacted: Rate + Payment term, optional) */
   function qtHTML(s, d, req) {
     const F = req.fields, f = mv.f, v = req.v, term = R.termOf(v), qt = req.qt;
+    const early = R.beforeQt(s.lookups, mv.to);   // CR-31 §2.6: Contacted
     const last = R.lastRateCard(s, d.kol_id, d.deal_id);   // CR-22 §3.1: the last rate card (never an average)
     const terms = R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] }));
     const pk = R.packageById(s, v.package_id), units = Number(f.packageUnits);
@@ -201,11 +205,14 @@ KT.move = (function () {
       fld('package_units', MV.uses, `<input type="number" min="1" step="1" inputmode="numeric" data-mv="packageUnits" data-key="package_units" value="${esc(f.packageUnits)}">`, { req: 1,
         hint: pk ? esc(MV.willUse(Number.isInteger(units) && units > 0 ? units : 1, Math.max(0, R.packageRemaining(s, pk, d.deal_id) - (Number.isInteger(units) && units > 0 ? units : 1)))) : '' });
     const pillarF = F.pillar ? fld('pillar', MV.pillar, `<select data-mv="pillar" data-key="pillar">${optionsHTML(activeList('pillar_list', f.pillar), f.pillar, MV.choosePillar)}</select>`, { req: F.pillar === 'req' }) : '';
-    const termF = fld('payment_term', MV.term, `<select data-mvsel="paymentTerm" data-key="payment_term">${optionsHTML(terms, f.paymentTerm, MV.chooseTerm)}</select>`, { req: F.payment_term === 'req' });
-    const rateHint = F.rate_card === 'auto' ? `<span class="srctag">${esc(MV.fromPackage)}</span>` : [lastRateHTML(s, last, 'data-mvact="useLast"'), esc(MV.zeroHint)].join(' · ');
+    const termF = fld('payment_term', MV.term, `<select data-mvsel="paymentTerm" data-key="payment_term">${optionsHTML(terms, f.paymentTerm, MV.chooseTerm)}</select>`, { req: F.payment_term === 'req',
+      hint: early && R.termOf(d) ? esc(`${MV.currentTerm(C.term[R.termOf(d)] || R.termOf(d))} · ${MV.keepEmpty}`) : '' });
+    const cur = !R.isBlank(d.rate_card) ? `<span class="srctag">${esc(MV.currentRate(R.baht(d.rate_card)))}</span>` : '';
+    const rateHint = F.rate_card === 'auto' ? `<span class="srctag">${esc(MV.fromPackage)}</span>` : early ? [cur, esc(MV.keepEmpty), cur && !last ? '' : lastRateHTML(s, last, 'data-mvact="useLast"')].filter(Boolean).join(' · ')
+      : [lastRateHTML(s, last, 'data-mvact="useLast"'), esc(MV.zeroHint)].join(' · ');
     const ctaF = F.cta ? fld('cta', MV.cta, `<select data-mvsel="cta" data-key="cta">${optionsHTML(activeList('cta_list', f.cta), f.cta, MV.chooseCta)}</select>`, { req: F.cta === 'req' }) : '';
     const rateF = fld('rate_card', MV.rateCard, moneyIn('rateCard', 'rate_card', F.rate_card === 'auto' ? v.rate_card : f.rateCard, { disabled: F.rate_card === 'auto' }), { req: F.rate_card === 'req', hint: rateHint + '<span class="mv-ratetotal" id="mv_ratetotal"></span>' });
-    if (!qt) return sec(MV.secQt, `<div class="fields">${ctaF}${F.rate_card ? rateF : ''}${F.payment_term ? termF : ''}${pkgHTML}</div>`);
+    if (!qt) return sec(early ? MV.secContacted : MV.secQt, `<div class="fields">${ctaF}${F.rate_card ? rateF : ''}${F.payment_term ? termF : ''}${pkgHTML}</div>`);   // CR-31 §2.6
     const gen = Number(money(f.costs.gencode_expense)) > 0;
     const costs = `<div class="fields mv-costs">${rateF}` +
       fld('gencode_expense', MV.gencodeCost, moneyIn('costs.gencode_expense', 'gencode_expense', f.costs.gencode_expense, { ph: '0' })) +
@@ -213,6 +220,8 @@ KT.move = (function () {
         fld('gencode_start_date', MV.gencodeStart, dateHTML('data-mv="costs.gencode_start_date" data-key="gencode_start_date"', f.costs.gencode_start_date, { label: MV.gencodeStart })) : '') +
       fld('asset_fee', MV.assetFee, moneyIn('costs.asset_fee', 'asset_fee', f.costs.asset_fee, { ph: '0' })) +
       fld('expediting_fee', MV.expeditingFee, moneyIn('costs.expediting_fee', 'expediting_fee', f.costs.expediting_fee, { ph: '0' })) +
+      fld('other_fee', C.deal.f.other_fee, moneyIn('costs.other_fee', 'other_fee', f.costs.other_fee, { ph: '0' })) +   // CR-30 §3.2
+      fld('other_fee_note', C.deal.f.other_fee_note, `<input data-mv="costs.other_fee_note" data-key="other_fee_note" value="${esc(f.costs.other_fee_note)}" placeholder="${esc(D.otherFeePh)}" autocomplete="off">`, { req: F.other_fee_note === 'req' }) +
       `<div class="field wide mv-total"><div class="kv total"><span>${esc(MV.totalCost)}</span><b id="mv_total"></b></div>${!R.isBlank(d.basket_fee) && Number(d.basket_fee) > 0 ? `<div class="hint">${esc(MV.includesBasket(R.baht(d.basket_fee)))}</div>` : ''}</div></div>`;
     const postDue = F.expected_post_date && !req.next.some(x => x.field === 'expected_post_date')
       ? `<div class="fields">${fld('expected_post_date', MV.postDue, dateHTML('data-mv="postDue" data-key="expected_post_date"', f.postDue, { label: MV.postDue }), { hint: '<span class="mv-phase" data-phasefor="postDue"></span>' })}</div>` : '';
@@ -245,7 +254,8 @@ KT.move = (function () {
       fld('ship_method', MV.method, `<div class="mv-methods" role="radiogroup" data-key="ship_method">${methods}</div>`, { req: 1, wide: 1 }) + shipBy +
       fld('ship_items', MV.products, items, { req: 1, wide: 1 }) +
       (own ? fld('purchase_amount', MV.purchaseAmount, moneyIn('ship.purchase_amount', 'purchase_amount', sh.purchase_amount, { ph: '0' }), { hint: esc(MV.purchaseHint) })
-        : fld('ship_to', MV.shipTo, `<select data-mvsel="ship.address_id" data-key="ship_to">${optionsHTML(addrs, sh.address_id, MV.chooseLater)}</select>`)) +
+        : fld('ship_to', MV.shipTo, `<select data-mvsel="ship.address_id" data-key="ship_to">${optionsHTML(addrs.concat([{ value: '__new', label: MV.newAddress }]), sh.address_id, MV.chooseLater)}</select>`,
+          { wide: sh.address_id === '__new' }) + (sh.address_id === '__new' ? `<div class="field wide" data-fk="ship_new">${KT.payee.addrInlineHTML('mv', mv.newAddr)}<div class="mv-err" data-err="ai_box"></div></div>` : '')) +   // CR-31 §2.3
       fld('ship_note', MV.shipNote, `<input data-mv="ship.note" data-key="ship_note" value="${esc(sh.note)}" autocomplete="off">`, { wide: !own }) + `</div>`);
   }
   /* §4.15 — Next expected (+3d · +5d · +7d · + Add Draft k round / Remove) */
@@ -280,6 +290,7 @@ KT.move = (function () {
     return sec(MV.secPost, `<div class="fields">${req.approve ? fld('approve_date', MV.approveDate, dateHTML('data-mv="approveDate" data-key="approve_date"', f.approveDate || f.date, { label: MV.approveDate }), { req: 1 }) : ''}</div>` +
       (req.post ? `<div class="field wide" data-fk="posts"><label>${esc(MV.postedLink)} <span class="req">*</span></label><div class="mv-posts">${rows}</div>` +
         `<button type="button" class="link" data-mvact="addPost"${accs.length ? '' : ' disabled'}>${esc(MV.addPostRow)}</button><div class="mv-err" data-err="posts"></div></div>` : '') +
+      (req.fields.gencodes ? `<div class="field wide"><label for="mv_gencodes">${esc(C.gencode.moveL)}</label><textarea id="mv_gencodes" data-mv="gencodes" data-key="gencodes" rows="3" class="gc-code" spellcheck="false" placeholder="${esc(C.gencode.movePh)}">${esc(f.gencodes || '')}</textarea><div class="hint" id="mv_gcprev"></div></div>` : '') +   // CR-30 §3.1
       (sh ? `<label class="tick"><input type="checkbox" data-mvtick="markDelivered"${f.markDelivered ? ' checked' : ''}> ${esc(MV.markDelivered)}</label>` : ''));
   }
 
@@ -307,14 +318,17 @@ KT.move = (function () {
     });
     const placed = new Set([...document.querySelectorAll('#mv_root [data-err]')].map(x => x.dataset.err));
     const box = mv.submitted && res.errs.length ? `<div class="mv-errbox"><b>${esc((req.kind === 'cancel' ? C.cancel.errBox : MV.errBox)(res.errs.length))}</b><ul>${res.errs.map(e => `<li>${esc(e.msg)}</li>`).join('')}</ul></div>` : '';
-    const other = { errs: [], warns: res.warns.filter(w => !placed.has(w.field) && w.code !== 'auto_done'), infos: res.infos };
+    const other = { errs: [], warns: res.warns.filter(w => !placed.has(w.field) && w.code !== 'auto_done'), infos: res.infos.filter(x => x.code !== 'rounds') };
     $('mv_checks').innerHTML = box + checksHTML(other, '');
+    const rounds = res.infos.find(x => x.code === 'rounds'); if ($('mv_round')) $('mv_round').textContent = rounds ? `i ${rounds.msg}` : '';   // CR-30 §3.3: one line, no scroll box
+    if ($('mv_gcprev')) { const p = R.gencodePreview(s, d, mv.f.gencodes || ''), n = t => p.rows.filter(r => r.type === t).length;   // CR-30 §3.1
+      $('mv_gcprev').textContent = p.rows.length ? [C.gencode.countN(p.rows.length), ...R.GENCODE_TYPES.filter(n).map(t => `${C.gencode.types[t]} ${n(t)}`), p.dupes ? C.gencode.dupes(p.dupes) : ''].filter(Boolean).join(' · ') : ''; }
     /* §4.14 — the checklist (Post) */
     if ($('mv_list')) $('mv_list').innerHTML = req.to && R.isPostStep(req.to) && req.kind === 'forward' ? checklistHTML(req, res) : '';
   }
   function checklistHTML(req, res) {
     const L = MV.checklist, bad = keys => res.errs.some(e => keys.some(k => e.field === k || String(e.field).startsWith(k)));
-    const qtKeys = ['pillar', 'payment_term', 'package_id', 'package_units', 'rate_card', 'gencode_expense', 'gencode_period', 'asset_fee', 'expediting_fee'];
+    const qtKeys = ['pillar', 'payment_term', 'package_id', 'package_units', 'rate_card', 'gencode_expense', 'gencode_period', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note'];
     const it = (ok, label, opt) => `<span class="mv-ck${ok ? ' ok' : opt ? ' opt' : ''}">${ok ? '✓' : '○'} ${esc(label)}</span>`;
     return [req.qt ? it(!bad(qtKeys), L.costs) : '', req.approve ? it(!bad(['approve_date']), L.approve) : '', req.post ? it(!bad(['post', 'posts']), L.link) : '',
       req.fields.link_brief ? it(!R.isBlank(mv.f.linkBrief), L.brief, true) : '', req.fields.script_link ? it(!R.isBlank(mv.f.scriptLink), L.script, true) : ''].filter(Boolean).join('');
@@ -339,7 +353,10 @@ KT.move = (function () {
       const q = e.target.closest('[data-mvqty]'); if (q) { const x = mv.f.ship.items.find(y => y.tr_code === q.dataset.mvqty); if (x) x.qty = q.value; mv.dirty = true; live(); return; }
       const sel = e.target.closest('[data-mvsel]');
       if (sel) { const p = sel.dataset.mvsel; mv.dirty = true;
-        if (p === 'to') { mv.to = sel.value; mv.f.addRound = false; mv.f.nextRound = false; mv.f.posts = null; }
+        if (p === 'to') { mv.to = sel.value; mv.f.addRound = false; mv.f.nextRound = false; mv.f.posts = null;
+          const s0 = state(), d0 = dealById(mv.id);
+          if (R.beforeQt(s0.lookups, mv.to)) { mv.f.rateCard = ''; mv.f.paymentTerm = ''; }
+          else { if (mv.f.rateCard === '' && !R.isBlank(d0.rate_card)) mv.f.rateCard = str(d0.rate_card); if (mv.f.paymentTerm === '') mv.f.paymentTerm = R.termOf(d0) || R.kolTerm(s0, d0.kol_id) || ''; } }
         else if (p.startsWith('drafts.')) { const k = Number(p.split('.')[1]), on = sel.value === 'done'; (mv.req.drafts || []).forEach(j => { if (on && j < k) mv.f.drafts[j] = 'done'; if (!on && j > k) mv.f.drafts[j] = 'not_needed'; }); mv.f.drafts[k] = sel.value; }
         else setPath(p, sel.value);
         if (p === 'paymentTerm' && sel.value !== 'package') mv.f.packageId = '';
@@ -356,8 +373,12 @@ KT.move = (function () {
       }
     });
     if (mv.ed) notesWire(root, mv.ed, () => { if (mv) { mv.dirty = true; live(); } }, () => draw(true));
+    /* CR-31 §2.3 — the new address: kept by the dialog while it is open (never in the state) · Unlock to add */
+    root.addEventListener('input', e => { const a = e.target.closest('[data-ai]'); if (!a || !mv) return; mv.newAddr = mv.newAddr || {}; mv.newAddr[a.dataset.ai] = a.type === 'checkbox' ? a.checked : a.value; mv.dirty = true; });
+    root.addEventListener('change', e => { const a = e.target.closest('[data-ai="default"]'); if (a && mv) { mv.newAddr = mv.newAddr || {}; mv.newAddr.default = a.checked; } });
+    root.addEventListener('click', e => { if (!e.target.closest('[data-aiunlock]') || !mv) return; const me = mv; KT.payee.unlockDialog(() => { if (mv === me) draw(true); }); });
     /* CR-23 §3.3 — compact: Enter in a box = Move (errors show as with the button) */
-    root.addEventListener('keydown', e => { if (!mv || !mv.compact || e.key !== 'Enter' || e.isComposing || !e.target.matches('input:not([type="checkbox"]):not([type="radio"])')) return; e.preventDefault(); submit(); });
+    root.addEventListener('keydown', e => { if (!mv || !(mv.compact || mv.o.enter) || e.key !== 'Enter' || e.isComposing || !e.target.matches('input:not([type="checkbox"]):not([type="radio"])')) return; e.preventDefault(); submit(); });
   }
   function onClick(e) {
     if (!mv) return;
@@ -397,6 +418,17 @@ KT.move = (function () {
       const want = [['steps', x => x.startsWith('step:') || x === 'approve_date'], ['ship', x => x.startsWith('ship') || x === 'purchase_amount'], ['qt', () => true]].find(([k, t]) => mv.folded.has(k) && !mv.opened.has(k) && e0.some(t));
       if (want && !document.querySelector(`#mv_root [data-key="${CSS.escape(e0[0])}"]`)) { mv.opened.add(want[0]); draw(true); live(); } }
     if (mv.res.errs.length) { const first = $('mv_root').querySelector('.invalid, .mv-err .err'); if (first) first.scrollIntoView({ block: 'center' }); return; }
+    /* CR-31 §2.3 — Ship to › + New address: checked, then encrypted and saved before the move (the move links it) */
+    const newAddr = mv.req.ship && mv.f.ship.method !== 'self_purchase' && mv.f.ship.address_id === '__new';
+    if (newAddr) {
+      const x = KT.payee.addrInlineRead($('mv_root')), errs = KT.payee.addrInlineCheck(d.kol_id, x);
+      document.querySelectorAll('#mv_root [data-err^="ai_"]').forEach(el => { const e = errs.find(y => y.field === el.dataset.err); el.innerHTML = e ? `<span class="err">${esc(e.msg)}</span>` : ''; });
+      document.querySelectorAll('#mv_root [data-ai]').forEach(el => el.classList.toggle('invalid', errs.some(y => y.field === 'ai_' + el.dataset.ai)));
+      if (errs.length) { const first = $('mv_root').querySelector('[data-fk="ship_new"]'); if (first) first.scrollIntoView({ block: 'center' }); return; }
+      let rec = null; try { rec = await KT.payee.addrInlineSave(d.kol_id, x); } catch (e) { toast(C.payee.noCrypto); return; }
+      if (!mv) return;
+      mv.f.ship.address_id = rec.address_id; mv.newAddr = null;
+    }
     const form = formFor(s, d, mv.req), to = mv.to, ed = mv.ed, deliver = mv.f.markDelivered && R.isPostStep(mv.req.to), o = mv.o;
     mv.applied = true;
     U.closeModal();
@@ -405,7 +437,7 @@ KT.move = (function () {
   /* the move (dialog or drop): applyMove · its posts · its notes · Undo puts every part back */
   function apply(dealId, to, form, o = {}) {
     const s = state(), d = dealById(dealId); if (!d) return null;
-    const key = form.notes && R.draftNo(R.stepOf(s.lookups, to)) ? R.draftKey(R.draftNo(R.stepOf(s.lookups, to))) : null;
+    const key = form.notes || R.trim(form.note) ? R.stepKeyOf(R.stepOf(s.lookups, to)) : null;   // CR-31 §2.5: every step's note
     const snap = snapshot(s, dealId, key);
     let pn = parseInt(store.newId('post').slice(1), 10);
     const r = R.applyMove(s, d, to, form, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now: new Date(), user: userId(), postId: () => 'P' + String(pn++).padStart(6, '0'), shipmentId: () => store.newId('shipment') });
@@ -415,6 +447,10 @@ KT.move = (function () {
     if (r.shipments && r.shipments.length) { const by = new Map(r.shipments.map(x => [x.shipment_id, x])); s.sample_shipments = s.sample_shipments.map(x => by.get(x.shipment_id) || x); }   // CR-23 §3.6
     if (r.posts) s.deal_posts = s.deal_posts.filter(p => p.deal_id !== dealId).concat(r.posts);
     if (r.note) R.putStepNote(s, r.note);
+    /* CR-30 §3.1 — the Gencodes pasted at Post: on the deal (each to its post by platform) */
+    if (form.gencodes) { const pv = R.gencodePreview(s, r.deal, form.gencodes); let e = 0, c = 0; const be = store.newEventId(), bc = parseInt(String(store.newId('gencode')).replace(/\D/g, ''), 10) || 1;
+      const x = R.addGencodes(s, r.deal, pv.rows, { eventId: () => be + e++, codeId: () => 'GC-' + String(bc + c++).padStart(5, '0'), now: new Date().toISOString(), user: userId() });
+      R.gencodesAll(s).push(...x.records); x.events.forEach(ev => s.deal_events.push(ev)); }
     if (o.deliver) { const sh = shipToDeliver(s, r.deal); if (sh) { let e = 0; const base = store.newEventId(); const evs = R.shipQuick(s, sh, sh.status === 'shipped' ? 'delivered' : 'both', { date: form.date }, { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }); if (evs) s.deal_events.push(...evs); } }
     const gone = o.ed ? o.ed.removed.slice() : [];
     commit();
@@ -427,14 +463,37 @@ KT.move = (function () {
       if (o.ed) KT.photos.removeStepImages(o.ed.added);
       commit(MV.undone);
       if (o.onDone) o.onDone(dealId);
-    }, 10000);
+    }, 10000, o.addNote ? [{ label: MV.addNote, fn: () => openAddNote(dealId, to, o.onDone) }] : undefined);   // CR-31 §2.5: a move at once › Add note
     return r;
+  }
+  /* CR-31 §2.5 — Add note (after a move at once): the note of the step it reached · in History on the move's line */
+  function openAddNote(dealId, toSub, onDone) {
+    if (!guard('deal.edit')) return;
+    const s = state(), d = dealById(dealId), st = R.stepOf(s.lookups, toSub); if (!d || !st) return;
+    const key = R.stepKeyOf(st), old = R.stepNoteOf(s, dealId, key);
+    U.openDialog(`<div class="dlg-h">${esc(MV.addNoteTitle(toSub, dealId))}</div><div class="dlg-b"><div class="field"><label for="an_note">${esc(MV.noteHistory)}</label>` +
+      `<textarea id="an_note" rows="3">${esc((old && old.note) || '')}</textarea></div><div class="checks" id="an_checks"></div></div>` +
+      `<div class="dlg-f"><button type="button" class="btn" id="an_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="an_ok">${esc(C.common.save)}</button></div>`);
+    $('an_cancel').addEventListener('click', U.closeDialog);
+    $('an_ok').addEventListener('click', () => {
+      const text = R.trim($('an_note').value);
+      if (R.looksSensitive(text)) { $('an_checks').innerHTML = checksHTML({ errs: [{ field: 'note', msg: C.msg.sensitive }], warns: [], infos: [] }, ''); return; }
+      const s2 = state(), now = new Date(), before = R.stepNoteOf(s2, dealId, key);
+      const rec = R.stepNoteRecord(dealId, key, { note: text, links: before ? before.links : [], image_ids: before ? before.image_ids : [] }, { now, user: userId() });
+      R.putStepNote(s2, rec);
+      s2.deal_events.push(R.stepNoteEvent(dealId, key, before, rec, { eventId: store.newEventId(), now, user: userId() }));
+      /* the move's own line in History says it too */
+      const log = R.logsOf(s2, dealId).filter(l => l.sub_status === toSub).pop(); if (log && text) log.note = [log.note, text].filter(Boolean).join(' · ');
+      U.closeDialog(); commit(MV.noteSaved(toSub)); if (onDone) onDone(dealId);
+    });
+    setTimeout(() => $('an_note').focus(), 30);
   }
   const clone = x => (x == null ? x : JSON.parse(JSON.stringify(x)));
   function snapshot(s, id, key) {
     return { id, key, deal: clone(dealById(id)), posts: clone(R.postsOf(s, id)), note: key ? clone(R.stepNoteOf(s, id, key)) : undefined,
       logMax: s.deal_status_log.reduce((m, l) => Math.max(m, Number(l.log_id) || 0), 0), eventMax: s.deal_events.reduce((m, e) => Math.max(m, Number(e.event_id) || 0), 0),
-      quotes: new Set(s.kol_rate_quotes.map(q => q.quote_id)), ships: clone((s.sample_shipments || []).filter(x => x.deal_id === id)), products: clone((s.deal_products || []).filter(x => x.deal_id === id)) };
+      quotes: new Set(s.kol_rate_quotes.map(q => q.quote_id)), ships: clone((s.sample_shipments || []).filter(x => x.deal_id === id)), products: clone((s.deal_products || []).filter(x => x.deal_id === id)),
+      gencodes: clone((s.deal_gencodes || []).filter(x => x.deal_id === id)) };   // CR-30
   }
   function restore(s, snap) {
     const i = s.deals.findIndex(x => x.deal_id === snap.id); if (i < 0) return;
@@ -446,6 +505,7 @@ KT.move = (function () {
     if (snap.key) { s.step_notes = (s.step_notes || []).filter(x => !(x.deal_id === snap.id && x.step_key === snap.key)); if (snap.note) s.step_notes.push(snap.note); }
     if (Array.isArray(s.sample_shipments)) s.sample_shipments = s.sample_shipments.filter(x => x.deal_id !== snap.id).concat(snap.ships);
     if (snap.products) s.deal_products = (s.deal_products || []).filter(x => x.deal_id !== snap.id).concat(snap.products);
+    if (snap.gencodes) s.deal_gencodes = (s.deal_gencodes || []).filter(x => x.deal_id !== snap.id).concat(snap.gencodes);
   }
 
   /* ===================== §4.13 Draft notes — the editor (the Move dialog · the Journey panel) ===================== */

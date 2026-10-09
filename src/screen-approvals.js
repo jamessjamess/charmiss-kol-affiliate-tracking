@@ -18,7 +18,7 @@ KT.approvals = (function () {
   const who = id => (id === 'system' ? B.system : id ? R.changedByName(state(), id) : AP.someone);
   const day = iso => (iso ? R.dmy(R.dateOfTimestamp(iso)) : '—');
   const ago = iso => (iso ? AP.ago(Math.max(0, R.dayDiff(today(), R.dateOfTimestamp(iso)))) : '');
-  const ctxOf = () => { let e = 0; const base = U.store.newCampaignEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }; };
+  const ctxOf = () => { let e = 0; const base = U.store.newCampaignEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId(), today: today() }; };
 
   /* ---------- the returned drafts a person has not opened yet (the menu badge of Staff) — per person, in this browser ---------- */
   const seenKey = () => 'requests.seen.' + (userId() || '');
@@ -64,6 +64,8 @@ KT.approvals = (function () {
     if (r.type === 'change') { const rec = r.kind === 'phase' ? phaseById(r.phase_id) : campById(r.campaign_id), f = ((rec || {}).pending_change || {}).fields || {};
       return Object.entries(f).slice(0, 3).map(([k, v]) => kvl(fieldLabel(k), `${esc(k === 'delete' ? '' : `${fieldValue(k, k === 'products' ? R.campaignProductCodes(s, r.campaign_id) : (rec || {})[k])} → `)}<b>${esc(fieldValue(k, v))}</b>`)).join('') +
         (Object.keys(f).length > 3 ? `<div class="muted small">+${Object.keys(f).length - 3}</div>` : ''); }
+    if (r.type === 'close') { const [a, z] = R.campaignSpan(s, r.campaign_id), ck = ((c.close_request || {}).checklist) || R.closeChecklist(s, r.campaign_id, today());   // CR-29
+      return kvl(AP.kPeriod, periodLine(a, z)) + kvl(AP.secOpen, esc(ck.outstanding ? [ck.openDeals ? C.close.openDeals(ck.openDeals) : '', ck.pay.n ? C.close.pay(ck.pay.n, R.baht(ck.pay.amount)) : ''].filter(Boolean).join(' · ') || C.close.items.some : C.close.items.none)); }
     const x = budgetRow(r); if (!x) return '';
     const im = R.budgetChangeImpact(s, x);
     return `<div class="apc-big">${esc(AP.budgetLine(im.before == null ? '฿0' : R.baht(im.before), R.baht(im.after), KT.budget.sbaht(im.delta)))}</div>` + kvl(AP.reasonL2, esc(x.reason || '—'));
@@ -84,7 +86,7 @@ KT.approvals = (function () {
         (r.reason ? `<div class="check warn apc-why">↩ <span>${esc(r.reason)}</span></div>` : r.note ? `<div class="apc-note apc-why"><div>${esc(r.note)}</div></div>` : '');
     } else if (draft) {
       body = (r.returned ? `<div class="check err apc-why">✕ <span>${esc(r.type === 'change' ? AP.changeReturned(r.returned.reason) : AP.returnedBar(who(r.returned.by), day(r.returned.at), r.returned.reason))}</span></div>` : '') + summaryHTML(r);
-      const del = r.type === 'change' || r.change_id ? `<button type="button" class="btn small" data-apcancel="${esc(r.id)}">${esc(AP.cancelRequest)}</button>` : `<button type="button" class="btn small danger" data-apdelete="${esc(r.id)}">${esc(AP.deleteDraft)}</button>`;
+      const del = r.type === 'change' || r.type === 'close' || r.change_id ? `<button type="button" class="btn small" data-apcancel="${esc(r.id)}">${esc(AP.cancelRequest)}</button>` : `<button type="button" class="btn small danger" data-apdelete="${esc(r.id)}">${esc(AP.deleteDraft)}</button>`;
       foot = `${del}<span class="spacer"></span><button type="button" class="btn small primary" data-apedit="${esc(r.id)}">${esc(AP.edit)}</button>`;
     } else {
       body = summaryHTML(r) + (r.note ? `<div class="apc-note"><span class="muted small">${esc(AP.noteFrom(who(r.by)))}</span><div>${esc(r.note)}</div></div>` : '');
@@ -104,7 +106,7 @@ KT.approvals = (function () {
     const list = R.requestsFor(s, me, { state: ap.state, type: ap.type });
     const n = { pending: R.requestsFor(s, me, { state: 'pending' }).length, drafts: R.requestsFor(s, me, { state: 'drafts' }).length };
     const label = { pending: AP.fPending, decided: AP.fDecided, drafts: isMgr ? (me.role === 'admin' ? AP.fDrafts : AP.fMyDrafts) : AP.fDrafts };
-    const types = [['', AP.typeAll], ['new_campaign', AP.types.new_campaign], ['new_phase', AP.types.new_phase], ['change', AP.types.change], ['budget', AP.types.budget]];
+    const types = [['', AP.typeAll], ['new_campaign', AP.types.new_campaign], ['new_phase', AP.types.new_phase], ['change', AP.types.change], ['budget', AP.types.budget], ['close', AP.types.close]];   // CR-29
     const tools = `<div class="toolbar ap-tools"><div class="seg" role="group" aria-label="${esc(AP.typeL)}">` +
       tabsFor().map(k => `<button type="button" data-apstate="${k}" class="${ap.state === k ? 'on' : ''}" aria-pressed="${ap.state === k}">${esc(label[k])}${n[k] != null ? ` <span class="n">${R.fmtNum(n[k])}</span>` : ''}</button>`).join('') + `</div>` +
       `<select id="ap_type" aria-label="${esc(AP.typeL)}">${types.map(([v, l]) => `<option value="${v}"${ap.type === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select><span class="spacer"></span></div>`;
@@ -128,6 +130,7 @@ KT.approvals = (function () {
     const r = R.requestOf(state(), id); if (!r) return;
     markSeen(r); if (KT.ui.onCommit) KT.ui.onCommit();
     if (r.change_id) { KT.budget.open(r.campaign_id, { opener, changeId: r.change_id, onDone: () => redraw() }); return; }
+    if (r.type === 'close') { KT.screens.campaign.openClose(r.campaign_id, { opener }); return; }   // CR-29: the Close campaign dialog
     KT.planner.open({ campaignId: r.campaign_id, focusPhase: r.phase_id || null, opener });
   }
   async function deleteDraft(id, after) {
@@ -198,6 +201,19 @@ KT.approvals = (function () {
     }
     return '';
   }
+  /* CR-29 §3.5 — Close campaign: Period · Budget / Committed / Paid · what was open when it was sent and now · the Close note */
+  function closeHTML(r) {
+    const s = state(), c = campById(r.campaign_id) || {}, [a, z] = R.campaignSpan(s, r.campaign_id), m = R.campaignMoney(s, r.campaign_id), car = c.close_request || {}, I = C.close.items;
+    const now = R.closeChecklist(s, r.campaign_id, today()), sent = car.checklist || null;
+    const pct = v => (v == null ? '—' : `${Math.round(v)}%`), cell = (x, f) => (x ? f(x) : '—');
+    const rows = [[I.openDeals, x => R.fmtNum(x.openDeals), x => x.openDeals], [I.pay, x => `${R.fmtNum(x.pay.n)} · ${R.baht(x.pay.amount)}`, x => x.pay.n], [I.ships, x => R.fmtNum(x.ships), x => x.ships],
+      [I.metrics, x => R.fmtNum(x.metrics), x => x.metrics], [I.committed, x => `${R.baht(x.money.committed)} (${pct(x.money.usedPct)})`, () => 0]];
+    const table = `<div class="tablewrap"><table class="tbl compact-sm ap-tbl cl-tbl"><thead><tr><th>${esc(AP.colItem)}</th><th class="num">${esc(AP.colAtSend)}</th><th class="num">${esc(AP.colNow)}</th></tr></thead><tbody>` +
+      rows.map(([l, f, n]) => `<tr${n(now) ? ' class="cl-open"' : ''}><td>${esc(l)}</td><td class="num">${esc(cell(sent, f))}</td><td class="num"><b>${esc(f(now))}</b></td></tr>`).join('') + `</tbody></table></div>`;
+    return sec(AP.secClose, kvl(AP.kName, esc(c.campaign_name || '—')) + kvl(AP.kPeriod, periodLine(a, z)) + kvl(AP.kBudget, m.budget == null ? `<span class="muted">${esc(K.noBudget)}</span>` : R.baht(m.budget)) +
+        kvl(AP.kCommitted, `${R.baht(m.committed)} <span class="muted">· ${esc(pct(m.usedPct))}</span>`) + kvl(AP.kPaid, R.baht(m.paid || 0))) +
+      sec(AP.secOpen, table + kvl(AP.kCloseNote, esc(car.note || '—')) + kvl(AP.kCancelOpen, esc(car.cancel_open ? `${C.request.yes} (${R.fmtNum(now.early)})` : C.request.no)));
+  }
   /* Budget context: the approved Campaigns that run at the same time (their budgets) · Phases that overlap */
   function contextHTML(r) {
     const s = state(), x = R.sameTimeBudget(s, r.campaign_id), c = campById(r.campaign_id) || {};
@@ -233,6 +249,7 @@ KT.approvals = (function () {
         `<button type="button" class="icon-btn" data-rvnav="1" aria-label="${esc(AP.nextReq)}" title="${esc(AP.nextReq)}"${i < q.length - 1 ? '' : ' disabled'}>›</button></span>` : '') + `</div>` +
       (r.note ? `<div class="apc-note"><span class="muted small">${esc(AP.noteFrom(who(r.by)))}</span><div>${esc(r.note)}</div></div>` : '');
     rv.title = AP.reviewTitle(AP.types[r.type] || r.type, c.campaign_name || '');
+    if (r.type === 'close') return head + whatChangedHTML(r) + closeHTML(r) + historyHTML(r) + decisionHTML(r) + (rv.decide ? `<button type="button" class="btn small rv-jump" data-rvjump>${esc(AP.jumpDecision)}</button>` : '');   // CR-29
     return head + whatChangedHTML(r) + campaignHTML(r) + (r.type === 'new_campaign' ? '' : requestHTML(r)) + phasesHTML(r) + contextHTML(r) + historyHTML(r) + decisionHTML(r) +
       (rv.decide ? `<button type="button" class="btn small rv-jump" data-rvjump>${esc(AP.jumpDecision)}</button>` : '');
   }
@@ -280,7 +297,9 @@ KT.approvals = (function () {
     const s = state(), r = R.requestOf(s, rv.id); if (!r || r.status !== 'pending') { drawReview(); return; }
     const q = queue(), at = q.indexOf(rv.id), name = nameOf(r), ctx = ctxOf(), snap = R.decisionSnapshot(s, r.campaign_id), comment = R.trim(rv.comment);
     if (kind === 'return') { const v = R.validateReturn(comment); if (v.errs.length) { $('rv_checks').innerHTML = checksHTML(v, ''); return; } }
+    const cancelEarly = kind === 'approve' && r.type === 'close' && !!(r.carrier || {}).cancel_open;   // CR-29: read before the request is done
     const x = R.requestTransition(s, rv.id, kind === 'approve' ? 'approved' : 'draft', ctx, kind === 'approve' ? { note: comment } : { reason: comment });
+    if (x.ok && cancelEarly) KT.screens.campaign.cancelEarlyDeals(r.campaign_id);
     if (!x.ok) { if ($('rv_checks')) $('rv_checks').innerHTML = checksHTML({ errs: [{ field: 'reason', msg: x.err === 'reason' ? C.request.reasonMin(R.MIN_REASON) : C.msg.sensitive }] }, ''); return; }
     s.campaign_events.push(...x.events);
     commit();

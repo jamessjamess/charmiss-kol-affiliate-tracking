@@ -6,7 +6,7 @@ Object.assign(KT.rules, (function (R, C) {
   const { isBlank, trim, num, isISODate, addDays, dayDiff, weekStart, normLink, tiktokDate, handleFromLink, platformFromLink, isHttpLink, totalCost } = R;
   const issue = (field, msg, kind) => (kind ? { field, msg, kind } : { field, msg });
   const OPEN = ['List', 'Inprocess'];
-  const MONEY_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee'];
+  const MONEY_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee', 'other_fee'];   // CR-30 §3.2
   const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares'];
   const DATE_KEYS = ['docs_done_date', 'paid_50_date', 'paid_full_date', 'gencode_start_date', 'delivery_date', 'brief_date',
     'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date',
@@ -108,7 +108,7 @@ Object.assign(KT.rules, (function (R, C) {
     header: ['campaign_id'],
     info: ['pic', 'pillar', 'cta', 'products', 'delivered', 'delivery_date', 'link_brief', 'script_link', 'remark', 'cancel_reason'],   // CR-20 §4.12: + Script link
     payment: ['payment_term', 'package_id', 'package_units', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date'],   // CR-20 §4.8: + the package
-    costs: ['rate_card', 'gencode_expense', 'gencode_period', 'gencode_start_date', 'basket_fee', 'asset_fee', 'expediting_fee'],
+    costs: ['rate_card', 'gencode_expense', 'gencode_period', 'gencode_start_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note'],
     timeline: ['brief_date', 'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date',
       'expected_approve_date', 'approved_date', 'expected_post_date'],
   };
@@ -263,6 +263,8 @@ Object.assign(KT.rules, (function (R, C) {
     if (!d.pic) completeness(issue('pic', M.dealPicRequired));
     if (!d.sub_status || !R.stepOf(L, d.sub_status)) both(issue('sub_status', M.dealStepRequired));
     MONEY_KEYS.forEach(k => { if (!isBlank(d[k]) && (isNaN(d[k]) || Number(d[k]) < 0)) both(issue(k, M.dealMoney(C.deal.f[k]))); });
+    if (Number(d.other_fee) > 0 && isBlank(d.other_fee_note)) both(issue('other_fee_note', M.otherFeeNote));   // CR-30 §3.2: what the Other fee is for
+    if (R.looksSensitive(d.other_fee_note)) both(issue('other_fee_note', M.sensitive));
     if (!isBlank(d.gencode_period) && (isNaN(d.gencode_period) || Number(d.gencode_period) < 0 || !Number.isInteger(Number(d.gencode_period)))) both(issue('gencode_period', M.dealPeriodInt));
     DATE_KEYS.forEach(k => { if (!isBlank(d[k]) && !isISODate(d[k])) both(issue(k, M.dateInvalid(C.deal.f[k]))); });
     ['remark', 'cancel_reason'].forEach(k => { if (R.looksSensitive(d[k])) both(issue(k, M.sensitive)); });   // CR-08 §4.4
@@ -580,7 +582,10 @@ Object.assign(KT.rules, (function (R, C) {
   /* CR-22 §3.6 — what an open deal still misses (the Deal modal's "Missing: …"): Assigned to · from Contacted: CTA · Rate card (not Free / Package) ·
      from Confirm QT: Pillar · Payment term — keys in that order */
   function dealMissing(state, d) {
-    if (!d || d.status === 'Cancel' || d.status === 'Complete') return [];
+    if (!d || d.status === 'Cancel') return [];
+    /* CR-30 §3.1 — a Gencode paid for and posted, with no code yet */
+    const gc = R.needsGencode && R.needsGencode(state, d, R.todayISO()) ? ['gencode'] : [];
+    if (d.status === 'Complete') return gc;
     const L = state.lookups, st = R.stepOf(L, d.sub_status), at = name => { const x = R.stepOf(L, name); return !!st && !!x && st.sort_order >= x.sort_order; }, out = [];
     if (isBlank(d.pic)) out.push('pic');
     if (at('Contacted')) {
@@ -588,7 +593,7 @@ Object.assign(KT.rules, (function (R, C) {
       const t = R.termOf(d); if (t !== 'free' && t !== 'package' && isBlank(d.rate_card)) out.push('rate_card');
     }
     if (at('Confirm QT')) { if (isBlank(d.pillar)) out.push('pillar'); if (!R.isTerm(R.termOf(d))) out.push('payment_term'); }
-    return out;
+    return out.concat(gc);
   }
 
   /* scope: {campaignId, phaseIds} (an array = phaseIds) · whole Campaign → deal totals · Phases → the post shares in them (CR-03 §4.5) */

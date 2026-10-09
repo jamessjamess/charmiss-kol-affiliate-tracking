@@ -168,11 +168,11 @@ KT.screens.deals = (function () {
         <details class="menu" id="dl_fmenu"><summary class="btn">${ICON.filter} ${esc(D.filters)} <span class="badge hidden" id="dl_fbadge"></span></summary><div class="popover" id="dl_fpop"></div></details>
         <button type="button" class="btn ghost small fclear hidden" id="dl_clearall" data-clearfilters title="${esc(C.common.clearAllFilters)}" aria-label="${esc(C.common.clearAllFilters)}">${ICON.close}<span>${esc(D.clearAll)}</span></button>
         <span class="spacer"></span>
-        <div class="stabs dl-views" id="dl_view" role="tablist">${VIEWS.map(v => `<button type="button" role="tab" data-v="${v}">${esc(D.views[v])}</button>`).join('')}</div>
         <details class="menu" id="dl_more"><summary class="btn icon" title="${esc(C.app.more)}" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list right" id="dl_export">
           <div class="mh">${esc(D.export)}</div>
           <button type="button" class="mi" data-export="deals">${esc(D.exportDeals)}</button><button type="button" class="mi" data-export="posts">${esc(D.exportPosts)}</button>
           <button type="button" class="mi" data-export="template">${esc(D.exportTemplate)}</button>
+          <button type="button" class="mi" data-export="gencodes" id="dl_exportGc" title="${esc(C.gencode.exportTip)}">${esc(C.gencode.exportItem)}</button>
           <div class="mh">${esc(D.density)}</div><div class="mi-seg"><div class="seg" role="group" aria-label="${esc(D.density)}"><button type="button" data-cols="compact">${esc(D.compact)}</button><button type="button" data-cols="template">${esc(D.template)}</button></div></div>
         </div></details>
       </div>
@@ -180,14 +180,15 @@ KT.screens.deals = (function () {
       <div class="toolbar hidden" id="dl_bulk"><b id="dl_selN"></b><button type="button" class="btn" id="dl_moveTo">${esc(C.bulk.moveTo)}</button><button type="button" class="btn" id="dl_setDetails">${esc(C.bulk.setDetails)}</button><button type="button" class="btn" id="dl_reassign">${esc(D.reassign)}</button><button type="button" class="btn" id="dl_setPillar">${esc(D.setPillar)}</button>
         <button type="button" class="btn" id="dl_selExport">${esc(D.exportSelected)}</button><button type="button" class="btn ghost" id="dl_selClear">${esc(D.clear)}</button></div>
       <div class="fchips" id="dl_chips"></div>
-      <div class="dl-row3" id="dl_row3"></div>
+      <div class="dl-row2"><div class="seg dl-viewseg" id="dl_view" role="tablist" aria-label="${esc(D.viewL)}">${VIEWS.map(v => `<button type="button" role="tab" data-v="${v}">${esc(D.views[v])}</button>`).join('')}</div>
+        <div class="dl-row3" id="dl_row3"></div></div>
       <div class="fchips hidden" id="dl_reasons"></div>
       <div id="dl_body"></div>`;
     U.enhanceCombos(sec);
     $('dl_clearall').addEventListener('click', clearFilters);   // CR-11 §4.13 #1: Clear all in row 1
     $('dl_view').addEventListener('click', e => {
       const b = e.target.closest('[data-v]'); if (!b || b.dataset.v === dl.view) return;
-      dl.view = b.dataset.v; pref.set('dealview', dl.view); renderLeft();
+      dl.view = b.dataset.v; pref.set('dealview', dl.view); pref.set('dealview_' + (userId() || ''), dl.view); renderLeft();   // CR-31 §2.2: per person
     });
     let qT;
     $('dl_q').addEventListener('input', e => { clearTimeout(qT); qT = setTimeout(() => { dl.f.q = e.target.value; dl.limit = PAGE; renderLeft(); }, 150); });
@@ -216,7 +217,7 @@ KT.screens.deals = (function () {
     });
     $('dl_row3').addEventListener('click', e => {
       const t = e.target.closest('[data-tab]'); if (t) { chooseTab(t.dataset.tab); dl.limit = PAGE; renderLeft(); return; }
-      const ga = e.target.closest('[data-groupall]'); if (ga) setAllGroups(ga.dataset.groupall === 'collapse');
+      const ga = e.target.closest('[data-groupall]'); if (ga) { if (dl.view === 'pipeline') setPipeAll(ga.dataset.groupall === 'collapse'); else setAllGroups(ga.dataset.groupall === 'collapse'); }
     });
     $('dl_row3').addEventListener('change', e => { if (e.target.id === 'dl_groupby') { pref.set('dealgroupby3', e.target.value); dl.groupLimit.clear(); renderLeft(); } });
     $('dl_reasons').addEventListener('click', e => {
@@ -252,7 +253,7 @@ KT.screens.deals = (function () {
       if (e.target.closest('[data-lanetoggle]')) { const lane = e.target.closest('.clane'); U.pref.set((lane.dataset.lane || 'cancellane') + '_' + (userId() || ''), lane.classList.contains('shut') ? '1' : '0'); renderLeft(); return; }
       if (e.target.closest('[data-showall]')) { const ln = e.target.closest('.clane'), k = ln && ln.querySelector('[data-stagepop]'); openStagePop(k ? k.dataset.stagepop : C.stage.cancelled); return; }
       const sp = e.target.closest('[data-stagepop]'); if (sp) { e.stopPropagation(); openStagePop(sp.dataset.stagepop); return; }
-      const col = e.target.closest('[data-opencol]'); if (col) { const k = col.dataset.opencol; if (k === 'Cancel') dl.cancelOpen = !dl.cancelOpen; else dl.openCols.has(k) ? dl.openCols.delete(k) : dl.openCols.add(k); renderLeft(); return; }
+      const col = e.target.closest('[data-opencol]'); if (col) { const k = col.dataset.opencol; if (k === 'Cancel') dl.cancelOpen = !dl.cancelOpen; else dl.openCols.has(k) ? dl.openCols.delete(k) : dl.openCols.add(k); saveGroups(); renderLeft(); return; }
       const row = e.target.closest('[data-id]'); if (row) select(row.dataset.id);
     });
     $('dl_body').addEventListener('change', e => { if (dl.view === 'performance') KT.perf.change(e); });
@@ -273,7 +274,20 @@ KT.screens.deals = (function () {
     delete c.pic; delete c.reason; dl.f = c; $('dl_q').value = '';
     dl.limit = PAGE; renderLeft();
   }
-  const saveGroups = () => { pref.set('dealgroups2', JSON.stringify([...dl.collapsed])); pref.set('dealgroupsopen', JSON.stringify([...dl.opened])); };
+  const uk = k => `${k}_${userId() || ''}`;   // CR-31 §2.2: kept for each person
+  const saveGroups = () => { pref.set(uk('dealgroups2'), JSON.stringify([...dl.collapsed])); pref.set(uk('dealgroupsopen'), JSON.stringify([...dl.opened])); pref.set(uk('dealopencols'), JSON.stringify([...dl.openCols])); };
+  function userPrefs() {
+    const uid = userId() || ''; if (dl.prefUser === uid) return; dl.prefUser = uid;
+    const v = pref.get('dealview_' + uid, ''); if (VIEWS.includes(v)) dl.view = v;
+    const has = k => pref.get(k, null) != null;
+    dl.collapsed = readSet(has(uk('dealgroups2')) ? uk('dealgroups2') : 'dealgroups2'); dl.opened = readSet(has(uk('dealgroupsopen')) ? uk('dealgroupsopen') : 'dealgroupsopen'); dl.openCols = readSet(uk('dealopencols'));
+  }
+  /* CR-31 §2.2 — Expand all / Collapse all (Pipeline): Posted · Cancelled · the empty columns */
+  function setPipeAll(collapse) {
+    ['postlane', 'cancellane'].forEach(k => pref.set(k + '_' + (userId() || ''), collapse ? '0' : '1'));
+    dl.openCols = collapse ? new Set() : new Set(dl.pipeEmpty || []); saveGroups(); renderLeft();
+  }
+  const gallHTML = anyOpen => `<button type="button" class="btn small dl-gall" data-groupall="${anyOpen ? 'collapse' : 'expand'}">${esc(anyOpen ? C.campaign.collapseAll : C.campaign.expandAll)}</button>`;
   function setCollapsed(gk, on) {
     if (startsCollapsed(gk)) { on ? dl.opened.delete(gk) : dl.opened.add(gk); } else { on ? dl.collapsed.add(gk) : dl.collapsed.delete(gk); }
   }
@@ -307,11 +321,13 @@ KT.screens.deals = (function () {
 
   /* ===================== left: toolbar state, table, pipeline ===================== */
   function renderLeft() {
+    userPrefs();   // CR-31 §2.2
     if (!$('dl_new')) return;   // CR-27 §3.3: the Deal modal opened over another page before Deals was ever drawn
     const s = state(), ctx = R.dealContext(s), td = today();
     /* CR-04 §4.4: what this person may not do is not shown */
     const edit = can('deal.edit');
     ['dl_new', 'dl_reassign', 'dl_setPillar', 'dl_moveTo', 'dl_setDetails'].forEach(id => $(id).classList.toggle('hidden', !edit));
+    $('dl_exportGc').classList.toggle('hidden', !gcManager());   // CR-30 §3.1: Manager / Admin only
     ensureCampaign(s, td);
     document.querySelectorAll('#dl_view [data-v]').forEach(b => { const on = b.dataset.v === dl.view; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
     document.querySelectorAll('#dl_export [data-cols]').forEach(b => b.classList.toggle('on', b.dataset.cols === dl.cols));
@@ -432,13 +448,13 @@ KT.screens.deals = (function () {
     const t = R.dealTiles(s, scoped, scope, td, ctx.phaseIdx), m = R.moneyOf(t.budget, t.committed, t.shortlist, t.paid), MN = C.money;
     const sum = `<span class="dl-sum">${esc(MN.committed.h)} ${U.info(MN.committed)} <b class="${m.remaining < 0 ? 'over' : ''}">${R.baht(m.committed)}</b>${m.budget == null ? '' : `<span class="muted"> / ${R.baht(m.budget)}</span>`}` +
       `<span class="sep">·</span>${esc(MN.pending.h)} ${U.info(MN.pending)} <b>${R.baht(m.pending)}</b><span class="sep">·</span>${esc(D.paidShort)} <b>${R.baht(m.paid)}</b></span>`;
-    if (dl.view === 'pipeline') { $('dl_row3').innerHTML = `<span class="spacer"></span>${sum}`; $('dl_reasons').classList.add('hidden'); return; }
+    if (dl.view === 'pipeline') { $('dl_row3').innerHTML = `<span class="spacer"></span>${sum}<span id="dl_gall"></span>`; $('dl_reasons').classList.add('hidden'); return; }
     const by = groupBy();
     /* CR-11 §4.13 #1 — row 2: the state tabs · Group by · the money of the scope · CR-13 §4.4: a tab at 0 stays (faint) so none moves */
     const tab = tabSel();
     $('dl_row3').innerHTML = `<div class="stabs dl-tabs" role="tablist">${R.DEAL_TABS.map(k => `<button type="button" role="tab" data-tab="${k}" class="${[TAB_GROUP[k] || '', tab === k ? 'on' : '', tabs.counts[k] ? '' : 'zero'].filter(Boolean).join(' ')}" aria-selected="${tab === k}">` +
       `${TAB_GROUP[k] ? '<span class="tdot" aria-hidden="true"></span>' : ''}${esc(D.tabs[k])}<span class="n">${R.fmtNum(tabs.counts[k])}</span></button>`).join('')}</div>` +
-      `<label class="tlab">${esc(D.groupBy)} <select id="dl_groupby">${GROUP_BYS.map(v => `<option value="${v}"${v === by ? ' selected' : ''}>${esc(D.groupByOpt[v])}</option>`).join('')}</select></label><span id="dl_gall"></span><span class="spacer"></span>` + sum;
+      `<label class="tlab">${esc(D.groupBy)} <select id="dl_groupby">${GROUP_BYS.map(v => `<option value="${v}"${v === by ? ' selected' : ''}>${esc(D.groupByOpt[v])}</option>`).join('')}</select></label><span class="spacer"></span>` + sum + `<span id="dl_gall"></span>`;   // CR-31 §2.2: Expand all / Collapse all at the far right
     /* only the chips above 0 in this tab (and the one picked, so it can be taken off) · Docs to collect ends with Open in Payments */
     const rs = R.ATTENTION.filter(k => tabs.chips[k] || dl.reason === k);
     $('dl_reasons').innerHTML = rs.map(k => {
@@ -579,7 +595,7 @@ KT.screens.deals = (function () {
           `<b>${R.fmtNum(R.totalCost(d))}</b>`, d.delivered ? `/ ${R.dmy(d.delivery_date)}` : '', R.dealTrCodes(s, d.deal_id).map(esc).join('<br>'), R.dmy(d.brief_date),
           R.dmy(d.expected_draft1_date), R.dmy(d.approved_draft1_date), R.dmy(d.expected_draft2_date), R.dmy(d.approved_draft2_date), R.dmy(d.expected_draft3_date), R.dmy(d.approved_draft3_date),
           R.dmy(d.expected_post_date), range(sum.first, sum.last), d.link_brief ? `<a href="${esc(d.link_brief)}" target="_blank" rel="noopener">↗</a>` : '',
-          sum.links ? esc(D.links(sum.links)) : '', esc(sum.posts.map(p => p.gencode_code).filter(Boolean).join(', ')), esc(d.cta || '')];
+          sum.links ? esc(D.links(sum.links)) : '', esc(sum.posts.map(p => p.gencode_code).filter(Boolean).map(R.shortCode).join(', ')), esc(d.cta || '')];
         const tier = ctx.tiers.get(d.deal_id) || {};
         return `<tr class="click" tabindex="0" data-id="${esc(d.deal_id)}">${cbCell(d, k)}<td class="sticky2" style="max-width:240px">${kolCell(k, d, ctx)}</td><td class="num">${warnCell(d)}</td>` +
           cells.map((c, i) => `<td class="${[3, 4, 5, 7, 8, 9, 10, 11].includes(i) ? 'c' : [13, 14, 15, 17, 18, 19, 20].includes(i) ? 'num' : ''}">${c}</td>` +
@@ -614,7 +630,7 @@ KT.screens.deals = (function () {
     }
     /* one icon for every group: ⊟ folds them all while one is open, ⊞ opens them all */
     const anyOpen = dl.groupKeys.some(gk => !isCollapsed(gk));
-    if ($('dl_gall')) $('dl_gall').innerHTML = dl.groupKeys.length > 1 ? `<button type="button" class="icon-btn gall" data-groupall="${anyOpen ? 'collapse' : 'expand'}" title="${esc(anyOpen ? D.collapseAll : D.expandAll)}" aria-label="${esc(anyOpen ? D.collapseAll : D.expandAll)}">${anyOpen ? '⊟' : '⊞'}</button>` : '';
+    if ($('dl_gall')) $('dl_gall').innerHTML = dl.groupKeys.length > 1 ? gallHTML(anyOpen) : '';   // CR-31 §2.2 (was ⊟ / ⊞)
     if (!rows.length) { $('dl_body').innerHTML = U.noMatchHTML(D.noMatch, dl.used || []); return; }
     $('dl_body').innerHTML = `<div class="tablewrap" style="max-height:calc(100vh - 300px)"><table class="tbl dl${pick ? '' : ' nocb'}"><thead><tr>${head}</tr></thead><tbody>${parts.join('')}</tbody></table></div>` +
       (rest ? `<div class="loadmore"><button type="button" class="btn" data-more>${esc(D.loadMore(rest))}</button></div>` : '');
@@ -705,9 +721,9 @@ KT.screens.deals = (function () {
       const k = ctx.kols.get(d.kol_id) || {}, name = k.display_name || d.kol_id, due = R.dueDate(s, d), late = R.isOverdue(s, d, td), mv = movable(d), tier = (ctx.tiers.get(d.deal_id) || {}).tier;
       const notSet = R.costNotSet(d), total = R.totalCost(d);
       return `<div class="dcard${mv ? ' drag' : ''}" role="button" tabindex="0" data-id="${esc(d.deal_id)}" title="${esc(name)}"${mv ? ' draggable="true"' : ''}>
-        <div class="r1"><b class="nm">${U.nameHTML(name)}${U.partnerChipHTML(k)}</b><span class="amt${notSet ? ' muted' : ''}"${notSet ? ` title="${esc(C.priceRef.costNotSet)}"` : ''}>${notSet ? '฿—' : esc(R.baht(total))}</span>${mv ? `<button type="button" class="icon-btn cmenu" data-cardmenu="${esc(d.deal_id)}" aria-label="${esc(D.cardMenu)}" title="${esc(D.moveToMenu)}">⋯</button>` : ''}</div>
+        <div class="r1"><b class="nm">${U.nameHTML(name)}${U.partnerChipHTML(k)}</b><span class="amt${notSet ? ' muted' : ''}"${notSet ? ` title="${esc(C.priceRef.costNotSet)}"` : ''}>${notSet ? '฿—' : esc(R.baht(total))}</span></div>
         <div class="r2"><span class="l">${platformsHTML(ctx, d)}${d.pic ? `<span class="av sm" title="${esc(d.pic)}">${esc(initials(d.pic))}</span>` : ''}${tier ? `<span class="tier">${esc(tier)}</span>` : ''}${R.termOf(d) === 'package' ? `<span class="pkgb" title="${esc(D.pkgTip)}">${esc(D.pkgBadge)}</span>` : ''}${KT.samples.iconHTML(d)}</span>
-          <span class="${late ? 'late' : 'muted'}">${due ? esc(dmShort(due, td)) : ''}</span></div></div>`;
+          <span class="r2r"><span class="${late ? 'late' : 'muted'}">${due ? esc(dmShort(due, td)) : ''}</span>${mv ? `<button type="button" class="icon-btn cmenu" data-cardmenu="${esc(d.deal_id)}" aria-label="${esc(D.cardMenu)}" title="${esc(D.moveToMenu)}">⋯</button>` : ''}</span></div></div>`;   // CR-31: ⋯ at the end of row 2 — row 1 is the name + the amount
     };
     const head = (st, list) => { const m = R.stageMoney(s, list), k = R.stageName(st);
       return `<button type="button" class="bc-name" data-stagepop="${esc(k)}" title="${esc(`${stepTitle(st.sub_status)} — ${D.openStage(k)}`)}">${esc(k)}</button><span>${m.n} · ${esc(m.kind === 'pending' ? '+' + bahtShort(m.amount) : bahtShort(m.amount))}</span>`; };
@@ -733,6 +749,11 @@ KT.screens.deals = (function () {
     };
     /* CR-11 §4.13 #3 — Posted under Row 1, folded by default · Cancelled as before (open when it has deals) */
     const lane = laneHTML(postStep, 'postlane', 'g-done plane', D.postedLane, D.noPosted, () => false) + laneHTML(cancelStep, 'cancellane', 'g-cancel', R.stageName(cancelStep || {}), D.noCancelled, list => list.length > 0);
+    /* CR-31 §2.2 — Expand all / Collapse all: Posted · Cancelled · the empty columns */
+    dl.pipeEmpty = steps.filter(st => !R.isCancelStep(st) && !R.isPostStep(st) && !dealsOf(st).length).map(st => st.sub_status);
+    const laneOpen = (key, dflt) => { const v = U.pref.get(key + '_' + (userId() || ''), ''); return v === '1' ? true : v === '0' ? false : dflt; };
+    const anyOpen = laneOpen('postlane', false) || laneOpen('cancellane', cancelStep ? dealsOf(cancelStep).length > 0 : false) || dl.pipeEmpty.some(k => dl.openCols.has(k));
+    if ($('dl_gall')) $('dl_gall').innerHTML = gallHTML(anyOpen);
     const GC = { List: 'g-list', Inprocess: 'g-prog', Complete: 'g-done' };
     $('dl_body').innerHTML = (can('deal.edit') ? `<p class="hint dl-draghint">${esc(D.dragHint)}</p>` : '') +
       `<div class="pipe"><div class="board">${groups.map((g, i) => `${i ? '<div class="bgsep" aria-hidden="true"></div>' : ''}<div class="bgroup ${GC[g.status] || ''}"><div class="bg-h"><span>${esc(C.status[g.status])}</span></div><div class="bcols">${g.steps.map(col).join('')}</div></div>`).join('')}</div>${lane}</div>`;
@@ -965,7 +986,7 @@ KT.screens.deals = (function () {
     const p = R.dropPlan(s, d, toSub, today());
     if (p.kind === 'same') return;
     if (p.kind === 'blocked') { toast(p.msg); renderLeft(); return; }
-    if (p.kind === 'dialog') { openMove(id, toSub, true); return; }
+    if (p.kind === 'dialog') { openMove(id, toSub, true, p.confirm ? { enter: true } : null); return; }   // CR-31 §2.4: a dropped Draft / Approve — confirm the day it was done · Enter = Move
     if (R.zeroCostMove(s, d, toSub)) { zeroCostAsk().then(ok => { if (ok) applyInstant(id, toSub); else renderLeft(); }); return; }
     applyInstant(id, toSub);
   }
@@ -973,7 +994,7 @@ KT.screens.deals = (function () {
   const zeroCostAsk = () => U.confirmDialog(C.priceRef.zeroTitle, C.priceRef.zeroBody, C.priceRef.zeroContinue);
   /* the move at once (date today) — KT.move.apply: one Undo puts the deal, its logs, rate, posts and shipments back */
   function applyInstant(id, toSub) {
-    KT.move.apply(id, toSub, { date: today(), note: '' }, { onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); } });
+    KT.move.apply(id, toSub, { date: today(), note: '' }, { addNote: true, onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); } });   // CR-31 §2.5: + Add note
   }
   /* ⋯ › Move to… on a card (keyboard / phone): the plan's steps + Cancel */
   function openCardMenu(btn) {
@@ -1007,6 +1028,11 @@ KT.screens.deals = (function () {
     if (kind === 'template') { const t = R.templateExport(s, deals, ctx); downloadCSV(`kol_template_${td.replace(/-/g, '')}.csv`, t.header, t.rows); }
     if (kind === 'deals') downloadCSV('deals.csv', R.DEALS_COLS, R.dealsRows(s, deals, td, ctx));
     if (kind === 'posts') downloadCSV('deal_posts.csv', R.POSTS_COLS, R.postsRows(s, s.deal_posts.filter(p => dealIds.has(p.deal_id)), ctx));
+    if (kind === 'gencodes') {   // CR-30 §3.1 — every code in full (Manager / Admin) · the deals in view
+      if (!gcManager()) return;
+      const t = KT.export.rowsFor('gencodes', { state: s, today: td }), keep = t.rows.filter(r => dealIds.has(r[2])), name = `${C.gencode.file}_${td}.xlsx`;
+      U.download(name, KT.xlsx.workbook([KT.export.sheetOf(Object.assign({}, t, { rows: keep }))]), KT.xlsx.MIME); toast(C.io.exported(name, keep.length));
+    }
   }
 
   /* ===================== drawer ===================== */
@@ -1181,6 +1207,8 @@ KT.screens.deals = (function () {
     if (e.type === 'payee') { const lb = id => { const p = id ? R.payeeById(state(), id) : null; return p ? p.label || C.payee.primary : D.payToDefault; }; return D.histPayee(lb(e.from), lb(e.to)); }   // CR-16 §4.2
     if (e.type === 'plan') { const t = v => D.planText((v || {}).draft_rounds || 1); return D.histPlan(t(e.from), t(e.to)); }
     if (e.type === 'metrics') { const v = x => (x == null ? '—' : R.fmtNum(x)); return D.histMetrics(e.post_id || '') + ' · ' + R.METRICS.filter(k => (e.from || {})[k] !== (e.to || {})[k]).map(k => `${F[k]} ${v((e.from || {})[k])} → ${v((e.to || {})[k])}`).join(' · ') + (e.note === 'undo' ? ` (${D.undo})` : ''); }
+    if (e.type === 'step_note_updated') return C.notes.histNote(R.stepNoteLabel(state().lookups, e.step_key));   // CR-31 §2.5
+    if (/^gencode_/.test(e.type)) return `${C.gencode.ev[e.type] || e.type}${e.to ? ` · ${e.to}…` : ''}`;   // CR-30: the first 6 characters only
     if (e.type === 'edit' || e.type === 'cost') return (e.type === 'cost' ? D.histCost : D.histEdit) + ' · ' + Object.keys(e.to || {}).map(k => `${fieldLabel(k)}: ${valText(k, (e.from || {})[k])} → ${valText(k, e.to[k])}`).join(' · ');
     return e.type;
   }
@@ -1259,6 +1287,7 @@ KT.screens.deals = (function () {
     const costs = `<div class="dm-costgrid">` + ['rate_card', 'gencode_expense', 'gencode_period'].map(f => kvF(d, f, money(d[f]))).join('') +
       kvF(d, 'gencode_start_date', R.dmy(d.gencode_start_date)) + kvAuto(F.gencode_end_date, esc(R.dmy(R.gencodeEndDate(d)) || C.common.none)) +
       ['asset_fee', 'expediting_fee'].map(f => kvF(d, f, money(d[f]))).join('') + (Number(d.basket_fee) > 0 ? kvF(d, 'basket_fee', money(d.basket_fee)) : '') +
+      (Number(d.other_fee) > 0 ? kvF(d, 'other_fee', `${money(d.other_fee)}${d.other_fee_note ? ` · ${d.other_fee_note}` : ''}`) : '') +   // CR-30 §3.2
       (Number(d.product_purchase_fee) > 0 ? kvAuto(C.move.productPurchase, R.baht(d.product_purchase_fee)) : '') + `</div>` +
       kvAuto(F.total_cost, R.baht(R.totalCost(d)), 'total') + (d.kol_id ? `<div class="hint" style="margin-top:6px">${KT.move.lastRateHTML(s, R.lastRateCard(s, d.kol_id, d.deal_id), 'data-act="useLastRate"')}</div>` : '');
     /* CR-19 §4.6 — the pillar with its colour */
@@ -1272,7 +1301,7 @@ KT.screens.deals = (function () {
     const phases = R.phasesOfCampaign(s, d.campaign_id);
     const postCards = posts.map(x => { const a = ctx.accounts.get(x.account_id) || {}, done = R.postDone(x);
       return `<div class="post" data-post="${esc(x.post_id)}"><div class="top"><span>${pfIcon(a.platform || x.platform || 'Other', done ? 'posted' : 'planned', done ? D.tipPosted(a.platform || x.platform, R.dmy(x.post_date)) : D.tipPlanned(a.platform || x.platform, R.dmy(x.expected_post_date)))} @${esc(a.handle || '')}${lockMark(lockOf(d, 'account_id', x))}</span><span class="st ${done ? 'done' : 'list'}">${esc(done ? D.posted : D.planned)}</span></div>` +
-        `<div class="meta"><span>${esc(F.phase_override)} ${phaseTagHTML(R.resolvePostPhase(x, phases))}</span><span>${esc(F.expected_post_date)} ${R.dmy(x.expected_post_date) || '—'}</span><span>${esc(F.post_date)} ${R.dmy(x.post_date) || '—'}</span>${x.gencode_code ? `<span>${esc(F.gencode_code)} ${esc(x.gencode_code)}</span>` : ''}</div>` +
+        `<div class="meta"><span>${esc(F.phase_override)} ${phaseTagHTML(R.resolvePostPhase(x, phases))}</span><span>${esc(F.expected_post_date)} ${R.dmy(x.expected_post_date) || '—'}</span><span>${esc(F.post_date)} ${R.dmy(x.post_date) || '—'}</span>${x.gencode_code ? `<span>${esc(F.gencode_code)} ${esc(R.shortCode(x.gencode_code))}</span>` : ''}</div>` +
         (x.post_link ? `<a href="${esc(x.post_link)}" target="_blank" rel="noopener" class="small">${esc(x.post_link.length > 70 ? x.post_link.slice(0, 70) + '…' : x.post_link)}</a>` : '') +
         `<div class="meta">${R.METRIC_KEYS.map(m => `<span>${esc(F[m])} ${R.fmtNum(x[m]) || '—'}</span>`).join('')}${x.metrics_updated_at ? `<span>${esc(D.asOf(R.dmy(x.metrics_updated_at)))}</span>` : ''}</div></div>`; }).join('');
     const ids = (d.legacy_job_ids || []).concat(d.source_record_ids || []);
@@ -1342,11 +1371,11 @@ KT.screens.deals = (function () {
   function tabBody(tab, x) {
     const { s, d, ctx, td, info2, costs, pay, posts, postCards, source } = x;
     if (tab === 'costs') return `<div class="dm-two"><div>${secCard(d, 'costs', D.secCosts, costs)}</div><div>${secCard(d, 'payment', D.secPayment, pay.replace('</b></div>', `${termChip(d)}${lockMark(lockOf(d, 'payment_term'))}</b></div>`))}` +
-      `<section class="sec">${budgetHTML(s, d, ctx).replace('style="margin:12px 0 0"', '')}</section></div></div>`;
+      `<section class="sec" id="dm_budget">${budgetHTML(s, d, ctx).replace('style="margin:12px 0 0"', '')}</section></div></div>`;
     if (tab === 'timeline') return secCard(d, 'timeline', D.secTimeline, stepsTableHTML(s, d)) + `<section class="sec">${planLineHTML(s, d)}</section>`;
     /* CR-23 §3.8 — Shipments full width (product names · the row's buttons fit), the posts under it */
     if (tab === 'ships') return `<div class="dm-stack">${KT.samples.sectionHTML(d)}${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
-      can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}</div>`;
+      can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}${gencodeSecHTML(s, d)}</div>`;
     if (tab === 'history') return `${source}<section class="sec"><div class="sec-h"><span>${esc(D.secHistory)}</span></div>${historyHTML(s, d)}</section>`;
     /* Overview: Deal · Money · Next */
     const term = R.termOf(d), st = R.paymentState(d, td), payee = R.payeeOfDeal(s, d), nx = R.nextStep(s.lookups, d), ships = R.shipmentsOf(s, d.deal_id), sh = ships.filter(y => y.status !== 'not_required').pop();
@@ -1370,13 +1399,15 @@ KT.screens.deals = (function () {
   function stepsTableHTML(s, d) {
     const plan = R.planOf(d), done = R.postsOf(s, d.deal_id).map(p => p.post_date).filter(Boolean).sort()[0] || null;
     const link = (url, label) => (url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>` : '');
+    const noteLine = key => { const n = R.stepNoteOf(s, d.deal_id, key); return n && n.note ? `<div class="tl-note" title="${esc(n.note)}">${esc(n.note)}</div>` : ''; };   // CR-31 §2.5
     const notes = k => { const n = R.stepNoteOf(s, d.deal_id, R.draftKey(k)), c = R.noteCounts ? R.noteCounts(n) : { links: 0, images: 0 };
-      return `<button type="button" class="link small" data-notes="${k}">${esc(C.notes.counts(c.links, c.images) || C.notes.edit)}</button>`; };
+      return `<button type="button" class="link small" data-notes="${k}">${esc(C.notes.counts(c.links, c.images) || C.notes.edit)}</button>${noteLine(R.draftKey(k))}`; };
+    const keyOf = f => R.stepKeyOf(R.stepsOf(s.lookups).find(f));
     const steps = R.stepsOf(s.lookups), nm = (f, dflt) => ((steps.find(f) || {}).sub_status || dflt);
     /* (CR-28: each row says its field — openDealModal({focus}) finds it) */
-    const rows = [[nm(x => x.date_field === 'brief_date', 'Brief'), null, d.brief_date, link(d.link_brief, F.link_brief), 'brief_date'], [nm(R.isScriptStep, 'Script'), d.expected_script_date, d.script_date, link(d.script_link, F.script_link), 'expected_script_date']]
+    const rows = [[nm(x => x.date_field === 'brief_date', 'Brief'), null, d.brief_date, link(d.link_brief, F.link_brief) + noteLine(keyOf(x => x.date_field === 'brief_date')), 'brief_date'], [nm(R.isScriptStep, 'Script'), d.expected_script_date, d.script_date, link(d.script_link, F.script_link) + noteLine(keyOf(R.isScriptStep)), 'expected_script_date']]
       .concat(Array.from({ length: plan.drafts }, (_, i) => [nm(x => R.draftNo(x) === i + 1, `Draft ${i + 1}`), d[`expected_draft${i + 1}_date`], d[`approved_draft${i + 1}_date`], notes(i + 1), `expected_draft${i + 1}_date`]))
-      .concat([[nm(R.isApproveStep, 'Approve'), d.expected_approve_date, d.approved_date, '', 'expected_approve_date'], [nm(R.isPostStep, 'Post'), d.expected_post_date, done, '', 'expected_post_date']]);
+      .concat([[nm(R.isApproveStep, 'Approve'), d.expected_approve_date, d.approved_date, noteLine(keyOf(R.isApproveStep)), 'expected_approve_date'], [nm(R.isPostStep, 'Post'), d.expected_post_date, done, noteLine(keyOf(R.isPostStep)), 'expected_post_date']]);
     return `<div class="tablewrap"><table class="tbl compact-sm dm-steps"><thead><tr><th>${esc(D.colStep)}</th><th>${esc(D.colExpected)}</th><th>${esc(D.colDone)}</th><th>${esc(D.colLinks)}</th></tr></thead><tbody>` +
       rows.map(([n, e, x, l, fk]) => `<tr data-fk="${fk}"><td>${esc(n)}</td><td class="nowrap">${e ? esc(R.dmy(e)) : '<span class="muted">—</span>'}</td><td class="nowrap">${x ? `✓ ${esc(R.dmy(x))}` : '<span class="muted">—</span>'}</td><td>${l || ''}</td></tr>`).join('') +
       `</tbody></table></div>`;
@@ -1409,9 +1440,10 @@ KT.screens.deals = (function () {
       return costBlock(`<div class="fields">
           ${['rate_card', 'gencode_expense', 'gencode_period'].map(f => fieldOr(stored, f, F[f], ci(f), {}, money(d[f]))).join('')}
           ${fieldOr(stored, 'gencode_start_date', F.gencode_start_date, dateF('gencode_start_date', d), { hint: `<button type="button" class="link" data-act="firstPost">${esc(D.useFirstPost)}</button> · ${esc(F.gencode_end_date)} <b id="dl_gend"></b> <span class="autotag">${esc(C.lock.auto)}</span>` }, R.dmy(d.gencode_start_date))}
-          ${['basket_fee', 'asset_fee', 'expediting_fee'].map(f => fieldOr(stored, f, F[f], ci(f), {}, money(d[f]))).join('')}
+          ${['basket_fee', 'asset_fee', 'expediting_fee', 'other_fee'].map(f => fieldOr(stored, f, F[f], ci(f), {}, money(d[f]))).join('')}
+          ${fieldOr(stored, 'other_fee_note', F.other_fee_note, inpF(d, 'other_fee_note').replace('<input ', `<input placeholder="${esc(D.otherFeePh)}" `), { req: Number(d.other_fee) > 0 }, d.other_fee_note)}
           ${needs ? `<div class="field wide"><label for="f_cost_reason">${esc(D.costReason)} <span class="req">*</span></label><textarea id="f_cost_reason" data-reason data-key="cost_reason">${esc(dl.costReason)}</textarea><div class="hint">${esc(C.lock.paymentRecordedAdmin)}</div></div>` : ''}
-        </div>`, `<div class="kv total" style="margin-top:8px"><span>${esc(F.total_cost)}</span><b><span id="dl_total"></span> <span class="autotag">${esc(C.lock.auto)}</span></b></div>`, d.kol_id, d, d.deal_id) + `<div id="dl_budget"></div>`;
+        </div>`, `<div class="kv total" style="margin-top:8px"><span>${esc(F.total_cost)}</span><b><span id="dl_total"></span> <span class="autotag">${esc(C.lock.auto)}</span></b></div>`, d.kol_id, d, d.deal_id);   // CR-30 §3.4: the Campaign budget is the card on the right (it follows what is typed)
     }
     if (key === 'timeline') return `<div class="fields">${timelineFields(d).map(f => fieldOr(stored, f, F[f], dateF(f, d), {}, R.dmy(d[f]))).join('')}</div>`;
     if (key === 'posts') return `<div id="dl_posts">${dl.posts.map((p, i) => postCardHTML(p, i, accs)).join('') || `<div class="hint">${esc(D.noPosts)}</div>`}</div>` +
@@ -1583,7 +1615,10 @@ KT.screens.deals = (function () {
     U.priceRefFree(box, R.termOf(d) === 'free');
     if ($('dl_gend')) $('dl_gend').textContent = R.dmy(R.gencodeEndDate(d)) || C.common.none;
     if ($('dl_budget')) $('dl_budget').innerHTML = budgetHTML(s, d, ctx);
+    if ($('dm_budget') && dl.sec === 'costs') $('dm_budget').innerHTML = budgetHTML(s, d, ctx).replace('style="margin:12px 0 0"', '');   // CR-30 §3.4: This deal / Remaining as typed
+    if ($('f_other_fee_note')) { const lb = $('f_other_fee_note').closest('.field') && $('f_other_fee_note').closest('.field').querySelector('label'); if (lb) lb.innerHTML = `${esc(F.other_fee_note)}${Number(d.other_fee) > 0 ? ' <span class="req">*</span>' : ''}`; }
     if ($('dl_ctaHint')) { const c = R.campaignCta(s, d.campaign_id); $('dl_ctaHint').innerHTML = !c ? '' : R.isBlank(d.cta) || d.cta === c ? `<span class="srctag">${esc(D.ctaFromCampaign(c))}</span>` : `<span class="chip-diff">${esc(D.ctaDiffers)}</span> <span class="muted">${esc(D.ctaCampaign(c))}</span>`; }
+    if (dl.touched.has('other_fee') && Number(d.other_fee) > 0) dl.touched.add('other_fee_note');   // CR-30 §3.2: an Other fee with no note shows red at once
     box.querySelectorAll('[data-key]').forEach(el => el.classList.toggle('invalid', dl.touched.has(el.dataset.key) && res.errs.some(e => e.field === el.dataset.key)));
     box.querySelectorAll('[data-act="secSave"]').forEach(b => { b.disabled = res.errs.length > 0; });
     const phases = R.phasesOfCampaign(s, d.campaign_id);
@@ -1693,6 +1728,7 @@ KT.screens.deals = (function () {
       const items = R.dealPayItems(s, d, today()).filter(x => x.status !== 'cancelled' && x.pay_to !== 'reimburse'), miss = x => R.docsRequired(s, x.line || { deal_id: x.deal_id, milestone: x.milestone, pay_to: x.pay_to, docs: R.lineDocs(x.docsLine) }, x.payee || null).length > 0;
       const x = items.find(y => y.status === 'paid' && miss(y)) || items.find(miss) || items[0]; if (!x) return;
       KT.screens.payments.openDetails(x.key, { section: 'docs', after: () => { if (dl.id === id && dl.mode === 'view') renderPanel(); } }); return; }
+    if (gencodeClick(e)) return;   // CR-30 §3.1
     if (e.target.closest('[data-backkol]')) { const b = dl.backKol; U.requestCloseDrawer().then(ok => { if (ok && b) KT.profile.open(b.kolId, { tab: b.tab }); }); return; }
     const nt = e.target.closest('[data-notes]'); if (nt && dl.mode === 'view') { KT.move.openNotes(dl.id, +nt.dataset.notes, { opener: nt, after: () => { if (dl.mode === 'view') renderPanel(); } }); return; }
     if (dl.mode === 'view' && KT.samples.click(e, () => { renderLeft(); renderPanel(); })) return;   // CR-10 §4.14
@@ -1739,8 +1775,112 @@ KT.screens.deals = (function () {
     else if (act === 'addAccount') KT.profile.open(d.kol_id, { edit: true, backDeal: dl.over ? null : d.deal_id });
   }
 
+  /* ===================== CR-30 §3.1 — Gencodes (Shipments & posts) ===================== */
+  const gcManager = () => ['admin', 'kol_manager'].includes((U.actor() || {}).role);
+  const gcCanEdit = d => can('deal.edit') && !!d && !R.isCancelled(d);
+  const postLabelOf = (s, p) => { if (!p) return C.gencode.notLinked; const a = (s.kol_accounts || []).find(x => x.account_id === p.account_id); return a ? `${a.platform} @${a.handle}` : p.post_id; };
+  const gcPostOptions = (s, d, v) => `<option value="">${esc(C.gencode.notLinked)}</option>` + R.postsOf(s, d.deal_id).map(p => `<option value="${esc(p.post_id)}"${p.post_id === v ? ' selected' : ''}>${esc(postLabelOf(s, p))}${p.post_date ? ` · ${R.dmy(p.post_date)}` : ''}</option>`).join('');
+  function gencodeSecHTML(s, d) {
+    const G = C.gencode, list = R.gencodesOf(s, d.deal_id), v = R.gencodeValidity(d, today()), edit = gcCanEdit(d), posts = new Map(R.postsOf(s, d.deal_id).map(p => [p.post_id, p]));
+    const live = v.status !== 'expired' ? list.length : 0;
+    const head = `<div class="sec-h"><span>${esc(G.title)} <span class="gc-count">${esc(G.countN(list.length))}</span></span><span class="gc-tools">` +
+      (list.length ? `<button type="button" class="btn small" data-gcact="copyall"${live ? '' : ` disabled title="${esc(G.noneActive)}"`}>${esc(G.copyAll)}</button>` : '') +
+      (edit ? `<button type="button" class="btn small" data-gcact="add">${esc(G.add)}</button>` : '') + `</span></div>`;
+    const start = list.length && Number(d.gencode_expense) > 0 && !d.gencode_start_date && edit ? `<div class="hint">${esc(G.startHint)} · <button type="button" class="link" data-gcact="firstpost">${esc(G.useFirstPost)}</button></div>` : '';
+    const st = `<span class="gc-st ${v.status}">${esc(G.status[v.status])}</span>`;
+    const rows = list.map(g => `<tr data-gc="${esc(g.code_id)}"><td><span class="gc-copy"><span class="gc-code" title="${esc(G.copy)}">${esc(R.shortCode(g.code))}</span>` +
+      `<button type="button" class="icon-btn" data-gcact="copy" data-id="${esc(g.code_id)}" title="${esc(G.copy)}" aria-label="${esc(G.copy)}">📋</button></span></td>` +
+      `<td><span class="gc-type ${g.type}">${esc(G.types[g.type] || g.type)}</span>${g.type === 'other' ? `<span class="gc-warn">${esc(G.unknownFormat)}</span>` : ''}</td><td>${esc(postLabelOf(s, g.post_id ? posts.get(g.post_id) : null))}</td>` +
+      `<td class="nowrap">${esc(R.dmy(R.dateOfTimestamp(g.received_at)))}</td><td class="nowrap" title="${esc(v.until ? '' : G.validNone)}">${esc(v.until ? R.dmy(v.until) : '—')}</td><td>${st}</td>` +
+      `<td class="act">${edit ? `<details class="menu rowmenu"><summary class="icon-btn" aria-label="${esc(C.app.more)}" title="${esc(C.app.more)}">⋯</summary><div class="menu-list right">` +
+        `<button type="button" class="mi" data-gcact="edit" data-id="${esc(g.code_id)}">${esc(G.edit)}</button><button type="button" class="mi danger" data-gcact="delete" data-id="${esc(g.code_id)}">${esc(G.del)}</button></div></details>` : ''}</td></tr>`).join('');
+    const table = list.length ? `<div class="tablewrap"><table class="tbl compact-sm gc-tbl"><thead><tr><th>${esc(G.colCode)}</th><th>${esc(G.colType)}</th><th>${esc(G.colPost)}</th><th>${esc(G.colReceived)}</th><th>${esc(G.colValid)}</th><th>${esc(G.colStatus)}</th><th class="act"></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="hint">${esc(G.none)}</div>`;
+    return `<section class="sec gc-sec" data-secbox="gencodes">${head}${start}${table}</section>`;
+  }
+  const gcCtx = () => { let e = 0, c = 0; const be = store.newEventId(), bc = parseInt(String(store.newId('gencode')).replace(/\D/g, ''), 10) || 1;
+    return { eventId: () => be + e++, codeId: () => 'GC-' + String(bc + c++).padStart(5, '0'), now: new Date().toISOString(), user: userId() }; };
+  const gcAfter = id => { if (dl.id === id && dl.mode === 'view') { renderLeft(); renderPanel(); } };
+  function gencodeClick(e) {
+    const b = e.target.closest('[data-gcact]'); if (!b || b.disabled) return false;
+    const m = b.closest('details'); if (m) m.open = false;
+    const s = state(), d = dealById(dl.id), G = C.gencode, act = b.dataset.gcact; if (!d) return true;
+    if (act === 'add') { openGencodeAdd(b); return true; }
+    if (act === 'copy' || act === 'copyall') {
+      const list = act === 'copy' ? R.gencodesOf(s, d.deal_id).filter(g => g.code_id === b.dataset.id) : R.gencodeValidity(d, today()).status === 'expired' ? [] : R.gencodesOf(s, d.deal_id);
+      if (!list.length) { toast(G.noneActive); return true; }
+      U.copyText(list.map(g => g.code).join('\n')).then(ok => {
+        if (!ok) return;
+        const ctx = gcCtx(); list.forEach(g => s.deal_events.push(R.gencodeEvent(ctx, d.deal_id, 'gencode_copied', g.code)));
+        commit(list.length === 1 ? G.copied : G.copiedAll(list.length));
+      });
+      return true;
+    }
+    if (act === 'edit') { openGencodeEdit(d, b.dataset.id, b); return true; }
+    if (act === 'delete') { deleteGencode(d, b.dataset.id); return true; }
+    if (act === 'firstpost') {   // Gencode start from the first post date (as the Costs form's button)
+      const ds = R.postsOf(s, d.deal_id).map(p => p.post_date || p.expected_post_date).filter(Boolean).sort(), date = ds[0] || d.expected_post_date; if (!date || !guard('deal.edit')) return true;
+      const ctx = { eventId: store.newEventId(), now: new Date(), user: userId() };
+      s.deal_events.push(R.editEvent(d, [{ field: 'gencode_start_date', from: d.gencode_start_date || null, to: date }], ctx, 'cost'));
+      s.deals[s.deals.indexOf(d)] = Object.assign({}, d, { gencode_start_date: date });
+      commit(C.gencode.startSet(R.dmy(date))); gcAfter(d.deal_id); return true;
+    }
+    return true;
+  }
+  /* + Add codes: paste the block → a preview (Code · Type · Post) → Save n codes */
+  function openGencodeAdd(opener) {
+    const s = state(), d = dealById(dl.id), G = C.gencode; if (!d || !guard('deal.edit') || !gcCanEdit(d)) return;
+    let rows = [], dupes = 0;
+    U.createModal({ size: 'M', title: G.title, sub: `${(R.kolById(s, d.kol_id) || {}).display_name || ''} · ${d.deal_id}`, opener, isDirty: () => rows.length > 0, focus: '#gc_text',
+      body: `<div class="field gc-paste"><label for="gc_text">${esc(G.pasteL)}</label><textarea id="gc_text" placeholder="${esc(G.pastePh)}" spellcheck="false" autocomplete="off"></textarea></div><div id="gc_prev"></div>`,
+      foot: [`<div class="checks" id="gc_checks"></div>`, U.cmButtons(G.save(0), 'gc_ok')],
+      onClick: ev => { if (ev.target.closest('#gc_ok')) save(); } });
+    const draw = () => {
+      const p = R.gencodePreview(state(), d, $('gc_text').value); rows = p.rows; dupes = p.dupes;
+      $('gc_prev').innerHTML = rows.length ? `<div class="hint">${esc(G.preview)}</div><div class="tablewrap"><table class="tbl compact-sm gc-tbl gc-prev"><thead><tr><th>${esc(G.colCode)}</th><th>${esc(G.colType)}</th><th>${esc(G.colPost)}</th></tr></thead><tbody>` +
+        rows.map((r, i) => `<tr><td class="gc-code">${esc(R.shortCode(r.code))}</td><td><span class="gc-type ${r.type}">${esc(G.types[r.type])}</span>${r.type === 'other' ? `<span class="gc-warn">${esc(G.unknownFormat)}</span>` : ''}</td>` +
+          `<td><select data-gcpost="${i}" aria-label="${esc(G.colPost)}">${gcPostOptions(state(), d, r.post_id)}</select></td></tr>`).join('') + `</tbody></table></div>` : '';
+      $('gc_checks').innerHTML = dupes ? `<div class="check info">i <span>${esc(G.dupes(dupes))}</span></div>` : '';
+      const ok = $('gc_ok'); if (ok) { ok.textContent = G.save(rows.length); ok.disabled = !rows.length; }
+    };
+    $('gc_text').addEventListener('input', draw);
+    $('gc_prev').addEventListener('change', ev => { const sl = ev.target.closest('[data-gcpost]'); if (sl) rows[+sl.dataset.gcpost].post_id = sl.value || null; });
+    draw();
+    function save() {
+      if (!rows.length) { $('gc_checks').innerHTML = `<div class="check err">✕ <span>${esc(G.nothing)}</span></div>`; return; }
+      const s2 = state(), d2 = dealById(d.deal_id), x = R.addGencodes(s2, d2, rows, gcCtx());
+      R.gencodesAll(s2).push(...x.records); x.events.forEach(ev => s2.deal_events.push(ev));
+      rows = []; U.closeModal(); commit(G.saved(x.records.length) + (dupes ? ` · ${G.dupes(dupes)}` : '')); gcAfter(d.deal_id);
+    }
+  }
+  function openGencodeEdit(d, codeId, opener) {
+    const s = state(), G = C.gencode, g = R.gencodesOf(s, d.deal_id).find(x => x.code_id === codeId); if (!g || !guard('deal.edit')) return;
+    let dirty = false;
+    U.createModal({ size: 'S', title: `${G.edit} · ${R.shortCode(g.code)}`, opener, isDirty: () => dirty, focus: '#gce_code',
+      body: `<div class="fields one">${field('gce_code', G.colCode, `<input id="f_gce_code" data-key="gce_code" class="gc-code" value="${esc(g.code)}" autocomplete="off" spellcheck="false">`, { req: 1 })}` +
+        field('gce_type', G.colType, `<select id="f_gce_type">${R.GENCODE_TYPES.map(t => `<option value="${t}"${t === g.type ? ' selected' : ''}>${esc(G.types[t])}</option>`).join('')}</select>`) +
+        field('gce_post', G.colPost, `<select id="f_gce_post">${gcPostOptions(s, d, g.post_id)}</select>`) + `</div>`,
+      foot: [`<div class="checks" id="gce_checks"></div>`, U.cmButtons(C.common.save, 'gce_ok')], onClick: ev => { if (ev.target.closest('#gce_ok')) save(); } });
+    $('cm_root').addEventListener('input', () => { dirty = true; });
+    $('f_gce_code').addEventListener('input', () => { const t = R.gencodeType($('f_gce_code').value); if (t !== 'other') $('f_gce_type').value = t; });
+    function save() {
+      const s2 = state(), rec = (s2.deal_gencodes || []).find(x => x.code_id === codeId), code = $('f_gce_code').value, v = R.validateGencode(s2, rec, code);
+      $('gce_checks').innerHTML = checksHTML(v, ''); $('f_gce_code').classList.toggle('invalid', v.errs.length > 0); if (v.errs.length) return;
+      Object.assign(rec, { code: R.trim(code), type: $('f_gce_type').value, post_id: $('f_gce_post').value || null });
+      s2.deal_events.push(R.gencodeEvent(gcCtx(), d.deal_id, 'gencode_edited', rec.code));
+      dirty = false; U.closeModal(); commit(G.edited); gcAfter(d.deal_id);
+    }
+  }
+  async function deleteGencode(d, codeId) {
+    const s = state(), G = C.gencode, g = R.gencodesOf(s, d.deal_id).find(x => x.code_id === codeId); if (!g || !guard('deal.edit')) return;
+    if (!(await U.confirmDialog(G.delTitle, G.delBody(R.shortCode(g.code)), G.del, true, C.common.cancel))) return;
+    g.deleted_at = new Date().toISOString();
+    s.deal_events.push(R.gencodeEvent(gcCtx(), d.deal_id, 'gencode_deleted', g.code));
+    commit(G.deleted); gcAfter(d.deal_id);
+  }
   const MISSING_AT = { pic: ['info', 'f_pic'], cta: ['info', 'f_cta'], pillar: ['info', 'f_pillar'], rate_card: ['costs', 'f_rate_card'], payment_term: ['payment', 'f_payment_term'] };
   async function goMissing(k) {
+    if (k === 'gencode') { chooseDealTab('ships'); renderPanel(); const sc = document.querySelector('#drawer_content .gc-sec'); if (sc) sc.scrollIntoView({ block: 'center' }); openGencodeAdd(); return; }   // CR-30 §3.1
     const at = MISSING_AT[k]; if (!at) return;
     chooseDealTab(SEC_TAB[at[0]]);
     if (dl.sec !== at[0]) await startSection(at[0]); else renderPanel();
@@ -1831,6 +1971,6 @@ KT.screens.deals = (function () {
       setTimeout(() => document.querySelectorAll('#dl_body .flash').forEach(el => el.classList.remove('flash')), 5000); }, 300);
   }
 
-  return { render, reset, onSuspend: owner.onSuspend, openOver: openDealModal, isOver: () => !!dl.over, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails, openDealModal,
+  return { render, reset, onSuspend: owner.onSuspend, openOver: openDealModal, isOver: () => !!dl.over, picCell, openPicMenu, openBulkField, startNewSingle, openNewDeal, closeNewDeal, showBatch, openSetDetails, openDealModal, gencodeAdd: () => openGencodeAdd(),
     openMove, currentCampaign: () => dl.f.campaign || '' };
 })();

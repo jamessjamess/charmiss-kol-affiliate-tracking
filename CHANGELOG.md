@@ -2,6 +2,31 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-31 v1.0 · 09/10/2026 — Campaign mix · Deals toolbar · Move stage (วันที่ · Note · Contacted · New address) · แถบ Can’t save
+schema **คงที่ 23** (step_notes รับทุกขั้น `step_<ชื่อ>`) · ตัวเลขเงินเท่าเดิม
+- **By campaign:** Pillar / KOL tier / Platform mix ใต้ Budget vs Actual (รวม = Committed ของ Campaign · ดาวน์โหลด / Excel `*_camp`)
+- **Deals:** view switch segmented เด่น ชิดซ้ายแถว 2 · `Expand all / Collapse all` (Table กลุ่ม · Pipeline Posted / Cancelled / คอลัมน์ว่าง) · จำต่อผู้ใช้ · การ์ด Pipeline: ⋯ ย้ายไปแถว 2 ยอดเงินไม่ตกขอบ
+- **Move stage:** ชื่อวันที่ตามปลายทาง (Draft k done on …) · "Draft k due" · Timeline Due / Done on · ลากเข้า Draft / Approve = dialog เสมอ (Enter = Move) · Note ทุก stage → step_notes + History + Timeline · ย้ายทันทีมี toast `Add note` · Contacted details: Rate / term ว่าง + "Current ฿x" (ว่าง = ไม่เปลี่ยน)
+- **Ship to › + New address** (Move · Mark shipped / Edit shipment · หน้า Shipments แถว Missing) — ต้อง Unlock vault · เข้ารหัส
+- **แถบแดง → "Can’t save on this device — back up before closing":** สาเหตุ = สำเนาก่อนอัปเกรด (`_before_v12/14/15` · `_corrupt`) ค้างใน localStorage จนเต็ม ~5 MB → ย้ายไป IndexedDB (`archive.js`) ตอนเปิดแอป / เมื่อ save เต็ม แล้ว save ซ้ำ · Settings › Data "Using 1.3 MB of ~5 MB" + Largest
+
+## CR-29 (S) · 09/10/2026 — Mark as complete ในหัวแผง Campaign
+- ปุ่มต่อจาก Edit · Add phase: On going ปุ่มรอง · Wrap-up ปุ่มหลัก + "Ended dd/mm · not closed yet" · Close requested = chip (+ Review) · Staff = Request close · ⋯ เหมือนเดิม (+ Withdraw request ของผู้ขอ)
+- แถว Wrap-up ใน Table / Timeline มีลิงก์ Close · Operations: งาน "Close campaign" เมื่อ Wrap-up เกิน 7 วัน (due = End date + 7)
+
+## CR-30 v1.0 · 09/10/2026 — Gencodes · Other fee · Next expected · New KOL
+schema **22 → 23** (deal_gencodes · deals.other_fee / other_fee_note · username) · ตัวเลขเงินเดิมไม่เปลี่ยน (Other fee = 0)
+- **Gencodes:** Deal modal › Shipments & posts › วางหลายโค้ดพร้อมกัน (แยกชนิด TikTok Spark / Meta อัตโนมัติ · ซ้ำข้าม) · แสดงย่อ + Copy / Copy all · Valid until · Missing "Gencode" · Operations "Collect gencode" · วางตอน Move to Post ได้ · Export Gencodes (Manager / Admin)
+- **Other fee** (+ note บังคับ) ใน Costs / Confirm QT / New deal · รวมใน Total cost · ✎ Costs ไม่มีการ์ด budget ซ้ำ
+- **Next expected:** Brief = Expected script (optional) ก่อน · Draft 1 * · Expected Draft 2 / 3 optional · "Note for history" · Draft rounds บรรทัดเดียว
+- **New KOL:** KOL / Affiliate · Platform / Profile link / Username (ดึงจากลิงก์) บังคับ · Contact แถวเดียว · error หลังกด Create · Payee & shipping เข้า vault (ต้อง Unlock)
+
+## CR-29 v1.1 · 09/10/2026 — KPI cards · Budget vs Actual สั้นลง · Platform mix · Wrap-up / Mark campaign complete · Timeline toolbar
+schema **21 → 22** (campaigns + closed_at · closed_by · close_note · reopened_* · close_request) · ตัวเลขเงินเท่าเดิม
+- **Dashboard:** KPI 4 ใบโครงเดียว (ค่า · bar 6px ตรงแนว · caption 1 บรรทัด · เงินย่อ ฿5.46M) · ตัด Next to end · Budget vs Actual บน 1 บรรทัด / ล่าง 1 บรรทัด + ⓘ · ป้ายเดือน −฿143K / +฿4K · Campaign timeline "n posts not shown ⓘ" · + **Platform mix** (3 การ์ดเท่ากัน · Export sheet)
+- **Campaign status:** เลย End date = **Wrap-up** · **Complete ต้องปิด** (⋯ › Mark as complete → checklist งานค้าง · Close note · ยกเลิก deal ก่อน Confirm QT) · Staff ขอ (Approvals › Close campaign) · Manager / Admin ปิดได้เลย · Reopen (เหตุผล) · ปิดแล้วเพิ่ม deal / Adjust budget ไม่ได้ · migrate: Complete เดิมที่จบแล้ว = ปิดโดย system
+- **Campaign & Phase toolbar:** แถว 2 = status tabs ซ้าย · Month | Quarter | Fit · Today · Sort · Expand / Collapse ขวา · No products ใต้ชื่อ
+
 ## CR-28 v1.1 · 09/10/2026 — Deal modal: tab bar เสมอ · ทางเปิดเดียว `openDealModal`
 schema **คงที่ 21** · tests **670**
 - **บั๊ก:** tab bar เป็น scroll container ใน flex column → ถูกบีบเหลือ 7–10px เมื่อมีแถบ Missing / คำเตือน (ภาพ "ไม่มี tab" = บั๊กเดียวกัน) · แก้: ไม่หด · min-height 44 · sticky ใต้ header · พื้นทึบ · แถบเตือนอยู่ใน flow · modal ขนาดคงที่

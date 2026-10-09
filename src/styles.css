@@ -15,6 +15,8 @@
   --pl-aw:#2a78d6; --pl-ac:#008300; --pl-co:#e87ba4; --pl-cv:#eda100; --series-grey:#B4B2A9;
   --band:#8d95a3; --g-list:#5F5E5A; --g-list-bg:#F1EFE8; --g-prog:#2a78d6; --g-prog-bg:#E6F0FB; --g-done:#0f7a52; --g-done-bg:#E3F5EC; --g-cancel:#c23b3a; --g-cancel-bg:#FCE9E9;
   --tier-mega:#4a3aa7;  --tier-macro:#2a78d6; --tier-mid:#1baf7a; --tier-micro:#eb6834; --tier-nano:#eda100;
+  --st-wrap:#e8732c; --st-wrap-bg:#fff1e7; --st-wrap-text:#b93815;   /* CR-29 Wrap-up (light orange) */
+  --pf-1:#101828; --pf-2:#2b3546; --pf-3:#475165; --pf-4:#636d81; --pf-5:#7f899b; --pf-6:#9aa3b2; --pf-7:#b0b7c3;   /* CR-29 Platform mix: one ink ramp (the Tier card beside it has the colours) */
   --series-kol:#2a78d6; --overlay:rgba(16,24,40,.32); --shadow-lg:0 12px 32px rgba(16,24,40,.16); --row-hover:#f9fafb; --row-sel:#fdf2f6;
 }
 :root[data-theme="dark"]{
@@ -30,6 +32,8 @@
   --pl-aw:#3987e5; --pl-ac:#008300; --pl-co:#d55181; --pl-cv:#c98500; --series-grey:#5F5E5A;
   --band:#6b7383; --g-list:#B4B2A9; --g-list-bg:#2C2C2A; --g-prog:#3987e5; --g-prog-bg:#14263D; --g-done:#199e70; --g-done-bg:#12291F; --g-cancel:#e66767; --g-cancel-bg:#3A1A1A;
   --tier-mega:#9085e9;  --tier-macro:#3987e5; --tier-mid:#199e70; --tier-micro:#d95926; --tier-nano:#c98500;
+  --st-wrap:#f08a4b; --st-wrap-bg:#3a2214; --st-wrap-text:#fdba8c;
+  --pf-1:#f2f4f7; --pf-2:#d3d8e0; --pf-3:#b4bbc7; --pf-4:#97a0ae; --pf-5:#7b8495; --pf-6:#626b7b; --pf-7:#4c5463;
   --series-kol:#3987e5; --overlay:rgba(0,0,0,.55); --shadow-lg:0 12px 32px rgba(0,0,0,.5); --row-hover:#1c2129; --row-sel:#2b1d25;
 }
 *{box-sizing:border-box}
@@ -2337,4 +2341,138 @@ td.act,th.act{width:36px;padding-left:2px;padding-right:2px;text-align:center}
 .drawer.dm .dm-tab{position:relative;z-index:1}
 @media (min-width:768px){.drawer-wrap.dmodal .drawer.dm{width:min(1400px,94vw);height:92vh;max-height:92vh}}   /* one size, whatever tab or deal */
 .dm-focus{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px;background:var(--accent-soft);transition:background .3s}
+/* ===================== CR-29 — KPI cards · Budget vs Actual · Platform mix · Wrap-up · Close campaign · Timeline toolbar ===================== */
+/* §3.5 Wrap-up: light orange (solid — On hold is the striped orange) */
+.st.wrap{background:var(--st-wrap-bg);color:var(--st-wrap-text)}
+.gbar.wrap_up{background:var(--st-wrap);opacity:.85}
+.gbar.span.wrap_up{background:color-mix(in srgb,var(--st-wrap) 30%,var(--surface))}
+.gt-legend i.gl-wrap_up{background:var(--st-wrap);opacity:.85}
+.st.cr-chip{font-size:11px;margin-left:4px}
+/* §3.1 one KPI card: 4 rows on one grid with the other cards (subgrid) — the bars on one line, every card the same height */
+#ov_body .kpis.kc4{grid-auto-rows:auto;row-gap:16px}
+main[data-cw="s"] #ov_body .kpis.kc4,main[data-cw="m"] #ov_body .kpis.kc4{grid-template-columns:repeat(2,minmax(0,1fr))}   /* §3.1: 2×2 on a phone (the bars still line up in a row) */
+@media (max-width:767px){#ov_body .kpis.kc4{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:10px}#ov_body .kpis.kc4>.kpi.kc{padding:12px}#ov_body .kpis.k4.kc4 .kpi .v{font-size:19px}}
+#ov_body .kpis.kc4>.kpi.kc{display:grid;grid-row:span 4;grid-template-rows:subgrid;row-gap:6px;min-height:0;align-items:start}
+.kpi.kc .l{min-height:20px}
+.kpi.kc .v{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;row-gap:0;align-self:end}
+.kpi.kc .v small{font-size:13px;font-weight:400;color:var(--muted)}
+.kpi.kc .kbar{display:flex;gap:2px;height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden;align-self:center}
+.kpi.kc .kbar i{display:block;height:100%;flex:none}
+.kpi.kc .kbar i.ok{background:var(--ok)} .kpi.kc .kbar i.ok.over{background:var(--err)}
+.kpi.kc .kbar i.pend{background:color-mix(in srgb,var(--ok) 30%,var(--surface-3))}
+.kpi.kc .kbar i.com{background:var(--st-prog)} .kpi.kc .kbar i.lst{background:color-mix(in srgb,var(--st-prog) 28%,var(--surface-3))}
+.kpi.kc .kbar i.ks.ongoing,.cap .dot.ongoing{background:var(--st-prog)}
+.kpi.kc .kbar i.ks.wrap_up,.cap .dot.wrap_up{background:var(--st-wrap)}
+.kpi.kc .kbar i.ks.not_started,.cap .dot.not_started{background:color-mix(in srgb,var(--muted) 55%,var(--surface))}
+.kpi.kc .kbar i.ks.complete,.cap .dot.complete{background:color-mix(in srgb,var(--st-done) 60%,var(--surface))}
+.kpi.kc .kbar i.ks.pending,.cap .dot.pending{background:repeating-linear-gradient(135deg,var(--warn) 0 3px,var(--warn-soft) 3px 6px)}
+.kpi.kc .kbar i.ks.on_hold,.cap .dot.on_hold{background:repeating-linear-gradient(135deg,var(--warn) 0 3px,var(--warn-soft) 3px 6px)}
+.kpi.kc .kbar i.ks.cancelled,.cap .dot.cancelled{background:var(--series-grey)}
+.kpi.kc .cap{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;line-height:18px}
+.kpi.kc .cap .cd{white-space:nowrap}
+.kpi.kc .cap .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:0}
+.kpi.kc .cap .late{color:var(--err)}
+/* §3.2 Budget vs Actual: the legend on the head row beside Monthly / Cumulative (under it when narrow) · one line on top · one line under */
+.bva-card .card-head{flex-wrap:wrap;row-gap:6px}
+.bva-card .card-head .bva-legend{margin:0 0 0 auto;font-size:12px;display:flex;flex-wrap:wrap;gap:4px 12px;min-width:0;max-width:100%}
+@media (max-width:767px){.bva-card .card-head .bva-legend{margin:0;flex:1 1 100%;order:3}}
+.bva-card .card-head .btns{flex:1 1 auto;min-width:0;justify-content:flex-end;flex-wrap:wrap}
+@media (max-width:767px){.bva-card .card-head .btns{flex:1 1 100%;justify-content:flex-start}}
+.bva-card .bva-sum{display:block;font-size:13px;color:var(--text-2);margin:-4px 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bva-tdl{text-decoration:underline dotted;text-underline-offset:3px;cursor:help;font-weight:600;color:var(--text)}
+.bva-onplan{color:var(--muted);font-weight:600}
+.bl-sign b{font-weight:700}
+.bva-card .foot-note.bva-foot,.foot-note.bva-foot{display:flex;flex-direction:row;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding-top:6px}
+.chartbox .axis.bva-st.behind{fill:var(--warn)} .chartbox .axis.bva-st.over{fill:var(--err)}   /* the month numbers in their colour (CSS beats the fill attribute) */
+.bva-foot:empty{display:none}
+.tbl tr.sumrow td{color:var(--text-2);font-style:italic;border-top:1px dashed var(--border)}
+/* §3.3 the Campaign timeline: one line under it */
+#ov_tlfoot{display:flex;align-items:center;gap:4px}
+#ov_tlfoot:empty{display:none}
+/* §3.4 the mix row: 3 equal cards (Pillar · KOL tier · Platform) */
+.ov-r4.r3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1279px){.ov-r4.r3{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-r4.r3>.card:last-child{grid-column:1 / -1}}
+@media (max-width:1023px){.ov-r4.r3{grid-template-columns:minmax(0,1fr)}.ov-r4.r3>.card:last-child{grid-column:auto}}
+main[data-cw="m"] .ov-r4.r3,main[data-cw="s"] .ov-r4.r3{grid-template-columns:minmax(0,1fr)}
+main[data-cw="m"] .ov-r4.r3>.card:last-child,main[data-cw="s"] .ov-r4.r3>.card:last-child{grid-column:auto}
+.fmix .tm-leg .pfi{width:14px;height:14px;display:inline-flex;color:var(--text-2)}
+.fmix .tm-leg .pfi svg{width:14px;height:14px;fill:currentColor}
+.pf-note{margin-top:8px}
+/* §3.5 Close campaign */
+.cl-dlg .cl-h{font-weight:600;margin:8px 0 4px}
+.cl-list{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.cl-list li.open{color:var(--warn)} .cl-list li.done{color:var(--muted)} .cl-list li.money{color:var(--text-2);margin-top:2px}
+.cl-list li .link{font-weight:600}
+.cl-early{display:flex;gap:6px;align-items:flex-start;margin-top:8px}
+.cl-confirm{display:flex;flex-direction:column;font-size:13px;min-width:0}
+.check.ok{background:var(--ok-soft);color:var(--ok)}
+.cl-tbl tr.cl-open td{color:var(--warn)}
+/* §3.6 the toolbar: row 1 filters · row 2 the status tabs (left) and the view tools (right: Month | Quarter | Fit · Today · Sort · Expand / Collapse) */
+.cp-tabsrow{flex-wrap:wrap;row-gap:6px;margin-bottom:12px;border-bottom:1px solid var(--border)}
+.cp-tabsrow .stabs{border-bottom:0;margin-bottom:0}
+.cp-r2tools{display:inline-flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-left:auto}
+.cp-r2tools .cp-sortbox{flex-wrap:nowrap}
+@media (max-width:767px){.cp-tabsrow{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}.cp-tabsrow .stabs{flex:none;overflow:visible}.cp-r2tools{flex:none}}
+/* the name keeps its line — No products on a small line under it */
+.nmc{min-width:0;flex:0 1 auto}
+.nm-sub{display:block;margin-top:2px;line-height:1}
+.nm-sub .nopchip{font-size:10.5px;line-height:15px;padding:0 6px}
+/* ===================== CR-30 — Gencodes · Other fee · Next expected · New KOL ===================== */
+.gc-sec .gc-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.gc-tbl td{vertical-align:middle}
+.gc-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px;white-space:nowrap}
+.gc-copy{display:inline-flex;align-items:center;gap:4px}
+.gc-st{display:inline-block;font-size:11px;font-weight:600;line-height:18px;padding:0 8px;border-radius:999px;white-space:nowrap}
+.gc-st.active{background:var(--ok-soft);color:var(--ok)} .gc-st.expiring{background:var(--warn-soft);color:var(--warn)} .gc-st.expired{background:var(--surface-2);color:var(--muted)}
+.gc-type{font-size:12px;color:var(--text-2);white-space:nowrap}
+.gc-type.other{color:var(--muted)}
+.gc-paste textarea{min-height:120px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12.5px}
+.gc-prev select{width:auto;min-width:150px;max-width:100%}
+.gc-warn{color:var(--muted);font-size:11px;display:block}
+.gc-count{font-size:12px;color:var(--muted);white-space:nowrap}
+.mv-foot1{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* New KOL: two columns (who · details) and Payee & shipping under them */
+.nk-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 20px;align-items:start}
+.nk-col{display:flex;flex-direction:column;gap:2px;min-width:0}
+@media (max-width:767px){.nk-grid{grid-template-columns:minmax(0,1fr)}}
+.nk-contact{display:flex;gap:6px}
+.nk-contact select{flex:0 0 auto;width:auto;min-width:110px}
+.nk-contact input{flex:1 1 auto;min-width:0}
+.nk-vault{margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:0}
+.nk-vault>summary{list-style:none;cursor:pointer;padding:10px 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+.nk-vault>summary::-webkit-details-marker{display:none}
+.nk-vault .nk-vb{padding:0 12px 12px}
+.nk-vault .nk-lock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text-2);font-size:13px}
+.nk-vault h4{margin:10px 0 4px;font-size:13px}
+.nk-helper{font-size:11px;color:var(--muted)}
+/* CR-29 §3.5 (S) — the close in the Campaign header · the Close link on a Wrap-up row */
+.dr-actions{flex-wrap:wrap;align-items:center}
+.dr-actions .cl-ended{white-space:nowrap}
+.dr-actions .cr-chip{font-size:12px;margin-left:0}
+.cl-link{font-size:12px;margin-left:4px}
+/* ===================== CR-31 — Campaign mix · Deals toolbar · Move stage dialog ===================== */
+.tl-note{font-size:12px;color:var(--text-2);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#toast .tact+.tact{margin-left:4px}
+/* §2.2 the Deals view switch: a strong segmented control at the start of row 2 · Expand all / Collapse all at the far right */
+.dl-row2{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 8px}
+.dl-row2 .dl-row3{flex:1 1 auto;min-width:0;margin:0}
+.seg.dl-viewseg{flex:none}
+.seg.dl-viewseg button{font-weight:700;color:var(--text);padding:6px 14px}
+.seg.dl-viewseg button.on{background:var(--text);color:var(--bg)}
+.dl-gall{margin-left:8px;white-space:nowrap}
+@media (max-width:767px){.dl-row2{gap:8px}.seg.dl-viewseg{width:100%}.seg.dl-viewseg button{flex:1}}
+/* §2.3 Ship to › + New address (in place) */
+.ai-box{margin-top:6px;border:1px dashed var(--border-strong);border-radius:8px;padding:8px 10px}
+.ai-box .ai-h{font-weight:600;font-size:13px;margin-bottom:4px}
+.ai-box.nk-lock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text-2);font-size:13px}
+.ai-box .ai-pass{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ai-box .ai-pass input{width:180px;max-width:100%}
+.ai-slot:empty{display:none}
 
+/* CR-31 — Pipeline card: ⋯ at the end of row 2, so row 1 is the name + the amount (a long one-word name wraps · the amount always shows in full) ·
+   a card never squeezes in a long column (its min-height turned the content minimum off) */
+.dcard .r1 b.nm{min-width:0}
+.dcard .r1 .amt{flex:0 0 auto}
+.dcard .r2 .r2r{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+.bc-b>.dcard{flex-shrink:0}
+.sh-addr [data-shnewaddr]{display:block;padding:0;margin-top:2px}   /* CR-31: + New address under "Missing" (the column stays narrow) */

@@ -51,7 +51,7 @@ KT.golive = (function () {
   function settingsClick(e, after) {
     if (e.target.closest('[data-glstart]')) { open(e.target.closest('[data-glstart]'), after); return true; }
     if (e.target.closest('[data-glundo]')) { undo(after); return true; }
-    if (e.target.closest('[data-glbefore]')) { const t = store.beforeCopy(); if (t) U.download(`KOL-tracker-before-upgrade-v${(() => { try { return JSON.parse(t).schema_version; } catch (e) { return ''; } })()}.json`, t, 'application/json'); return true; }
+    if (e.target.closest('[data-glbefore]')) { store.beforeCopyAnywhere().then(t => { if (t) U.download(`KOL-tracker-before-upgrade-v${(() => { try { return JSON.parse(t).schema_version; } catch (e) { return ''; } })()}.json`, t, 'application/json'); }); return true; }   // CR-31: it may be in IndexedDB now
     return false;
   }
 

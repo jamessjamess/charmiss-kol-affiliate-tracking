@@ -179,7 +179,7 @@ KT.planner = (function () {
     const c = pl.camp, isNew = pl.mode === 'new', locked = budgetLocked();
     const budgetField = locked
       ? `<div class="field wide"><label>${esc(CK.fCampaignBudget)}</label><div class="ro-budget"><b>${R.isBlank(c.budget_kol) ? '—' : R.baht(R.money(c.budget_kol))}</b>${KT.budget.pendingTagHTML(pl.campaignId)}` +
-        `${KT.budget.canAdjust() && (campNow() || {}).status_override !== 'cancelled' ? ` <button type="button" class="btn small" data-pladjust>${esc(CK.adjustBudget)}</button>` : ''}</div><div class="hint">${esc(C.budget.readOnlyHint)}</div></div>`
+        `${KT.budget.canAdjust() && (campNow() || {}).status_override !== 'cancelled' && !R.isClosed(campNow()) ? ` <button type="button" class="btn small" data-pladjust>${esc(CK.adjustBudget)}</button>` : ''}</div><div class="hint">${esc(C.budget.readOnlyHint)}</div></div>`
       : field('budget_kol', CK.fCampaignBudget, `<input class="numin" inputmode="numeric" id="f_budget_kol" data-c="budget_kol" data-key="budget_kol" value="${esc(R.money(c.budget_kol) != null ? R.fmtNum(R.money(c.budget_kol)) : c.budget_kol)}" placeholder="0" autocomplete="off">`, { req: 1, wide: 1, hint: esc(CK.campaignBudgetHint) });
     const campaign = `<div class="fields">
         ${field('campaign_name', CK.fName, `<input id="f_campaign_name" data-c="campaign_name" data-key="campaign_name" value="${esc(c.campaign_name)}" placeholder="${esc(CK.namePh)}" autocomplete="off">`, { req: 1, wide: 1 })}

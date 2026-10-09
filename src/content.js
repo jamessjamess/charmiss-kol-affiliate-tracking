@@ -133,7 +133,7 @@ KT.content = (function () {
       dateNotRecorded: 'Date not recorded', noRate: 'No rate on file', noPaid: 'No paid deals yet', note: n => `Note: ${n}`,
       deals: n => `${n} deal${n === 1 ? '' : 's'}`, freeExcluded: n => `${n} free job${n === 1 ? '' : 's'} excluded`,
       info: { h: 'Average of past deals', d: 'Average of agreed prices (Confirm QT onward). Free jobs, ฿0 jobs and cancelled deals are excluded.' },
-      rows: { rate_card: 'Rate card', gencode_expense: 'Gencode', basket_fee: 'Basket fee', asset_fee: 'Asset fee', expediting_fee: 'Expediting fee', total: 'Total' },
+      rows: { rate_card: 'Rate card', gencode_expense: 'Gencode', basket_fee: 'Basket fee', asset_fee: 'Asset fee', expediting_fee: 'Expediting fee', other_fee: 'Other', total: 'Total' },
       replaceTitle: 'Replace current costs?', replaceBody: 'ค่าที่กรอกไว้จะถูกแทนด้วยค่าจากคอลัมน์นี้ (แก้ต่อได้)', replace: 'Replace',
       freeTip: 'Payment term is Free — nothing to fill',
       summaryLatest: x => `Latest rate ${x}`, summaryAvg: (x, n) => `Average ${x} (${n} deal${n === 1 ? '' : 's'})`,
@@ -573,7 +573,7 @@ KT.content = (function () {
 
     kol: {
       title: 'KOL Master', count: (k, a) => `${k} KOLs · ${a} accounts`, countOf: (n, t) => `${n} of ${t} KOLs`,
-      search: 'Search name or @handle', platform: 'Platform', tier: 'Tier', allPlatforms: 'All platforms', allTiers: 'All tiers',
+      search: 'Search name or username', platform: 'Platform', tier: 'Tier', allPlatforms: 'All platforms', allTiers: 'All tiers',
       filters: 'Filters', any: 'Any', clearAll: 'Clear all', remove: 'Remove',
       defaultTerm: 'Default payment term', term: 'Payment term', chooseTerm: 'Choose a term', termFromKol: "From this KOL's default",
       saveAsDefault: "Save as this KOL's default", saveAsTheirDefault: 'Save as their default', termFallback: 'Payment term for KOLs without one',
@@ -603,7 +603,7 @@ KT.content = (function () {
       newTitle: 'New KOL', editTitle: x => `Edit ${x}`, merge: 'Merge with another KOL…',
       fName: 'Name', namePh: 'Name the team uses', choose: 'Choose', reason: 'Status reason', reasonPh: 'e.g. missed the brief several times',
       addAccount: '+ Add account', accountN: n => `Account ${n}`, removeAccount: 'Remove', cannotDeleteAccount: n => `มีโพสต์ผูกอยู่ ${n} โพสต์ ลบไม่ได้`,
-      legacyHint: 'This imported account is incomplete — if you change it, fill in every field', fLink: 'Profile link', fHandle: 'Handle', handlePh: 'Filled from the link',
+      legacyHint: 'This imported account is incomplete — if you change it, fill in every field', fLink: 'Profile link', fHandle: 'Username', handlePh: 'Taken from the profile link',
       sourceManual: 'Added in KOL Tracker', saved: id => `บันทึก ${id} แล้ว`,
       /* rate dialog */
       quoteTitle: name => `Add rate · ${name}`, noAccount: 'No specific account', quoteSourceDefault: 'Manual', rateSaved: id => `เพิ่มราคา ${id} แล้ว`, addRateOk: 'Add rate',
@@ -723,7 +723,7 @@ KT.content = (function () {
       importRules: 'Followers only go up · existing values are never overwritten (contact ID too) · old files with rates still create a rate record',
       importIgnoredCol: c => `Ignored column: ${c}`,
       importKind: { match: 'Matches account', new_account: 'New account', new_kol: 'New KOL', error: 'Cannot import' },
-      importConfirmCol: 'Confirm', importRow: 'Row', cName: 'Name', cPlatform: 'Platform', cHandle: 'Handle', cFollowers: 'Followers', cRate: 'Rate card', cNotes: 'Notes',
+      importConfirmCol: 'Confirm', importRow: 'Row', cName: 'Name', cPlatform: 'Platform', cHandle: 'Username', cFollowers: 'Followers', cRate: 'Rate card', cNotes: 'Notes',
       importSummary: (m, a, k, e) => `Matches ${m} · New accounts ${a} · New KOLs ${k} · Cannot import ${e}`,
       importTick: 'Tick each "New account" row to confirm (name matches an existing KOL on a new platform)',
       importApply: 'Import', importNoRows: 'No data rows in this file',
@@ -769,8 +769,8 @@ KT.content = (function () {
       blockedRights: 'Only the PIC can move this deal', setTermFor: n => `Set payment term for ${n}`,
       sd: { title: n => `Set details · ${n} deal${n === 1 ? '' : 's'}`, hint: 'Only the ticked fields change; the others stay as they are.', apply: n => `Apply to ${n}`,
         nothing: 'Tick at least one field', done: n => `อัปเดตรายละเอียด ${n} deals แล้ว` },
-      ck: { title: 'Create KOL', sub: 'A new KOL in KOL Master — then back to the new deal', back: 'Back to the new deal', name: 'Name', platform: 'Platform', handle: 'Handle',
-        handleHint: 'Without @', followers: 'Followers', profileLink: 'Profile link', type: 'Type', category: 'Category', gender: 'Gender', contact: 'Contact',
+      ck: { title: 'Create KOL', sub: 'A new KOL in KOL Master — then back to the new deal', back: 'Back to the new deal', name: 'Name', platform: 'Platform', handle: 'Username',
+        handleHint: 'No @ — e.g. 3decox', followers: 'Followers', profileLink: 'Profile link', type: 'Type', category: 'Category', gender: 'Gender', contact: 'Contact',
         pic: 'PIC', term: 'Default payment term', termHint: 'Used for this deal too', choose: 'Choose', notSet: 'Not set', create: 'Create KOL',
         already: (n, h) => `Already in KOL Master: ${n}${h ? ` (@${h})` : ''}`, useThis: 'Use this KOL', createAnyway: 'Create anyway', created: n => `KOL created: ${n}` },
     },
@@ -1001,8 +1001,8 @@ KT.content = (function () {
       kolBlacklistReason: 'สถานะ Blacklist ต้องใส่เหตุผล',
       kolNameDup: id => `A KOL with this name exists (${id}) — if it is the same person, add the account there or merge later`,
       accPlatform: n => `Account ${n}: choose the platform`,
-      accHandle: n => `Account ${n}: enter the handle`,
-      accHandleFormat: n => `Account ${n}: a handle has no spaces and no @ in front`,
+      accHandle: n => `Account ${n}: enter the username`,
+      accHandleFormat: n => `Account ${n}: a username has no spaces and no @ in front`,
       accLink: n => `Account ${n}: enter the profile link`,
       accLinkFormat: n => `Account ${n}: use one link that starts with https://`,
       accFollowers: n => `Account ${n}: enter the followers`,
@@ -1461,7 +1461,7 @@ KT.content = (function () {
   Object.assign(C.bulk, { createNewKol: q => `Create "${q}" as new KOL`, noKolMatch: q => `No KOLs match "${q}"`, clearOther: 'Clear other filters', ctaAll: 'CTA', methodAll: 'Sample method' });
   Object.assign(C.deal, {
     tabs2: { overview: 'Overview', costs: 'Costs & payment', timeline: 'Timeline & content', ships: 'Shipments & posts', history: 'History' },
-    missing: 'Missing:', missingKey: { pic: 'Assigned to', cta: 'CTA', rate_card: 'Rate card', pillar: 'Pillar', payment_term: 'Payment term' }, assign: 'Assign',
+    missing: 'Missing:', missingKey: { pic: 'Assigned to', cta: 'CTA', rate_card: 'Rate card', pillar: 'Pillar', payment_term: 'Payment term', gencode: 'Gencode' }, assign: 'Assign',
     cardDeal: 'Deal', cardMoney: 'Money', cardNext: 'Next', nextStep: 'Next step', nextDue: 'Due', postDueL: 'Post due', shipmentL: 'Shipment', payStatus: 'Payment status',
     colStep: 'Step', colExpected: 'Expected', colDone: 'Done', colLinks: 'Links / notes', noNext: 'Nothing next',
   });
@@ -1599,5 +1599,97 @@ KT.content = (function () {
   });
   Object.assign(C.overview.sheet, { budgetactual: 'Budget vs Actual', workload: 'Team workload' });
   Object.assign(C.overview.file, { budgetactual: 'Budget_vs_Actual', budgetactual_camp: 'Budget_vs_Actual', workload: 'Team_workload' });
+  /* CR-29 — KPI cards (one layout) · Budget vs Actual (one line on top, one under) · Platform mix · Wrap-up · Mark campaign complete · Timeline toolbar */
+  C.phaseStatus.wrap_up = 'Wrap-up';
+  C.campaign.legend.wrapUp = 'Wrap-up (past End date, not closed)';
+  C.msg.campaignClosedNew = n => `${n} is complete — no new deals`;
+  Object.assign(C.overview, {
+    kc: {
+      used: (pct, left, pend) => `${pct}% used · ${left} left · ${pend} pending`, over: (pct, over, pend) => `${pct}% used · ${over} over · ${pend} pending`,
+      noBudget: pend => `No budget · ${pend} pending`, paid: (pct, out) => `${pct}% of committed · ${out} outstanding`, partners: 'partners',
+      engaged: (c, all, avg) => `${c} of ${all} deals committed · Avg ${avg}`, engagedTypes: (types, avg) => `${types} · Avg ${avg}`,
+      engagedBar: (c, l) => `Committed deals ${c} · In List ${l} (Shortlist / Contacted, not committed yet)`,
+    },
+    notShown: n => `${n} posts not shown`, notShownH: 'Posts not shown on the chart', outsidePeriodFaded: n => `${n} post${n === 1 ? '' : 's'} outside the campaign period (faded on the chart)`,
+    platformTitle: 'Platform mix', pfMixTip: 'Committed deals (Confirm QT on, not cancelled) by the platform of the account the deal posts on. No post with an account = Not set.',
+    platformLabel: 'Platform', platformSlice: (p, money, n, pct) => `${p} · ${money} · ${n} deal${n === 1 ? '' : 's'} · ${pct}%`,
+    platformMulti: n => `${n} deal${n === 1 ? ' posts' : 's post'} on more than one platform — counted under the account its tier comes from (the most followers)`,
+  });
+  Object.assign(C.overview.bva, {
+    toDateL: 'To date', toDateLine: (p, b, pct) => `${p} of ${b} (${pct}%)`, onPlan: 'On plan', restShort: (l, u, b) => `${l}: ${u} upcoming of ${b} planned`,
+    notOnChart: a => `${a} not on chart`, notOnChartH: 'Not on the chart',
+  });
+  Object.assign(C.overview.bva.legend, { behind: 'behind', over: 'over budget' });
+  Object.assign(C.overview.sheet, { platformmix: 'Platform mix' });
+  Object.assign(C.overview.file, { platformmix: 'Platform_mix', tiermix_camp: 'KOL_tier_mix', pillarmix_camp: 'Pillar_mix', platformmix_camp: 'Platform_mix' });
+  Object.assign(C.request, { fCloseNote: 'Close note', fCancelOpen: 'Cancel open deals before Confirm QT', no: 'No' });
+  C.approval.types.close = 'Close campaign';
+  Object.assign(C.approval.hist, { close_requested: 'Close requested', close_cancelled: 'Request cancelled' });
+  Object.assign(C.approval, { secClose: 'Close campaign', secOpen: 'Still open', colItem: 'Item', colAtSend: 'When sent', colNow: 'Now', kCommitted: 'Committed', kPaid: 'Paid', kCloseNote: 'Close note', kCancelOpen: 'Cancel open deals before Confirm QT' });
+  C.close = {
+    markComplete: 'Mark as complete', reopen: 'Reopen campaign', title: n => `Close campaign · ${n}`,
+    intro: 'Closing makes the campaign Complete. Its deals can still be paid, shipped and get metrics — no new deal can be added and the budget can’t be adjusted.',
+    openH: 'Still open', nothingOpen: 'Nothing open — every deal, payment, shipment and metric is done', warnOnly: 'These don’t block closing — say who follows them up in the note',
+    openDeals: n => `Open deals (not posted, not cancelled) · ${n}`, pay: (n, a) => `Payments to pay / sent · ${n} (${a})`, ships: n => `Shipments not delivered · ${n}`,
+    metrics: n => `Posts missing metrics · ${n}`, committed: (c, b, p) => `Committed ${c} of ${b} (Used ${p})`, committedNoBudget: c => `Committed ${c} · no budget`,
+    note: 'Close note', notePh: 'What is still open and who follows it up', noteRequired: 'Add a close note — something is still open', noteOptional: '(optional)',
+    cancelEarly: n => `Cancel ${n} open deal${n === 1 ? '' : 's'} that haven’t reached Confirm QT (Shortlist / Contacted)`, cancelDetail: 'Campaign closed',
+    requestClose: 'Request close', closeNow: 'Close campaign', saveDraft: 'Save draft',
+    confirmTitle: n => `Close ${n} now?`, confirmBody: 'The campaign becomes Complete now.',
+    staffHint: 'A KOL Manager or Admin approves the close (Approvals)', requested: 'Close requested', requestedTip: (n, d) => `Close requested by ${n} · ${d}`,
+    requestedToast: n => `ส่งคำขอปิด ${n} แล้ว — รอ Approve`, draftToast: n => `บันทึก draft คำขอปิด ${n} แล้ว`, closedToast: n => `ปิด ${n} แล้ว (Complete)`, reopenedToast: n => `เปิด ${n} อีกครั้งแล้ว`,
+    reopenTitle: n => `Reopen ${n}`, reopenBody: 'The campaign goes back to its status by date (On going / Wrap-up). New deals and Adjust budget work again.',
+    reason: 'Reason', reasonRequired: 'Add a reason', closedLine: (who, d) => `Complete · closed by ${who} · ${d}`, reopenedLine: (who, d, r) => `Reopened by ${who} · ${d} · ${r}`,
+    isComplete: 'Campaign is complete', alreadyRequested: 'A close request is already waiting for approval', noBudgetAdjust: 'A complete campaign’s budget can’t be adjusted',
+    items: { openDeals: 'Open deals', pay: 'Payments to pay / sent', ships: 'Shipments not delivered', metrics: 'Posts missing metrics', committed: 'Committed (Used)', none: 'Nothing open', some: 'Some work still open' },
+    system: 'system', edit: 'Edit request', cancelledN: n => `ยกเลิก ${n} deals ที่ยังไม่ Confirm QT แล้ว`,
+  };
+  /* CR-30 — Gencodes · Other fee · Next expected · New KOL */
+  Object.assign(C.deal.f, { other_fee: 'Other fee', other_fee_note: 'Other fee note' });
+  C.deal.otherFeePh = 'What is this for?';
+  C.move.noteHistory = 'Note';   // CR-30 §3.3 · CR-31 §2.5: one Note a move (the step's note)
+  /* CR-31 — the dates say what they are · Contacted details · Add note after a move at once · the storage line */
+  Object.assign(C.move, {
+    dateFor: { contacted: 'Contacted on', qt: 'QT confirmed on', brief: 'Brief sent on', script: 'Script approved on', draft: k => `Draft ${k} done on`, approve: 'Approved on', post: 'Posted on' },
+    expDraft: n => `Draft ${n} due`, expScript: 'Script due', expApprove: 'Approve due',
+    secContacted: 'Contacted details', currentRate: x => `Current ${x}`, currentTerm: t => `Current ${t}`, keepEmpty: 'Empty = keep it',
+    addNote: 'Add note', addNoteTitle: (s, id) => `Note · ${s} · ${id}`, noteSaved: s => `Note saved · ${s}`,
+    newAddress: '+ New address', newAddressH: 'New address', setDefault: 'Set as default', addressNeeded: 'Fill in the new address (Label · Recipient · Address) or choose another',
+  });
+  Object.assign(C.deal, { colExpected: 'Due', colDone: 'Done on', viewL: 'View' });
+  C.notes.histNote = n => `Note · ${n}`;
+  C.banner.cannotSave = 'Can’t save on this device — back up before closing';
+  C.banner.cannotSaveDetail = 'The browser would not store the data (a private window, or its storage is full). Changes stay only until this tab closes.';
+  Object.assign(C.settings, { usingOf: (mb, q) => `Using ${mb} MB of ~${q} MB`, largest: t => `Largest: ${t} MB` });
+  C.pay.otherLine = (a, n) => `Includes Other: ${n || '—'} · ${a}`;
+  C.counts.deal_gencodes = 'Gencodes';   // CR-30 §3.3 (not the Draft n notes above it)
+  C.msg.otherFeeNote = 'Say what the Other fee is for';
+  C.newKol = {
+    usernameAuto: 'Taken from the profile link', platformAuto: 'From the profile link', linkHttps: 'A profile link starts with https://', linkRequired: 'Paste the profile link',
+    platformRequired: 'Choose the platform', usernameRequired: 'Enter the username (no @)', alreadyLink: (n, h) => `Already in KOL Master — ${n}${h ? ` (@${h})` : ''} has this profile link`,
+    contactPh: 'ID for the channel', vault: 'Payee & shipping (optional)', vaultLocked: 'Locked — unlock the payee vault to add a shipping address or a bank account',
+    unlockToAdd: 'Unlock to add', vaultSkip: 'or skip: add them later in the KOL profile', vaultNone: 'The payee vault is not set up yet — add these later in the KOL profile (Payee & shipping)',
+    shipH: 'Shipping address', bankH: 'Bank account', bankLater: 'Full name, ID address and tax details: add them later in Payee details',
+    vaultSaved: l => `Payee & shipping saved: ${l}`, vaultFailed: 'This browser could not encrypt — the KOL is created; add the payee details from the profile',
+  };
+  Object.assign(C.overview.wq.action, { gencode: 'Collect gencode', close_campaign: 'Close campaign' });
+  Object.assign(C.overview.wq, { campaignWord: 'Campaign' });
+  Object.assign(C.close, { endedLine: d => `Ended ${d} · not closed yet`, closeLink: 'Close', withdraw: 'Withdraw request' });
+  Object.assign(C.overview.wq.btn, { gencode: 'Add codes', closeCamp: 'Close', requestClose: 'Request close' });
+  Object.assign(C.overview.wq.usPart, { gencode: n => `${n} gencode${n === 1 ? '' : 's'}`, close: n => `${n} to close` });
+  C.gencode = {
+    title: 'Gencodes', add: '+ Add codes', pasteL: 'Paste the codes the KOL sent', pastePh: 'One code a line — paste the whole message', preview: 'Preview',
+    colCode: 'Code', colType: 'Type', colPost: 'Post', colReceived: 'Received', colValid: 'Valid until', colStatus: 'Status',
+    types: { tiktok_spark: 'TikTok Spark code', meta: 'Meta ad code', other: 'Other' }, status: { active: 'Active', expiring: 'Expiring', expired: 'Expired' },
+    notLinked: 'Not linked', save: n => `Save ${n} code${n === 1 ? '' : 's'}`, dupes: n => `${n} duplicate${n === 1 ? '' : 's'} skipped`, unknownFormat: 'Unrecognised code format',
+    none: 'No codes yet', nothing: 'Paste at least one code', copy: 'Copy', copied: 'Copied', copyAll: 'Copy all', copiedAll: n => `Copied ${n} code${n === 1 ? '' : 's'}`, noneActive: 'No active code to copy',
+    edit: 'Edit', del: 'Delete', delTitle: 'Delete this code?', delBody: c => `${c} is removed from this deal.`, deleted: 'Code deleted', saved: n => `บันทึก ${n} โค้ดแล้ว`, edited: 'บันทึกโค้ดแล้ว',
+    codeRequired: 'Enter the code', duplicate: 'This deal has this code already', validNone: 'Set Gencode start and Gencode days for a date', countN: n => `${n} code${n === 1 ? '' : 's'}`,
+    missing: 'Gencode', collect: 'Collect gencode', useFirstPost: 'Use first post date', startSet: d => `Gencode start ${d}`, startHint: 'Gencode start is empty — the codes count from it',
+    exportItem: 'Export Gencodes', exportTip: 'Every code in full, for the ads team (Manager / Admin)', sheet: 'Gencodes', file: 'Gencodes',
+    exportCols: ['Campaign', 'KOL', 'Deal ID', 'Type', 'Code', 'Post', 'Account', 'Received', 'Gencode start', 'Valid until', 'Status'],
+    moveL: 'Gencodes (optional)', movePh: 'Paste the codes if the KOL has sent them',
+    ev: { gencode_added: 'Gencode added', gencode_copied: 'Gencode copied', gencode_deleted: 'Gencode deleted', gencode_edited: 'Gencode edited' },
+  };
   return C;
 })();

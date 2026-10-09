@@ -23,10 +23,29 @@ KT.samples = (function () {
   const onFile = kolId => { const a = defAddr(kolId); return !!(a && a.secure); };
   const kolIdOf = sh => sh.kol_id || (dealOf(sh.deal_id) || {}).kol_id || null;
   /* Ship to ▾ — the KOL's addresses (the default first) · '' = the default when it is marked shipped */
-  const shipToHTML = (id, kolId, value, blank) => { const opts = R.shipToOptions(state(), kolId);
-    return `<select id="${id}" aria-label="${esc(SM.shipTo)}"${opts.length ? '' : ' disabled'}>${blank ? `<option value="">${esc(SM.shipToDefault)}</option>` : ''}` +
-      opts.map(o => `<option value="${esc(o.value)}"${o.value === value ? ' selected' : ''}>${esc(o.secure ? o.label : SM.noDetails(o.label))}</option>`).join('') +
-      (opts.length ? '' : `<option value="">${esc(SM.noAddress)}</option>`) + `</select>`; };
+  /* CR-31 §2.3 — o.allowNew: + New address (the in-place form under it, KT.payee.addrInline*) */
+  const shipToHTML = (id, kolId, value, blank, o = {}) => { const opts = R.shipToOptions(state(), kolId), canNew = !!o.allowNew;
+    return `<select id="${id}" aria-label="${esc(SM.shipTo)}"${opts.length || canNew ? '' : ' disabled'}${canNew ? ' data-ainew' : ''}>${blank ? `<option value="">${esc(SM.shipToDefault)}</option>` : ''}` +
+      opts.map(o2 => `<option value="${esc(o2.value)}"${o2.value === value ? ' selected' : ''}>${esc(o2.secure ? o2.label : SM.noDetails(o2.label))}</option>`).join('') +
+      (opts.length || !blank && canNew ? '' : `<option value="">${esc(SM.noAddress)}</option>`) + (canNew ? `<option value="__new">${esc(C.move.newAddress)}</option>` : '') + `</select>` +
+      (canNew ? `<div class="ai-slot" data-aislot="${id}"></div>` : ''); };
+  /* the in-place form follows the pick · Unlock to add · on save: the new address (encrypted) or null when it is not complete (the errors shown) */
+  function wireNewAddr(box, selId, kolId) {
+    const sel = box.querySelector('#' + selId), slot = box.querySelector(`[data-aislot="${selId}"]`); if (!sel || !slot) return;
+    const draw = () => { slot.innerHTML = sel.value === '__new' ? KT.payee.addrInlineHTML(selId, {}, { inlinePass: true }) + '<div class="mv-err" data-err="ai_box"></div>' : ''; };
+    const unlock = async () => { if (await KT.payee.addrInlineUnlock(slot)) { draw(); const f = slot.querySelector('[data-ai="label"]'); if (f) f.focus(); } };
+    sel.addEventListener('change', draw);
+    slot.addEventListener('click', e => { if (e.target.closest('[data-aiunlockgo]')) unlock(); });
+    slot.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest('[data-aipass]')) { e.preventDefault(); e.stopPropagation(); unlock(); } });
+    draw();
+  }
+  async function newAddrOf(box, selId, kolId) {
+    const sel = box.querySelector('#' + selId); if (!sel || sel.value !== '__new') return { id: sel ? sel.value || null : null };
+    const x = KT.payee.addrInlineRead(box), errs = KT.payee.addrInlineCheck(kolId, x);
+    box.querySelectorAll('[data-err^="ai_"]').forEach(el => { const e = errs.find(y => y.field === el.dataset.err); el.innerHTML = e ? `<span class="err">${esc(e.msg)}</span>` : ''; });
+    if (errs.length) return { errs };
+    try { const rec = await KT.payee.addrInlineSave(kolId, x); return { id: rec.address_id }; } catch (e) { toast(C.payee.noCrypto); return { errs: [{}] }; }
+  }
   /* the address a shipment goes to (its own, else the default) — its label */
   const addrLabel = sh => { const a = R.addressOfShipment(state(), sh); return a ? a.label : ''; };
   /* CR-11 §4.10 — what changes the plan (items · ship by · Not required · delete) vs the work of sending (shipped · delivered · problem · carrier / tracking) */
@@ -217,7 +236,7 @@ KT.samples = (function () {
     const date = (id, v, lbl) => `<div class="field"><label for="${id}">${esc(lbl)}</label>${U.dateHTML(`id="${id}"`, v, { label: lbl })}</div>`;
     let body = '';
     if (kind === 'shipped') body = date('sm_date', td, SM.shippedOn) + `<div class="field"><label for="sm_carrier">${esc(SM.col.carrier)}</label><select id="sm_carrier">${optionsHTML(S.carriers, list[0].carrier || '', C.common.none)}</select></div>` +
-      (one && kolIdOf(list[0]) ? `<div class="field wide"><label for="sm_shipto">${esc(SM.shipTo)}</label>${shipToHTML('sm_shipto', kolIdOf(list[0]), list[0].address_id || ((defAddr(kolIdOf(list[0])) || {}).address_id || ''), false)}<div class="hint">${esc(SM.shipToHint)}</div></div>`
+      (one && kolIdOf(list[0]) ? `<div class="field wide"><label for="sm_shipto">${esc(SM.shipTo)}</label>${shipToHTML('sm_shipto', kolIdOf(list[0]), list[0].address_id || ((defAddr(kolIdOf(list[0])) || {}).address_id || ''), false, { allowNew: true })}<div class="hint">${esc(SM.shipToHint)}</div></div>`
         : `<div class="field wide"><div class="hint">${esc(SM.shipToMany)}</div></div>`) +
       `<div class="field wide"><label>${esc(SM.col.tracking)}</label><div class="sm-trk">${list.map(sh => `<label class="sm-trkrow"><span>${esc(shKol(sh))}</span><input data-smtrk="${esc(sh.shipment_id)}" value="${esc(sh.tracking_no || '')}" autocomplete="off"></label>`).join('')}</div></div>` +
       (one ? `<div class="field wide"><label>${esc(SM.col.items)}</label><div class="sm-itemlist">${(list[0].items || []).map((x, i) => `<label class="sm-trkrow"><span>${esc(x.tr_code)}</span><input type="number" min="1" step="1" data-smqty="${i}" value="${esc(x.qty)}"></label>`).join('') || `<span class="muted small">${esc(SM.noProducts)}</span>`}</div></div>` : '');
@@ -229,11 +248,13 @@ KT.samples = (function () {
     openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b"><div class="fields">${body}</div><div class="checks" id="sm_checks"></div></div>` +
       `<div class="dlg-f"><button type="button" class="btn" id="sm_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="sm_ok">${esc(C.common.save)}</button></div>`, kind === 'shipped' && list.length > 1 ? 'mid' : false);
     $('sm_cancel').addEventListener('click', closeDialog);
+    if (one && kolIdOf(list[0]) && $('sm_shipto')) wireNewAddr($('dlg'), 'sm_shipto', kolIdOf(list[0]));   // CR-31 §2.3
     if ($('sm_suggest')) $('sm_suggest').addEventListener('click', () => U.setDate($('sm_date'), $('sm_suggest').dataset.date));   // CR-23 §3.4: the suggestion only when clicked
-    $('sm_ok').addEventListener('click', () => {
+    $('sm_ok').addEventListener('click', async () => {
+      let picked = null; if (kind === 'shipped' && one && $('sm_shipto') && $('sm_shipto').value === '__new') { const na = await newAddrOf($('dlg'), 'sm_shipto', kolIdOf(list[0])); if (na.errs) return; picked = na.id; }   // CR-31 §2.3
       const change = { kind, date: $('sm_date') ? $('sm_date').value : null, reason: $('sm_reason') ? $('sm_reason').value : null, carrier: $('sm_carrier') ? $('sm_carrier').value : null };
       if (kind === 'shipped') { change.trackingOf = Object.fromEntries([...document.querySelectorAll('#dlg [data-smtrk]')].map(i => [i.dataset.smtrk, i.value])); if (one) change.items = (list[0].items || []).map((x, i) => ({ tr_code: x.tr_code, qty: Number(($(`dlg`).querySelector(`[data-smqty="${i}"]`) || {}).value) || x.qty }));
-        if (one && $('sm_shipto') && $('sm_shipto').value) change.addressOf = { [list[0].shipment_id]: $('sm_shipto').value }; }
+        if (one && $('sm_shipto') && (picked || $('sm_shipto').value)) change.addressOf = { [list[0].shipment_id]: picked || $('sm_shipto').value }; }
       if (kind === 'ship_by' && !change.date) change.date = null;
       const res = R.validateShipment(Object.assign({}, change, kind === 'ship_by' && !change.date ? { kind: 'none' } : {}), td);
       if (res.errs.length) { $('sm_checks').innerHTML = checksHTML(res, ''); return; }
@@ -251,13 +272,15 @@ KT.samples = (function () {
       `<div class="field"><label for="se_carrier">${esc(SM.col.carrier)}</label><select id="se_carrier">${optionsHTML(S.carriers.concat(sh.carrier && !S.carriers.includes(sh.carrier) ? [sh.carrier] : []), sh.carrier || '', C.common.none)}</select></div>` +
       `<div class="field"><label for="se_trk">${esc(SM.col.tracking)}</label><input id="se_trk" value="${esc(sh.tracking_no || '')}" autocomplete="off"></div>` +
       `<div class="field"><label>${esc(SM.col.shipped)}</label>${U.dateHTML('id="se_sd"', sh.shipped_date || '', { label: SM.col.shipped })}</div><div class="field"><label>${esc(SM.col.delivered)}</label>${U.dateHTML('id="se_dd"', sh.delivered_date || '', { label: SM.col.delivered })}</div>` +
-      (kolIdOf(sh) ? `<div class="field wide"><label for="se_shipto">${esc(SM.shipTo)}</label>${shipToHTML('se_shipto', kolIdOf(sh), sh.address_id || '', sh.status === 'to_ship')}</div>` : '') +
+      (kolIdOf(sh) ? `<div class="field wide"><label for="se_shipto">${esc(SM.shipTo)}</label>${shipToHTML('se_shipto', kolIdOf(sh), sh.address_id || '', sh.status === 'to_ship', { allowNew: true })}</div>` : '') +
       `</div></div><div class="dlg-f"><button type="button" class="btn" id="se_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="se_ok">${esc(C.common.save)}</button></div>`);
     $('se_cancel').addEventListener('click', closeDialog);
-    $('se_ok').addEventListener('click', () => {
+    if (kolIdOf(sh) && $('se_shipto')) wireNewAddr($('dlg'), 'se_shipto', kolIdOf(sh));   // CR-31 §2.3
+    $('se_ok').addEventListener('click', async () => {
+      let picked = null; if ($('se_shipto') && $('se_shipto').value === '__new') { const na = await newAddrOf($('dlg'), 'se_shipto', kolIdOf(sh)); if (na.errs) return; picked = na.id; }
       const v = x => (R.isISODate(x) ? x : null), sd = v($('se_sd').value), dd = v($('se_dd').value);
       const change = { kind: 'edit', carrier: $('se_carrier').value || null, tracking_no: R.trim($('se_trk').value) || null, shipped_date: sd, delivered_date: dd };
-      if ($('se_shipto') && !$('se_shipto').disabled) change.address_id = $('se_shipto').value || null;
+      if ($('se_shipto') && !$('se_shipto').disabled) change.address_id = picked || $('se_shipto').value || null;
       closeDialog(); apply([id], change, () => { const x = shOf(id); if (x && x.status !== 'not_required' && x.status !== 'problem') { x.status = dd ? 'delivered' : sd ? 'shipped' : x.status === 'delivered' || x.status === 'shipped' ? 'to_ship' : x.status; commit(); } if (after) after(); });
     });
   }

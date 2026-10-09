@@ -141,7 +141,7 @@ Object.assign(KT.rules, (function (R, C) {
   }
   /* rows to show: Rate card and Total always · the others when either column has a value */
   const costRefRows = ref => COST_KEYS.filter(k => k === 'rate_card' || [ref.latest, ref.average].some(c => c && c.values[k])).concat(['total']);
-  const hasCosts = d => COST_KEYS.some(k => !isBlank(d[k]));
+  const hasCosts = d => COST_KEYS.some(k => !isBlank(d[k]) && !(k === 'other_fee' && !(Number(d[k]) > 0)));   // CR-30: an Other fee of 0 is no price yet
   /* a deal with no cost typed in yet and not a free job → "Cost not set" (counts ฿0) */
   const costNotSet = d => !hasCosts(d) && termOf(d) !== 'free';
   /* moving to Confirm QT (or later) from before it while the total is ฿0 and the job is not Free → ask first (a warning, not a block) */

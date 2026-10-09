@@ -14,7 +14,7 @@ KT.screens.overview = (function () {
   const TABS = ['all', 'campaign', 'ops'];
   const ov = {
     tab: TABS.includes(pref.get('dashtab', 'all')) ? pref.get('dashtab', 'all') : 'all',
-    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', sort: null }, savedPreset()),
+    all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', platformMeasure: 'spend', platformView: 'chart', sort: null }, savedPreset()),
     camp: { campaign: '', phase: '', gran: 'day', measure: 'posts', colorBy: null, colorFor: null, view: 'chart' },
     ops: { pic: null, picFor: null, tile: '', stage: '', camps: null, campsFor: null, waiting: '', waitFor: null, folded: new Set(), foldFor: null, byKey: null, fix: null },   // CR-24
     bva: { mode: 'monthly', view: 'chart' },   // CR-26 §3.2
@@ -65,12 +65,12 @@ KT.screens.overview = (function () {
   /* CR-14 §4.1 — Status (multi-select, instead of Include cancelled): the effective status today · default all but Cancelled · kept for each person */
   function statusesNow() {
     const uid = U.userId() || '';
-    if (ov.all.stUser !== uid) { ov.all.stUser = uid; ov.all.statuses = R.normDashStatuses(R.userPrefGet(pref.get(R.DASH_STATUS_KEY, ''), uid)); }
+    if (ov.all.stUser !== uid) { ov.all.stUser = uid; const v = R.userPrefGet(pref.get(R.DASH_STATUS_KEY, ''), uid); ov.all.statuses = R.normDashStatuses(v !== undefined ? v : R.upgradeDashStatuses(R.userPrefGet(pref.get(R.DASH_STATUS_KEY_OLD, ''), uid))); }   // CR-29
     return ov.all.statuses;
   }
   function setStatuses(v) { statusesNow(); ov.all.statuses = R.normDashStatuses(v); pref.set(R.DASH_STATUS_KEY, R.userPrefSet(pref.get(R.DASH_STATUS_KEY, ''), U.userId() || '', ov.all.statuses)); }
   /* the dot of each status = the colour of its status chip */
-  const STATUS_DOT = { ongoing: 'var(--st-prog)', not_started: 'outline', on_hold: 'var(--warn)', complete: 'var(--st-done)', cancelled: 'var(--st-cancel)' };
+  const STATUS_DOT = { ongoing: 'var(--st-prog)', wrap_up: 'var(--st-wrap)', not_started: 'outline', on_hold: 'var(--warn)', complete: 'var(--st-done)', cancelled: 'var(--st-cancel)' };
   /* the words after "Status:" — on the button 3 or more read "3 selected", in a file every name */
   function statusWords(v, full) {
     const t = R.dashStatusText(v);
@@ -93,13 +93,13 @@ KT.screens.overview = (function () {
       `<span class="hidden">${U.rangeHTML('id="ov_crange"', from, to, { label: O.presets.custom })}</span>`;   // CR-10 §4.8: Custom opens the range picker — nothing changes until Apply
     const k = R.portfolioKpis(s, from, to, td(), statusesNow());
     /* CR-13 §4.1 — top to bottom: the totals → each Campaign → when → where the money went (Pillar · Tier) */
-    $('ov_body').innerHTML = `<div class="kpis k4" id="ov_kpis">${kpiCards(k)}</div>` + bvaCard('budgetactual') +   // CR-26 §3.3
+    $('ov_body').innerHTML = `<div class="kpis k4 kc4" id="ov_kpis">${kpiCards(k)}</div>` + bvaCard('budgetactual') +   // CR-26 §3.3 · CR-29 §3.1 one card layout
       `<div class="card ov-full ov-port"><div class="card-head"><h3>${esc(O.portfolioTitle)}</h3><div class="btns ov-ctl">${dlMenu('portfolio')}</div></div><div id="ov_port"></div></div>` +
-      `<div class="ov-r3">${tlCard()}</div><div class="ov-r4">${pillarCard()}${tierCard()}</div>`;
-    renderBva(); renderPortfolio(); renderTl(s, from, to); renderPillar(s, from, to); renderTier(s, from, to);
+      `<div class="ov-r3">${tlCard()}</div><div class="ov-r4 r3">${pillarCard()}${tierCard()}${platformCard()}</div>`;   // CR-29 §3.4: + Platform mix (3 equal cards)
+    renderBva(); renderPortfolio(); renderTl(s, from, to); renderPillar(s, from, to); renderTier(s, from, to); renderPlatform(s, from, to);
   }
   /* what the export rows of this tab are worked out from (KT.export) — the same as the screen */
-  const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), statuses: statusesNow(), measure: ov.all.measure, sort: ov.all.sort }; };
+  const allX = () => { const [from, to] = allRange(); return { state: state(), from, to, today: td(), statuses: statusesNow(), measure: ov.all.measure, sort: ov.all.sort, preset: ov.all.preset }; };
   const campX = () => ({ state: state(), campaignId: ov.camp.campaign, phaseId: ov.camp.phase, today: td(), gran: ov.camp.gran || 'day', measure: ov.camp.measure, colorBy: ov.camp.colorBy || 'tier' });
   const opsX = () => ({ state: state(), opts: opsOpts(), picLabel: picLabelOf(opsPicNow()), campLabel: campLabel(), waitLabel: O.wq.w[waitingNow() || 'all'], today: td() });   // CR-24
   const tabOfWidget = w => Object.keys(KT.export.TABS).find(t => KT.export.TABS[t].includes(w));
@@ -112,24 +112,42 @@ KT.screens.overview = (function () {
     const [from, to] = allRange(), A = ov.all;
     return { file: KT.export.scopeName(A.preset, from, to), text: `${A.preset === 'custom' ? O.presets.custom : O.presets[A.preset]} · ${R.dmy(from)} – ${R.dmy(to)}` };
   }
-  /* CR-09 §4.1 Row 1 — KPI cards, no buttons (ⓘ only) · CR-26 §3.1: 4 — Campaigns · Committed · Paid · KOL & Affiliate engaged (no Deals card) */
+  /* CR-09 §4.1 Row 1 — KPI cards, no buttons (ⓘ only) · CR-26 §3.1: 4 — Campaigns · Committed · Paid · KOL & Affiliate engaged (no Deals card) ·
+     CR-29 §3.1 — one card (kpiCard): Label ⓘ · the value (+ a small grey suffix) · a 6px bar · one caption line (cut with … — the whole line in its
+     tooltip · money short ฿5.46M, in full in the tooltip) — the 4 rows are one grid with the cards (subgrid), so the bars sit on one line */
+  const kpiCard = o => `<div class="kpi kc"><div class="l">${U.labelInfo(o.label, o.tip, o.label)}</div>` +
+    `<div class="v"${o.valueTip ? ` title="${esc(o.valueTip)}"` : ''}><span class="vn">${o.value}</span>${o.suffix ? ` <small>${esc(o.suffix)}</small>` : ''}</div>` +
+    `<div class="kbar" role="img" aria-label="${esc(o.barTip || o.caption)}" title="${esc(o.barTip || o.caption)}">${o.bar}</div>` +
+    `<div class="cap" title="${esc(o.capTip || o.caption)}">${o.capHTML || esc(o.caption)}</div></div>`;
+  const seg = (w, cls, style) => (w > 0 ? `<i class="${cls}" style="width:${Math.max(0.6, Math.min(100, w)).toFixed(2)}%${style ? ';' + style : ''}"></i>` : '');
+  /* the order of the status parts (bar · caption) — the Campaign timeline's colours */
+  const KPI_ST = ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   function kpiCards(k) {
-    const c = k.campaigns, d = k.deals, m = k.money, p = k.paid, PS = C.phaseStatus;
-    const card = (label, tip, v, body) => `<div class="kpi"><div class="l">${U.labelInfo(label, tip, label)}</div><div class="v">${v}</div>${body}</div>`;
-    const stLine = ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].filter(st => c.by[st]).map(st => `${PS[st]} ${c.by[st]}`).join(' · ');
-    const campaigns = card(O.kCampaigns, O.kCampaignsTip, R.fmtNum(c.n), `<div class="sub">${esc(stLine)}</div>` +
-      (c.next ? `<div class="sub muted">${esc(O.nextToEnd(c.next.campaign.campaign_name, KT.export.daysText(c.next.left)))}</div>` : ''));
-    const committed = card(O.committed, MN.committed, `${R.baht(m.committed)} <small>${m.budget == null ? esc(O.noBudget) : esc(O.of(R.baht(m.budget)))}</small>`,
-      (m.usedPct != null ? `<div class="bar"><span class="${m.usedPct > 100 ? 'over' : ''}" style="width:${Math.min(100, m.usedPct)}%"></span></div><div class="sub${m.usedPct > 100 ? ' late' : ''}">${esc(O.usedPct(Math.round(m.usedPct)))}</div>` : '') +
-      `<div class="sub muted">${esc(m.remaining != null && m.remaining < 0 ? O.overPend(R.baht(-m.remaining), R.baht(m.pending)) : O.remPend(m.remaining == null ? '—' : R.baht(m.remaining), R.baht(m.pending)))}</div>`);
-    const paid = card(O.kPaid, O.kPaidTip, R.baht(p.paid), (p.pct != null ? `<div class="bar paidbar" title="${esc(O.paidPctLine(Math.round(p.pct), R.baht(p.outstanding)))}"><span style="width:${Math.min(100, p.pct)}%"></span></div>` : '') +
-      `<div class="sub">${esc(O.paidPctLine(p.pct == null ? 0 : Math.round(p.pct), R.baht(p.outstanding)))}</div>`);
-    /* partners once (committed deals) · KOL n · Affiliate n · Both n · committed deals · Avg · the deals not committed yet (where 401 vs 278 comes from: ⓘ) */
+    const c = k.campaigns, d = k.deals, m = k.money, p = k.paid, PS = C.phaseStatus, X = R.fmtCompact;
+    const sts = KPI_ST.filter(st => c.by[st]);
+    const campaigns = kpiCard({ label: O.kCampaigns, tip: O.kCampaignsTip, value: R.fmtNum(c.n),
+      bar: sts.map(st => seg(c.by[st] / Math.max(1, c.n) * 100, 'ks ' + st)).join(''),
+      caption: sts.map(st => `${c.by[st]} ${PS[st]}`).join(' · ') || O.noCampaignInRange,
+      capHTML: sts.length ? sts.map(st => `<span class="cd"><i class="dot ${st}"></i>${esc(`${c.by[st]} ${PS[st]}`)}</span>`).join('<span class="sep"> · </span>') : null });
+    /* Committed: used (green · red over 100%) + Pending as a faint part after it */
+    const used = m.usedPct == null ? 0 : m.usedPct, pendPct = m.budget ? m.pending / m.budget * 100 : 0;
+    const comCap = m.budget == null ? O.kc.noBudget(X(m.pending)) : m.remaining < 0 ? O.kc.over(Math.round(used), X(-m.remaining), X(m.pending)) : O.kc.used(Math.round(used), X(m.remaining), X(m.pending));
+    const comTip = m.budget == null ? O.kc.noBudget(R.baht(m.pending)) : m.remaining < 0 ? O.kc.over(Math.round(used), R.baht(-m.remaining), R.baht(m.pending)) : O.kc.used(Math.round(used), R.baht(m.remaining), R.baht(m.pending));
+    const committed = kpiCard({ label: O.committed, tip: MN.committed, value: R.baht(m.committed), suffix: m.budget == null ? O.noBudget : O.of(R.baht(m.budget)),
+      bar: m.budget == null ? '' : seg(used, 'ok' + (used > 100 ? ' over' : '')) + seg(Math.min(pendPct, Math.max(0, 100 - used)), 'pend'),
+      barTip: comTip, caption: comCap, capTip: comTip, capHTML: m.remaining != null && m.remaining < 0 ? `<span class="late">${esc(comCap)}</span>` : null });
+    const paidCap = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), X(p.outstanding)), paidTip = O.kc.paid(p.pct == null ? 0 : Math.round(p.pct), R.baht(p.outstanding));
+    const paid = kpiCard({ label: O.kPaid, tip: O.kPaidTip, value: R.baht(p.paid), bar: seg(p.pct || 0, 'ok'), barTip: paidTip, caption: paidCap, capTip: paidTip });
+    /* partners once (committed deals) · the bar: committed deals (dark) vs in List (faint — Shortlist / Contacted) · KOL / Affiliate / Both in the value's tooltip ·
+       an Affiliate there → the caption says KOL n · Affiliate n (CR-29 §6 #2) */
     const kk = k.kols, types = R.partnerTypesOf(state().lookups).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · ');
     const def = O.dealsDef(R.fmtNum(d.n), R.fmtNum(d.list), R.fmtNum(d.inprocess), R.fmtNum(d.complete), R.fmtNum(kk.deals), R.fmtNum(kk.notCommitted));
-    const engaged = card(O.kEngaged, O.kEngagedTip, R.fmtNum(kk.n), `<div class="sub">${esc(types)}</div>` +
-      `<div class="sub">${esc(O.engagedDeals(R.fmtNum(kk.deals), kk.avg == null ? '—' : R.baht(kk.avg)))} ${info(def)}</div>` +
-      (kk.notCommitted ? `<div class="sub muted kpi-nc" title="${esc(def.d)}">${esc(O.notCommittedLine(R.fmtNum(kk.notCommitted)))}</div>` : ''));
+    const allDeals = kk.deals + kk.notCommitted, avg = kk.avg == null ? '—' : R.baht(kk.avg), aff = (kk.byType.affiliate || 0) + (kk.byType.both || 0) > 0;
+    const engCap = aff ? O.kc.engagedTypes(R.partnerTypesOf(state().lookups).filter(t => t.key !== 'both' || kk.byType.both).map(t => `${t.label} ${R.fmtNum(kk.byType[t.key])}`).join(' · '), avg)
+      : O.kc.engaged(R.fmtNum(kk.deals), R.fmtNum(allDeals), avg);
+    const engaged = kpiCard({ label: O.kEngaged, tip: O.kEngagedTip, value: R.fmtNum(kk.n), suffix: O.kc.partners, valueTip: types,
+      bar: seg(kk.deals / Math.max(1, allDeals) * 100, 'com') + seg(kk.notCommitted / Math.max(1, allDeals) * 100, 'lst'), barTip: O.kc.engagedBar(R.fmtNum(kk.deals), R.fmtNum(kk.notCommitted)),
+      caption: engCap, capTip: `${engCap}\n${def.d}\n${def.f}` });
     return campaigns + committed + paid + engaged;
   }
   /* a download button on a table / chart card: Excel or CSV of exactly what the card shows (CR-09 §4.5) */
@@ -141,11 +159,11 @@ KT.screens.overview = (function () {
     const fmt = (v, h) => (v == null || v === '' ? '' : typeof v !== 'number' ? esc(v) : pctCol(h) ? `${(v * 100).toFixed(1)}%` : esc(R.fmtNum(Math.round(v * 100) / 100)));
     const row = (r, cls) => `<tr${cls ? ` class="${cls}"` : ''}>${r.map((v, i) => `<td${isNum(i) ? ' class="num"' : ''}>${fmt(v, t.header[i])}</td>`).join('')}</tr>`;
     return `<table class="tbl compact-sm"><thead><tr>${t.header.map((h, i) => `<th${isNum(i) ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>` +
-      t.rows.map(r => row(r)).join('') + (t.total ? row(t.total, 'total') : '') + `</tbody></table>`;
+      t.rows.map(r => row(r)).join('') + (t.total ? row(t.total, 'total') : '') + (t.extra || []).map(r => row(r, 'sumrow')).join('') + `</tbody></table>`;   // CR-29: summary rows
   }
   function downloadWidget(w, fmt) {
     const tab = tabOfWidget(w), t = KT.export.rowsFor(w, xOfTab(tab)), name = KT.export.fileName(O.file[w], scopeOf(tab).file, td(), fmt);
-    if (fmt === 'csv') { downloadCSV(name, t.header, t.rows.concat(t.total ? [t.total] : [])); return; }
+    if (fmt === 'csv') { downloadCSV(name, t.header, t.rows.concat(t.total ? [t.total] : [], t.extra || [])); return; }
     U.download(name, KT.xlsx.workbook([KT.export.sheetOf(t)]), KT.xlsx.MIME); toast(C.io.exported(name, t.rows.length));
   }
   /* Export (the whole tab): one .xlsx, a sheet per widget · Summary first with the tab, scope, when and who */
@@ -160,12 +178,13 @@ KT.screens.overview = (function () {
   /* ===================== CR-26 §3.2 — Budget vs Actual by month (All campaigns after the KPI · By campaign after Phase budget) ===================== */
   const bvaCard = w => { const B = O.bva;
     return `<div class="card ov-full bva-card" data-bvaw="${w}"><div class="card-head"><h3>${U.labelInfo(B.title, B.tip, B.title)}</h3><div class="btns ov-ctl">` +
+      `<div class="legend bva-legend" id="bva_legend"></div>` +   // CR-29 §3.2: the legend beside Monthly / Cumulative (wraps under when narrow)
       `<div class="seg" data-bvamode role="group" aria-label="${esc(B.modeL)}"><button type="button" data-v="monthly">${esc(B.monthly)}</button><button type="button" data-v="cumulative">${esc(B.cumulative)}</button></div>` +
       `<button type="button" class="icon-btn" data-bvaact="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu(w)}` +
       `<button type="button" class="icon-btn" data-bvaact="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>` +
-      `<div class="bva-sum" id="bva_sum"></div><div class="legend bva-legend" id="bva_legend"></div>` +
+      `<div class="bva-sum" id="bva_sum"></div>` +
       `<div class="chartbox bva-box" id="bva_box"><svg id="bva_svg" role="img" aria-label="${esc(B.title)}"></svg><div class="tip" id="bva_tip"></div></div>` +
-      `<div class="tablewrap hidden" id="bva_table" style="max-height:360px"></div><div class="foot-note" id="bva_foot"></div></div>`; };
+      `<div class="tablewrap hidden" id="bva_table" style="max-height:360px"></div><div class="foot-note bva-foot" id="bva_foot"></div></div>`; };
   const bvaWidget = () => (ov.tab === 'campaign' ? 'budgetactual_camp' : 'budgetactual');
   function bvaModel() {
     if (ov.tab === 'campaign') return R.budgetVsActualByMonth(state(), { campaignId: ov.camp.campaign, phaseId: ov.camp.phase || null, today: td() });
@@ -173,16 +192,23 @@ KT.screens.overview = (function () {
   }
   const signBaht = v => (v > 0 ? '+' : v < 0 ? '−' : '') + R.baht(Math.abs(v));
   const monthLabel = (k, md) => { const short = O.months[Number(k.slice(5, 7)) - 1]; return md.from.slice(0, 4) === md.to.slice(0, 4) ? short : `${short} ${k.slice(2, 4)}`; };
+  const restLabel = () => (ov.tab === 'campaign' ? O.bva.restCampaign : ov.all.preset === 'this_year' ? O.bva.restYear : O.bva.restPeriod);
+  /* CR-29 §3.2 — one line: To date ฿1.20M of ฿2.96M (40%) · Behind ฿1.76M (orange) / Over (red) / On plan (grey, 85–105%) · "To date" has the full
+     amounts and the Rest of year in its tooltip (and the table view has both as rows) */
   function bvaSumHTML(md) {
-    const B = O.bva, st = x => (x && x.status ? ` · <b class="bva-${x.status}">${esc(B[x.status](R.baht(x.amount)))}</b>` : '');
-    const restL = ov.tab === 'campaign' ? B.restCampaign : ov.all.preset === 'this_year' ? B.restYear : B.restPeriod;
-    return [md.toDate ? esc(B.toDate(R.baht(md.toDate.posted), R.baht(md.toDate.planned), md.toDate.pct == null ? '—' : Math.round(md.toDate.pct))) + st(md.toDate) : '',
-      md.rest ? esc(B.rest(restL, R.baht(md.rest.upcoming), R.baht(md.rest.planned))) : ''].filter(Boolean).map(t => `<div>${t}</div>`).join('');
+    const B = O.bva, t = md.toDate, X = R.fmtCompact;
+    /* nothing to date yet (a Campaign that has not started): its Rest of campaign / year on the line instead */
+    if (!t) return md.rest ? `<span title="${esc(B.rest(restLabel(), R.baht(md.rest.upcoming), R.baht(md.rest.planned)))}">${esc(B.restShort(restLabel(), X(md.rest.upcoming), X(md.rest.planned)))}</span>` : '';
+    const pct = t.pct == null ? '—' : Math.round(t.pct);
+    const full = [B.toDate(R.baht(t.posted), R.baht(t.planned), pct)].concat(t.status ? [B[t.status](R.baht(t.amount))] : [], md.rest ? [B.rest(restLabel(), R.baht(md.rest.upcoming), R.baht(md.rest.planned))] : []).join('\n');
+    const st = t.status ? `<b class="bva-${t.status}">${esc(B[t.status](X(t.amount)))}</b>` : t.pct != null && t.planned > 0 ? `<span class="bva-onplan">${esc(B.onPlan)}</span>` : '';
+    return `<span class="bva-tdl" tabindex="0" title="${esc(full)}">${esc(B.toDateL)}</span> ${esc(B.toDateLine(X(t.posted), X(t.planned), pct))}${st ? ` · ${st}` : ''}`;
   }
   function bvaLegendHTML(mode) {
     const L = O.bva.legend, sw = (cls, t) => `<span><i class="${cls}"></i>${esc(t)}</span>`;
     return mode === 'cumulative' ? sw('bl-line ink', L.cumBudget) + sw('bl-area', L.cumPosted) + sw('bl-line dash', L.cumPlus)
-      : sw('bl-posted', L.posted) + sw('bl-up', L.upcoming) + sw('bl-late', L.late) + sw('bl-line ink', L.budget);
+      : sw('bl-posted', L.posted) + sw('bl-up', L.upcoming) + sw('bl-late', L.late) + sw('bl-line ink', L.budget) +
+        `<span class="bl-sign"><b class="bva-behind">−฿</b>&nbsp;${esc(L.behind)} · <b class="bva-over">+฿</b>&nbsp;${esc(L.over)}</span>`;   // CR-29: the month labels are numbers only
   }
   function renderBva() {
     const box = $('bva_box'); if (!box) return;
@@ -194,10 +220,13 @@ KT.screens.overview = (function () {
     const table = V.view === 'table'; box.classList.toggle('hidden', table); $('bva_table').classList.toggle('hidden', !table); $('bva_legend').classList.toggle('hidden', table);
     if (table) $('bva_table').innerHTML = tableOf(KT.export.rowsFor(bvaWidget(), xOfTab(ov.tab)));
     else drawBva($('bva_svg'), box, $('bva_tip'), md, V.mode, 300);
-    const ft = [];
-    if (md.noDate.amount > 0) ft.push(`${esc(B.noDate(R.baht(md.noDate.amount)))} · <button type="button" class="link" data-bvaset>${esc(B.setDates)}</button>`);
-    if (md.outside.amount > 0) ft.push(esc(B.outside(R.baht(md.outside.amount), md.outside.deals)));
-    $('bva_foot').innerHTML = ft.map(t => `<div>${t}</div>`).join('');
+    $('bva_foot').innerHTML = bvaFootHTML(md);
+  }
+  /* CR-29 §3.2 — one grey line under the chart: ฿207K not on chart · Set dates ⓘ (what is not there: no post date · posted / due outside these months) */
+  function bvaFootHTML(md) {
+    const B = O.bva, off = md.noDate.amount + md.outside.amount; if (!(off > 0)) return '';
+    const d = [md.noDate.amount > 0 ? B.noDate(R.baht(md.noDate.amount)) : '', md.outside.amount > 0 ? B.outside(R.baht(md.outside.amount), md.outside.deals) : ''].filter(Boolean).join(' · ');
+    return `<span>${esc(B.notOnChart(R.fmtCompact(off)))}</span>${md.noDate.amount > 0 ? ` · <button type="button" class="link" data-bvaset>${esc(B.setDates)}</button>` : ''} ${info({ h: B.notOnChartH, d })}`;
   }
   /* a bar's top end rounded (4px), its foot square on the baseline */
   const topRound = (x, y, w, h, r) => { const k = Math.min(r, w / 2, h); return `M${x},${y + h}V${y + k}Q${x},${y} ${x + k},${y}H${x + w - k}Q${x + w},${y} ${x + w},${y + k}V${y + h}Z`; };
@@ -219,8 +248,8 @@ KT.screens.overview = (function () {
     months.forEach((x, i) => {
       if (!(i % every)) labels += `<text x="${cx(i)}" y="${H - m.b + 16}" text-anchor="middle" class="axis${x.current ? ' bva-cur' : ''}">${esc(monthLabel(x.key, md))}</text>`;
       if (!x.status) return;
-      const col = x.status === 'over' ? cOver : cBehind, words = B[x.status](bahtShort(x.amount));
-      labels += roomy ? `<text x="${cx(i)}" y="${H - m.b + 32}" text-anchor="middle" class="axis bva-st" fill="${col}">${esc(words)}</text>`
+      const col = x.status === 'over' ? cOver : cBehind, words = (x.status === 'over' ? '+' : '\u2212') + R.fmtCompact(x.amount);   // CR-29: −฿143K / +฿4K (the words once in the legend)
+      labels += roomy ? `<text x="${cx(i)}" y="${H - m.b + 32}" text-anchor="middle" class="axis bva-st ${x.status}" fill="${col}">${esc(words)}</text>`
         : `<circle cx="${cx(i)}" cy="${H - m.b + 28}" r="3.5" fill="${col}"><title>${esc(words)}</title></circle>`;
     });
     let marks = '';
@@ -275,7 +304,7 @@ KT.screens.overview = (function () {
   function expandBva() {
     const md = ov.bvaModel || bvaModel(), B = O.bva;
     openDialog(`<div class="dlg-h">${esc(B.expandTitle(B.title, R.dmy(md.from), R.dmy(md.to)))}</div><div class="dlg-b"><div class="bva-sum">${bvaSumHTML(md)}</div><div class="legend bva-legend">${bvaLegendHTML(ov.bva.mode)}</div>` +
-      `<div class="chartbox bva-box" id="bvax_box"><svg id="bvax_svg" role="img" aria-label="${esc(B.title)}"></svg><div class="tip" id="bvax_tip"></div></div></div>` +
+      `<div class="chartbox bva-box" id="bvax_box"><svg id="bvax_svg" role="img" aria-label="${esc(B.title)}"></svg><div class="tip" id="bvax_tip"></div></div><div class="foot-note bva-foot">${bvaFootHTML(md)}</div></div>` +
       `<div class="dlg-f"><button type="button" class="btn" id="bvax_close">${esc(C.common.close)}</button></div>`, true);
     $('bvax_close').addEventListener('click', closeDialog);
     drawBva($('bvax_svg'), $('bvax_box'), $('bvax_tip'), md, ov.bva.mode, 460);
@@ -314,16 +343,20 @@ KT.screens.overview = (function () {
       <button type="button" class="icon-btn" data-${act}="table" title="${esc(O.tableView)}" aria-label="${esc(O.tableView)}">${ICON.table}</button>${dlMenu(dl)}
       <button type="button" class="icon-btn" data-${act}="expand" title="${esc(O.expand)}" aria-label="${esc(O.expand)}">${ICON.expand}</button></div></div>
     <div class="tm-ctl"><div class="seg" data-${seg}="measure"><button type="button" data-v="spend">${esc(O.mSpend)}</button><button type="button" data-v="deals">${esc(O.mDeals)}</button></div></div><div id="${bodyId}" class="tm-body"></div></div>`;
-  const tierCard = () => mixCard('tmix', O.tierTitle, O.tierTip, 'tact', 'tmix', 'tiermix', 'ov_tmix');
-  const pillarCard = () => mixCard('pmix', O.pillarTitle, O.pillarTip, 'pmixact', 'pmix', 'pillarmix', 'ov_pmix');
+  /* CR-31 §2.1 — the same 3 cards in By campaign (one Campaign · its Phase): the widget keys end _camp there (their own download / sheet) */
+  const mixW = base => (ov.tab === 'campaign' ? base + '_camp' : base);
+  const campMixDeals = s => R.campaignMixDeals(s, ov.camp.campaign, ov.camp.phase || null);
+  const mixTitleScope = () => { if (ov.tab === 'campaign') return scopeOf('campaign').text; const [from, to] = allRange(); return `${R.dmy(from)} – ${R.dmy(to)}`; };
+  const tierCard = () => mixCard('tmix', O.tierTitle, O.tierTip, 'tact', 'tmix', mixW('tiermix'), 'ov_tmix');
+  const pillarCard = () => mixCard('pmix', O.pillarTitle, O.pillarTip, 'pmixact', 'pmix', mixW('pillarmix'), 'ov_pmix');
   const donutHTML = (id, label) => `<div class="tm-wrap"><div class="tm-donut chartbox" id="${id}_box"><svg id="${id}_svg" role="img" aria-label="${esc(label)}"></svg><div class="tip" id="${id}_tip"></div></div><table class="tm-leg" id="${id}_leg"></table></div>`;
   const tierHTML = id => donutHTML(id, O.tierTitle);
   function renderTier(s, from, to) {
-    const A = ov.all, m = R.tierMix(s, from, to, td(), statusesNow());
+    const A = ov.all, m = ov.tab === 'campaign' ? R.tierMixOf(s, campMixDeals(s)) : R.tierMix(s, from, to, td(), statusesNow());
     document.querySelectorAll('#ov_body [data-tmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.tierMeasure));
     $('ov_body').querySelector('[data-tact="table"]').classList.toggle('on', A.tierView === 'table');
     ov.lastTier = m;
-    if (A.tierView === 'table') { $('ov_tmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor('tiermix', allX()))}</div>`; return; }
+    if (A.tierView === 'table') { $('ov_tmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor(mixW('tiermix'), xOfTab(ov.tab)))}</div>`; return; }
     $('ov_tmix').innerHTML = tierHTML('ov_tm');
     drawDonut('ov_tm', m, A.tierMeasure, 148);
   }
@@ -362,9 +395,41 @@ KT.screens.overview = (function () {
       el.addEventListener('pointerleave', () => tip.classList.remove('show')); el.addEventListener('blur', () => tip.classList.remove('show'));
     });
   }
+  /* ---------- CR-29 §3.4 — Platform mix (Row 4, right): committed deals by the platform of their account · Spend | Deals · donut + table ·
+     one ink ramp (a fixed step a platform — the Tier card beside it has the colours) · Not set = the grey texture ---------- */
+  const PF_STEP = { TikTok: 1, Instagram: 2, Facebook: 3, X: 4, Lemon8: 5, YouTube: 6, Other: 7 };
+  const platformColor = k => (PF_STEP[k] ? css(`--pf-${PF_STEP[k]}`) : css('--series-grey'));
+  const platformCard = () => mixCard('fmix', O.platformTitle, O.pfMixTip, 'fmixact', 'fmix', mixW('platformmix'), 'ov_fmix');
+  const pfLabel = k => (k === R.NOT_SET ? O.notSet : k);
+  function renderPlatform(s, from, to) {
+    const A = ov.all, m = ov.tab === 'campaign' ? R.platformMixOf(s, campMixDeals(s)) : R.platformMix(s, from, to, td(), statusesNow());
+    document.querySelectorAll('#ov_body [data-fmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.platformMeasure));
+    $('ov_body').querySelector('[data-fmixact="table"]').classList.toggle('on', A.platformView === 'table');
+    ov.lastPlatform = m;
+    const note = m.multi ? `<div class="foot-note pf-note">${esc(O.platformMulti(m.multi))}</div>` : '';
+    if (A.platformView === 'table') { $('ov_fmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor(mixW('platformmix'), xOfTab(ov.tab)))}</div>` + note; return; }
+    $('ov_fmix').innerHTML = donutHTML('ov_fm', O.platformTitle) + note;
+    drawPlatform('ov_fm', m, A.platformMeasure, 148);
+  }
+  function drawPlatform(id, m, meas, S) {
+    const val = x => (meas === 'spend' ? x.spend : x.deals), pctOf = x => (meas === 'spend' ? x.spendPct : x.dealsPct), total = meas === 'spend' ? m.total.spend : m.total.deals;
+    const rows = m.rows.filter(x => val(x) > 0);
+    drawRing(id, rows.map(x => ({ value: val(x), tex: x.platform === R.NOT_SET, fill: platformColor(x.platform), tip: O.platformSlice(pfLabel(x.platform), R.baht(x.spend), x.deals, pctOf(x).toFixed(1)) })), total, meas, S);
+    /* Platform · Deals · Spend · % (of what is shown) */
+    $(id + '_leg').innerHTML = `<thead><tr><th>${esc(O.platformLabel)}</th><th class="num">${esc(O.mDeals)}</th><th class="num">${esc(O.mSpend)}</th><th class="num">%</th></tr></thead><tbody>` +
+      m.rows.map(x => `<tr><td><span class="tn"><i class="sw${x.platform === R.NOT_SET ? ' tex' : ''}" style="background-color:${platformColor(x.platform)}"></i>${x.platform === R.NOT_SET ? '' : U.pfIcon(x.platform)}${esc(pfLabel(x.platform))}</span></td>` +
+        `<td class="num">${esc(R.fmtNum(x.deals))}</td><td class="num">${esc(R.baht(x.spend))}</td><td class="num">${pctOf(x).toFixed(1)}%</td></tr>`).join('') + `</tbody>`;
+  }
+  function expandPlatform() {
+    const m = ov.lastPlatform; if (!m) return;
+    openDialog(`<div class="dlg-h">${esc(O.platformTitle)} · ${esc(mixTitleScope())}</div><div class="dlg-b tm-big">${donutHTML('ovx_fm', O.platformTitle)}</div>
+      <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'mid');
+    $('ovx_close').addEventListener('click', closeDialog);
+    drawPlatform('ovx_fm', m, ov.all.platformMeasure, 260);
+  }
   function expandTier() {
-    const m = ov.lastTier, [from, to] = allRange(); if (!m) return;
-    openDialog(`<div class="dlg-h">${esc(O.tierTitle)} · ${esc(R.dmy(from))} – ${esc(R.dmy(to))}</div><div class="dlg-b tm-big">${tierHTML('ovx_tm')}</div>
+    const m = ov.lastTier; if (!m) return;
+    openDialog(`<div class="dlg-h">${esc(O.tierTitle)} · ${esc(mixTitleScope())}</div><div class="dlg-b tm-big">${tierHTML('ovx_tm')}</div>
       <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'mid');
     $('ovx_close').addEventListener('click', closeDialog);
     drawDonut('ovx_tm', m, ov.all.tierMeasure, 260);
@@ -374,12 +439,12 @@ KT.screens.overview = (function () {
   const pillarColor = k => (R.PILLARS.includes(k) ? css(PILLAR_VAR[R.PILLARS.indexOf(k)]) : css('--series-grey'));
   const pctTxt = v => (v == null ? '—' : `${Math.round(v * 10) / 10 === Math.round(v) ? Math.round(v) : (Math.round(v * 10) / 10).toFixed(1)}%`);
   function renderPillar(s, from, to) {
-    const A = ov.all, m = R.pillarMix(s, from, to, td(), statusesNow());
+    const A = ov.all, m = ov.tab === 'campaign' ? R.pillarMixOf(s, campMixDeals(s)) : R.pillarMix(s, from, to, td(), statusesNow());
     document.querySelectorAll('#ov_body [data-pmix] button').forEach(b => b.classList.toggle('on', b.dataset.v === A.pillarMeasure));
     $('ov_body').querySelector('[data-pmixact="table"]').classList.toggle('on', A.pillarView === 'table');
     ov.lastPillar = m;
     const note = pillarNote(m);
-    if (A.pillarView === 'table') { $('ov_pmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor('pillarmix', allX()))}</div>` + note; return; }
+    if (A.pillarView === 'table') { $('ov_pmix').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor(mixW('pillarmix'), xOfTab(ov.tab)))}</div>` + note; return; }
     $('ov_pmix').innerHTML = donutHTML('ov_pm', O.pillarTitle) + note;
     drawPillar('ov_pm', m, A.pillarMeasure, 148);
   }
@@ -397,8 +462,8 @@ KT.screens.overview = (function () {
         `<td class="num">${esc(meas === 'spend' ? R.baht(x.spend) : R.fmtNum(x.deals))}</td><td class="num">${pctOf(x).toFixed(1)}%</td></tr>`).join('') + `</tbody>`;
   }
   function expandPillar() {
-    const m = ov.lastPillar, [from, to] = allRange(); if (!m) return;
-    openDialog(`<div class="dlg-h">${esc(O.pillarTitle)} · ${esc(R.dmy(from))} – ${esc(R.dmy(to))}</div><div class="dlg-b tm-big">${donutHTML('ovx_pm', O.pillarTitle)}${pillarNote(m)}</div>
+    const m = ov.lastPillar; if (!m) return;
+    openDialog(`<div class="dlg-h">${esc(O.pillarTitle)} · ${esc(mixTitleScope())}</div><div class="dlg-b tm-big">${donutHTML('ovx_pm', O.pillarTitle)}${pillarNote(m)}</div>
       <div class="dlg-f"><button type="button" class="btn" id="ovx_close">${esc(C.common.close)}</button></div>`, 'mid');
     $('ovx_close').addEventListener('click', closeDialog);
     drawPillar('ovx_pm', m, ov.all.pillarMeasure, 260);
@@ -413,7 +478,7 @@ KT.screens.overview = (function () {
       ${dlMenu('timeline')}
       <button type="button" class="icon-btn" data-sact="expand" title="${esc(O.showAll)}" aria-label="${esc(O.showAll)}">${ICON.expand}</button></div></div>
     <div class="ctl-sub" id="ov_tlsub"></div><div class="ctl-box" id="ov_tlbox"></div><div class="foot-note" id="ov_tlfoot"></div></div>`;
-  const TL_LEGEND = ['ongoing', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
+  const TL_LEGEND = ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'];
   /* the line under the title: n campaigns · Today · the status colours there are (always On going · Not started · Pending approval · Complete) · Posted · Planned */
   const tlLegend = m => { const has = new Set(m.rows.map(r => r.status));
     return TL_LEGEND.filter(k => ['ongoing', 'not_started', 'pending', 'complete'].includes(k) || has.has(k)).map(k => `<span class="lg"><i class="gbar span ${k}"></i>${esc(C.phaseStatus[k])}</span>`).join('') +
@@ -426,9 +491,11 @@ KT.screens.overview = (function () {
     $('ov_tlsub').innerHTML = `<span class="ctl-n">${esc(O.timelineSub(m.rows.length, dm(td())))}</span><span class="legend ctl-leg">${tlLegend(m)}</span>`;
     if (A.view === 'table') $('ov_tlbox').innerHTML = `<div class="tablewrap">${tableOf(KT.export.rowsFor('timelinetable', allX()))}</div>`;
     else { $('ov_tlbox').innerHTML = tlHTML(s, m, false); wireTl($('ov_tlbox'), m); }
-    const undated = m.measure === 'spend' ? m.undated.amount : m.undated.count;
-    $('ov_tlfoot').textContent = [undated ? (m.measure === 'spend' ? O.undatedSpend(R.baht(undated)) : O.undatedPosts(undated)) : '', m.outside ? O.outsideRange(m.outside) : '',
-      m.outsidePeriod ? O.outsidePeriod(m.outsidePeriod) : ''].filter(Boolean).join(' · ');
+    /* CR-29 §3.3 — one line: "76 posts not shown" + ⓘ (no date · dated outside this range · outside the campaign period) · nothing → no line */
+    const mp = m.measure === 'posts' ? m : R.campaignTimeline(s, from, to, 'posts', td(), statusesNow());   // the posts, whatever the measure
+    const nd = mp.undated.count || 0, n = nd + (mp.outside || 0) + (mp.outsidePeriod || 0);
+    $('ov_tlfoot').innerHTML = n ? `<span>${esc(O.notShown(R.fmtNum(n)))}</span> ${info({ h: O.notShownH, d: [nd ? O.undatedPosts(nd) + (m.measure === 'spend' && m.undated.amount ? ` (${R.baht(m.undated.amount)})` : '') : '',
+      mp.outside ? O.outsideRange(mp.outside) : '', mp.outsidePeriod ? O.outsidePeriodFaded(mp.outsidePeriod) : ''].filter(Boolean).join(' · ') })}` : '';
   }
   function tlHTML(s, m, all) {
     if (!m.rows.length) return `<div class="hint">${esc(O.noCampaignInRange)}</div>`;
@@ -517,12 +584,13 @@ KT.screens.overview = (function () {
     $('ov_body').innerHTML = `<div class="kpis cards4" id="ov_cards"></div>${activityCard()}
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.phaseBudgetTitle)}</h3><div class="btns ov-ctl">${dlMenu('phasebudget')}</div></div><div id="ov_pbudget"></div></div>
       ${bvaCard('budgetactual_camp')}
+      <div class="ov-r4 r3 camp-mix">${pillarCard()}${tierCard()}${platformCard()}</div>
       <div class="card ov-full"><div class="card-head"><h3>${U.labelInfo(O.productsTitle, O.productsTip, O.productsTitle)}</h3><div class="btns ov-ctl">${dlMenu('products')}</div></div><div id="ov_products"></div></div>
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.cancelledTitle)}</h3><div class="btns ov-ctl">${dlMenu('cancelled')}</div></div><div id="ov_cancelled"></div></div>
       <div class="card ov-full"><div class="card-head"><h3>${U.labelInfo(O.team.title, O.team.tip, O.team.title)}</h3><div class="btns ov-ctl">${dlMenu('workload')}</div></div><div id="ov_cwork"></div></div>`;
     const scope = campScope();
     if (P.reasonFor !== P.campaign + '|' + P.phase) { P.reason = ''; P.reasonFor = P.campaign + '|' + P.phase; }   // the reason chip is per Campaign / Phase
-    renderCards(s, scope); renderActivity(s, scope); renderPhaseBudget(s); renderBva(); renderProductsGiven(s, scope); renderCancelled(s, scope); renderCampaignWorkload(s, scope);
+    renderCards(s, scope); renderActivity(s, scope); renderPhaseBudget(s); renderBva(); renderPillar(s); renderTier(s); renderPlatform(s); renderProductsGiven(s, scope); renderCancelled(s, scope); renderCampaignWorkload(s, scope);   // CR-31 §2.1: + the mix row
   }
   const activityCard = () => `<div class="card"><div class="card-head"><h3>${esc(O.activityTitle)}</h3>
       <div class="btns ov-ctl">
@@ -813,7 +881,7 @@ KT.screens.overview = (function () {
     const rows = all.filter(r => (!t || R.workTileHas(t, r)) && (!stg || r.stage === stg));
     ov.ops.byKey = new Map(all.map(r => [r.key, r]));
     const tile = (k, n, sub) => `<button type="button" class="wq-tile t-${k}${t === k ? ' on' : ''}${n ? '' : ' zero'}" data-wqtile="${k}" aria-pressed="${t === k}"><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(W.tiles[k])}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</button>`;
-    const usParts = ['shipment', 'payment', 'metrics', 'approval'].filter(k => sum.usBy[k]).map(k => W.usPart[k](sum.usBy[k])).join(' · ');
+    const usParts = ['shipment', 'payment', 'metrics', 'close', 'approval'].filter(k => sum.usBy[k]).map(k => W.usPart[k](sum.usBy[k])).join(' · ');
     const tiles = `<div class="wq-tiles">${tile('overdue', sum.overdue)}${tile('week', sum.week)}${tile('none', sum.none, sum.noneKol ? W.noneKol(sum.noneKol) : '')}${tile('stuck', sum.stuck)}${tile('us', sum.us, usParts)}</div>`;
     const everyone = !o.person, team = everyone && isManager() ? R.teamLoad(s, all, o) : null, fix = R.dataToFix(s, o);   // CR-26 §3.4: open deals by R.teamWorkload
     ov.ops.fix = fix;
@@ -839,7 +907,7 @@ KT.screens.overview = (function () {
     const W = WQ(), k = r.kol_id ? R.kolById(s, r.kol_id) || {} : null, dash = '<span class="muted">—</span>';
     const due = r.due ? (r.bucket === 'overdue' ? `<span class="late">${esc(W.dueLate(R.dayDiff(t0, r.due)))}</span>` : r.bucket === 'today' ? `<b class="wq-today">${esc(W.dueToday)}</b>` : `<span title="${esc(R.dmy(r.due))}">${esc(W.dueIn(R.dayDiff(r.due, t0)))}</span>`) : dash;
     const setDate = !r.due && r.field && canSet(s, r) ? ` <button type="button" class="link small" data-wqset="${esc(r.key)}">${esc(W.btn.setDate)}</button>` : '';
-    const who = r.kind === 'approval' ? `<b class="nm">${esc(W.approval)}</b>` : k ? `<span class="wq-kol">${k.kol_id ? U.avatarHTML(k, 'sm') : ''}<b class="nm">${esc(k.display_name || r.kol_id)}</b></span>` : dash;
+    const who = r.kind === 'approval' ? `<b class="nm">${esc(W.approval)}</b>` : r.kind === 'close' ? `<b class="nm">${esc(W.campaignWord)}</b>` : k ? `<span class="wq-kol">${k.kol_id ? U.avatarHTML(k, 'sm') : ''}<b class="nm">${esc(k.display_name || r.kol_id)}</b></span>` : dash;
     const action = esc(R.workActionText(r)) + (r.kind === 'approval' ? ` <span class="muted small">· ${esc(reqTitle(s, r.ref))}</span>` : '');
     /* CR-26 §3.5 — Pay KOL / Enter metrics: days since the post (not days in the stage) */
     const inStage = (r.sincePost != null ? `<span class="wq-sp">${esc(W.sincePost(r.sincePost))}</span>` : r.inStage != null ? esc(W.days(r.inStage)) : dash) + (r.stuck ? ` <span class="chip wq-stuck">${esc(W.stuck(r.inStage))}</span>` : '');
@@ -855,6 +923,8 @@ KT.screens.overview = (function () {
     /* CR-26 §3.5 — Mark paid on the row (the CR-17 popover): who may, as on Payments — Simple mode: Admin · KOL Manager · Accounting · Staff on their own deals */
     if (r.kind === 'payment') return b(W.btn.paid, R.isSimple(s, 'payments') ? R.canPaySimple(s, U.actor(), r.ref) && r.ref.status !== 'on_hold' : can('payment.paid'));
     if (r.kind === 'metrics') return b(W.btn.metrics, can('deal.edit'));
+    if (r.kind === 'gencode') return b(W.btn.gencode, can('deal.edit') && !R.campaignCancelled(s, r.campaign_id));   // CR-30
+    if (r.kind === 'close') return b(R.canApprove(U.actor()) ? W.btn.closeCamp : W.btn.requestClose, can('campaign.draft') || can('campaign.edit'));   // CR-29 (S)
     return b(W.btn.review, R.canApprove(U.actor()));
   }
   /* §4.4 — Shortlist → … → Approve: deals · avg days · stuck */
@@ -888,6 +958,8 @@ KT.screens.overview = (function () {
     if (r.kind === 'shipment') { KT.samples.quick(r.action === 'ship' ? 'shipped' : 'delivered', [r.ref.shipment_id], btn, after); return; }
     if (r.kind === 'payment') { KT.screens.payments.markPaid(btn, [r.ref.key], after); return; }
     if (r.kind === 'metrics') { go('deals', { perf: { campaign: r.deal.campaign_id, pic: 'all', status: 'due', q: r.deal.deal_id } }); return; }
+    if (r.kind === 'close') { KT.screens.campaign.openClose(r.campaign_id, { opener: btn, after }); return; }   // CR-29 (S)
+    if (r.kind === 'gencode') { KT.screens.deals.openDealModal(r.deal.deal_id, { tab: 'shipments', after, source: 'ops' }); KT.screens.deals.gencodeAdd(); return; }   // CR-30: + Add codes over the deal
     if (r.kind === 'approval') KT.approvals.review(r.ref.id, { opener: btn, after });
   }
   /* a row → its deal (the tab of the work) · a shipment with no deal → Shipments · a request → Review */
@@ -895,9 +967,10 @@ KT.screens.overview = (function () {
     const r = ov.ops.byKey && ov.ops.byKey.get(key); if (!r) return;
     const after = () => { if (U.currentTab() === 'overview' && ov.tab === 'ops') renderOpsBody(); };
     if (r.kind === 'approval') { KT.approvals.review(r.ref.id, { after }); return; }
+    if (r.kind === 'close') { KT.screens.campaign.openCampaign(r.campaign_id); return; }   // CR-29 (S): the Campaign's panel
     if (!r.deal) { if (r.kind === 'shipment') location.hash = '#shipments/' + r.ref.shipment_id; return; }
     /* CR-28 §3 mapping: Ship samples / metrics → Shipments & posts (no Ship by → that cell) · Pay KOL → Costs & payment · a deal's next date (Set date · Post due) → Timeline */
-    const tab = r.kind === 'shipment' || r.kind === 'metrics' ? 'shipments' : r.kind === 'payment' ? 'costs' : r.kind === 'deal' && r.field ? 'timeline' : 'overview';
+    const tab = r.kind === 'shipment' || r.kind === 'metrics' || r.kind === 'gencode' ? 'shipments' : r.kind === 'payment' ? 'costs' : r.kind === 'deal' && r.field ? 'timeline' : 'overview';
     const focus = r.kind === 'shipment' && !r.due ? 'ship_by' : r.kind === 'deal' && r.field ? r.field : null;
     KT.screens.deals.openDealModal(r.deal.deal_id, { after, tab, focus, source: 'ops', nav: [...new Set([...document.querySelectorAll('#ov_body tr[data-wqrow]')].map(tr => ((ov.ops.byKey.get(tr.dataset.wqrow) || {}).deal || {}).deal_id).filter(Boolean))] });
   }
@@ -973,7 +1046,9 @@ KT.screens.overview = (function () {
     const tm = e.target.closest('[data-tmix] button'); if (tm) { ov.all.tierMeasure = tm.dataset.v; renderTier(state(), ...allRange()); return; }
     const pmx = e.target.closest('[data-pmix] button'); if (pmx) { ov.all.pillarMeasure = pmx.dataset.v; renderPillar(state(), ...allRange()); return; }
     const pma = e.target.closest('[data-pmixact]'); if (pma) { if (pma.dataset.pmixact === 'table') { ov.all.pillarView = ov.all.pillarView === 'table' ? 'chart' : 'table'; renderPillar(state(), ...allRange()); } else expandPillar(); return; }
-    const ta = e.target.closest('[data-tact]'); if (ta) { if (ta.dataset.tact === 'table') { ov.all.tierView = ov.all.tierView === 'table' ? 'chart' : 'table'; renderAll(); } else expandTier(); return; }
+    const fmx = e.target.closest('[data-fmix] button'); if (fmx) { ov.all.platformMeasure = fmx.dataset.v; renderPlatform(state(), ...allRange()); return; }   // CR-29 §3.4
+    const fma = e.target.closest('[data-fmixact]'); if (fma) { if (fma.dataset.fmixact === 'table') { ov.all.platformView = ov.all.platformView === 'table' ? 'chart' : 'table'; renderPlatform(state(), ...allRange()); } else expandPlatform(); return; }
+    const ta = e.target.closest('[data-tact]'); if (ta) { if (ta.dataset.tact === 'table') { ov.all.tierView = ov.all.tierView === 'table' ? 'chart' : 'table'; renderTier(state(), ...allRange()); } else expandTier(); return; }
     const sw = e.target.closest('[data-swim] button'); if (sw) { ov.all.measure = sw.dataset.v; renderAll(); return; }
     const sa = e.target.closest('[data-sact]'); if (sa) { const a = sa.dataset.sact; if (a === 'table') { ov.all.view = ov.all.view === 'table' ? 'chart' : 'table'; renderAll(); } else if (a === 'csv') downloadActivity(); else expand(); return; }
     const gc = e.target.closest('[data-gocamp]'); if (gc) { Object.assign(ov.camp, { campaign: gc.dataset.gocamp, phase: '' }); ov.tab = 'campaign'; render(); return; }

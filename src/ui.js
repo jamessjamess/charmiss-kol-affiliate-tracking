@@ -48,6 +48,10 @@ KT.ui = (function () {
     /* CR-20 §4.8 — a package's payment status follows its line · a deal knows whether its package is paid (Dashboard Paid / Pending) */
     if (s && Array.isArray(s.kol_packages)) { let e = 0; const evs = R.syncPackages(s, { eventId: () => store.newEventId() + e++, now: new Date(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
     store.save(); renderBanners(); if (msg) toast(msg);
+    /* CR-31 §2.7 — no room: the copies kept aside go to IndexedDB, then it is saved again (the red bar goes once it is) */
+    if (!store.status.canSave && /quota/i.test(String(store.status.lastError || '')) && !commit.freeing) {
+      commit.freeing = true; store.offloadCopies().then(r => { commit.freeing = false; if (r.moved.length) { store.save(); renderBanners(); } }).catch(() => { commit.freeing = false; });
+    }
     if (api.onCommit) api.onCommit();   // CR-17: the side menu's badge (Approvals)
   }
 
@@ -102,7 +106,7 @@ KT.ui = (function () {
     return `<span class="stage ${cls}" title="${tip}"><span class="dots">${dots.map(x => `<i class="${x.state}"></i>`).join('')}</span><span class="lbl">${esc(stageLabel(d))}${of ? ` <span class="muted">${esc(of)}</span>` : ''}</span></span>`;
   }
   /* Phase / Campaign status chip (CR-02 §4.8): On going blue · Not started grey outline · Complete pale green */
-  const PHASE_CLS = { ongoing: 'progress', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel', pending: 'apending', draft: 'adraft' };   // CR-17: Pending approval (yellow) · CR-21: Draft (grey)
+  const PHASE_CLS = { ongoing: 'progress', wrap_up: 'wrap', not_started: 'outline', complete: 'done', on_hold: 'hold', cancelled: 'cancel', pending: 'apending', draft: 'adraft' };   // CR-29: Wrap-up (light orange)   // CR-17: Pending approval (yellow) · CR-21: Draft (grey)
   const phaseChip = st => `<span class="st ${PHASE_CLS[st] || ''}">${esc(C.phaseStatus[st] || st)}</span>`;
   /* Payment column (CR-02 §4.3): small grey term · coloured state; tooltip = the term's ticks with dates */
   const PAY_CLS = { paid: 'ok', deposit_paid: 'info', overdue: 'err', due: 'warn', not_due: 'muted', free: 'muted' };
@@ -195,12 +199,14 @@ KT.ui = (function () {
   const rescueToast = box => { const t = $('toast'); if (t && box && box.contains(t)) document.body.appendChild(t); };
   function toast(msg) { const t = $('toast'); toastHost(t); t.classList.remove('act'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
   /* a toast with one action button (e.g. Undo), open for `ms` */
-  function toastAction(msg, label, fn, ms = 5000) {
+  /* CR-31 §2.5: more = [{ label, fn }] — more buttons after the first (e.g. Undo · Add note) */
+  function toastAction(msg, label, fn, ms = 5000, more) {
     const t = $('toast'); clearTimeout(t._h); toastHost(t);
-    t.innerHTML = `<span>${esc(msg)}</span><button type="button" class="tact">${esc(label)}</button>`;
+    const acts = [{ label, fn }].concat(more || []);
+    t.innerHTML = `<span>${esc(msg)}</span>` + acts.map((a, i) => `<button type="button" class="tact" data-tact="${i}">${esc(a.label)}</button>`).join('');
     t.classList.add('show', 'act');
     const hide = () => t.classList.remove('show', 'act');
-    t.querySelector('.tact').onclick = () => { clearTimeout(t._h); hide(); fn(); };
+    t.querySelectorAll('.tact').forEach(b => { b.onclick = () => { clearTimeout(t._h); hide(); acts[+b.dataset.tact].fn(); }; });
     t._h = setTimeout(hide, ms);
   }
   function download(name, text, type) {
@@ -484,9 +490,10 @@ KT.ui = (function () {
     const list = s.campaigns.filter(c => !R.isDraft(c) && (!years || years.has(c.campaign_id) || c.campaign_id === selected));
     return (placeholder != null ? `<option value="" data-special>${esc(placeholder)}</option>` : '') + R.sortCampaigns(list, s.phases, td).map(c => {
       const st = R.campaignEffectiveStatus ? R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), td) : R.campaignStatus(R.phasesOfCampaign(s, c.campaign_id), td), [a, z] = R.isApproved(c) ? R.scopeRange(s, { campaignId: c.campaign_id }) : allDates(s, c.campaign_id);
-      const chip = st, off = o.forDeal && !R.isApproved(c) && c.campaign_id !== selected;
+      const closed = o.forDeal && R.isApproved(c) && R.isClosed(c) && st !== 'cancelled' && c.campaign_id !== selected;   // CR-29 §3.5: Complete — no new deal
+      const chip = st, off = (o.forDeal && !R.isApproved(c) && c.campaign_id !== selected) || closed;
       return `<option value="${esc(c.campaign_id)}" data-st="${chip}" data-range="${esc(a ? `${dm(a)} – ${dm(z)}` : '')}"${st === 'cancelled' ? ' data-hide' : ''}` +
-        `${off ? ` disabled data-off data-tip="${esc(C.approval.waiting)}"` : ''}${c.campaign_id === selected ? ' selected' : ''}>${esc(c.campaign_name)}</option>`;
+        `${off ? ` disabled data-off data-tip="${esc(closed ? C.close.isComplete : C.approval.waiting)}"` : ''}${c.campaign_id === selected ? ' selected' : ''}>${esc(c.campaign_name)}</option>`;
     }).join('');
   }
   /* one Phase <option>: name · status · dates */
@@ -615,30 +622,40 @@ KT.ui = (function () {
   /* ===================== CR-11 §4.3 — create forms used by more than one modal ===================== */
   /* Create KOL (New deal › Create KOL · KOL Master › + New KOL): name · platform + handle · followers · link · type · category · gender ·
      contact · PIC · default term · c = { draft, touched, submitted, anyway } (R.createKolDraft) · the buttons are data-act ckCreate / ckUse */
-  function kolCreateHTML(x) {
-    const L = state().lookups, CK = C.bulk.ck;
-    const inp = (k, type) => `<input${type ? ` type="${type}"` : ''} id="f_ck_${k}" data-ck="${k}" data-key="ck_${k}" value="${esc(x[k] == null ? '' : x[k])}" autocomplete="off"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''}>`;
+  /* CR-30 §3.5 — two columns: who (Name · Partner type KOL / Affiliate · Platform * · Profile link * · Username * taken from the link · Followers) · details
+     (Type · Category · Gender · Contact on one row · PIC · Default term) · o.vault: Payee & shipping (optional, locked until the vault is unlocked) under them */
+  function kolCreateHTML(x, o = {}) {
+    const L = state().lookups, CK = C.bulk.ck, NK = C.newKol;
+    const inp = (k, type, extra) => `<input${type ? ` type="${type}"` : ''} id="f_ck_${k}" data-ck="${k}" data-key="ck_${k}" value="${esc(x[k] == null ? '' : x[k])}" autocomplete="off"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''}${extra || ''}>`;
     const sel = (k, items, ph) => `<select id="f_ck_${k}" data-ck="${k}" data-key="ck_${k}">${optionsHTML(items, x[k], ph)}</select>`;
     const types = (L.kol_type_list || []).filter(t => t.active !== false).map(t => ({ value: t.key, label: t.label }));
-    return `<div id="ck_dup"></div><div class="fields">
-        ${field('ck_display_name', CK.name, inp('display_name'), { req: 1, wide: 1 })}
-        ${field('ck_partner_type', C.partner.field, partnerSegHTML('data-ckpt', x.partner_type || 'kol', { id: 'f_ck_partner_type' }), { req: 1, wide: 1 })}
-        ${field('ck_platform', CK.platform, sel('platform', (L.platform_list || []).map(v => ({ value: v, label: v })), CK.choose))}${field('ck_handle', CK.handle, inp('handle'), { hint: esc(CK.handleHint) })}
-        ${field('ck_followers', CK.followers, inp('followers', 'number'))}${field('ck_profile_link', CK.profileLink, inp('profile_link', 'url'))}
+    const contact = `<div class="nk-contact">${sel('contact_channel', R.CONTACT_CHANNELS.map(v => ({ value: v, label: v })), CK.notSet)}` +
+      `<input id="f_ck_contact_id" data-ck="contact_id" data-key="ck_contact_id" value="${esc(x.contact_id == null ? '' : x.contact_id)}" placeholder="${esc(C.kol.contactIdPh[x.contact_channel || ''] || NK.contactPh)}" maxlength="${R.CONTACT_ID_MAX}" autocomplete="off" aria-label="${esc(C.kol.contactId)}"></div>`;
+    return `<div id="ck_dup"></div><div class="nk-grid"><div class="nk-col"><div class="fields one">
+        ${field('ck_display_name', CK.name, inp('display_name'), { req: 1 })}
+        ${field('ck_partner_type', C.partner.field, partnerSegHTML('data-ckpt', x.partner_type === 'affiliate' ? 'affiliate' : 'kol', { id: 'f_ck_partner_type', keys: ['kol', 'affiliate'] }), { req: 1 })}
+        ${field('ck_platform', CK.platform, sel('platform', (L.platform_list || []).map(v => ({ value: v, label: v })), CK.choose), { req: 1 })}
+        ${field('ck_profile_link', CK.profileLink, inp('profile_link', 'url', ' placeholder="https://www.tiktok.com/@account"'), { req: 1 })}
+        ${field('ck_handle', CK.handle, inp('handle', '', ` placeholder="${esc(CK.handleHint)}"`), { req: 1, hint: `<span id="ck_uhelp">${x._autoHandle ? esc(NK.usernameAuto) : ''}</span>` })}
+        ${field('ck_followers', CK.followers, inp('followers', 'number'))}
+      </div></div><div class="nk-col"><div class="fields one">
         ${field('ck_kol_type', CK.type, sel('kol_type', types, CK.notSet))}${field('ck_kol_category', CK.category, inp('kol_category'))}
-        ${field('ck_gender', CK.gender, sel('gender', R.GENDERS.map(v => ({ value: v, label: v })), CK.notSet))}${field('ck_contact_channel', CK.contact, sel('contact_channel', R.CONTACT_CHANNELS.map(v => ({ value: v, label: v })), CK.notSet))}
-        ${field('ck_contact_id', C.kol.contactId, `<input id="f_ck_contact_id" data-ck="contact_id" data-key="ck_contact_id" value="${esc(x.contact_id == null ? '' : x.contact_id)}" placeholder="${esc(C.kol.contactIdPh[x.contact_channel || ''] || C.kol.contactIdPh[''])}" maxlength="${R.CONTACT_ID_MAX}" autocomplete="off">`, { hint: esc(C.kol.contactIdHint) })}
+        ${field('ck_gender', CK.gender, sel('gender', R.GENDERS.map(v => ({ value: v, label: v })), CK.notSet))}
+        ${field('ck_contact_id', CK.contact, contact, { hint: esc(C.kol.contactIdHint) })}
         ${field('ck_pic', CK.pic, sel('pic', picList(x.pic).map(v => ({ value: v, label: v })), CK.choose), { req: 1 })}
         ${field('ck_default_payment_term', CK.term, sel('default_payment_term', R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), C.term.none), { hint: esc(o_termHint(x)) })}
-      </div>`;
+      </div></div></div>${o.vault && KT.payee ? KT.payee.nkVaultHTML('ck') : ''}`;
   }
   const o_termHint = x => (x && x._forDeal === false ? '' : C.bulk.ck.termHint);
   /* the checks (shown after Create, or a field left) · a KOL with that name / handle already: "Use this KOL" or tick Create anyway → {res, dup} */
   function kolCreateCheck(root, c) {
-    const s = state(), res = R.validateCreateKol(s, c.draft), dup = R.findDuplicateKol(s, c.draft.display_name, c.draft.handle), CK = C.bulk.ck;
-    $('ck_dup').innerHTML = dup ? `<div class="ck-dup"><span>${esc(CK.already(dup.kol.display_name, dup.handle))}</span><button type="button" class="btn small" data-act="ckUse" data-kolid="${esc(dup.kol.kol_id)}">${esc(CK.useThis)}</button>` +
+    const s = state(), res = R.validateCreateKol(s, c.draft), dup = R.findDuplicateKol(s, c.draft.display_name, c.draft.handle, c.draft.profile_link), CK = C.bulk.ck;
+    $('ck_dup').innerHTML = dup ? `<div class="ck-dup"><span>${esc(dup.link ? C.newKol.alreadyLink(dup.kol.display_name, dup.handle) : CK.already(dup.kol.display_name, dup.handle))}</span><button type="button" class="btn small" data-act="ckUse" data-kolid="${esc(dup.kol.kol_id)}">${esc(CK.useThis)}</button>` +
       `<label class="tick small"><input type="checkbox" data-ckanyway${c.anyway ? ' checked' : ''}> ${esc(CK.createAnyway)}</label></div>` : '';
-    const show = res.errs.filter(e => c.submitted || c.touched.has(e.field));
+    /* CR-30 §3.5 — Payee & shipping: a part that is started must be complete */
+    if (root.querySelector('[data-nkv]') && KT.payee) res.errs.push(...KT.payee.nkVaultCheck(KT.payee.nkVaultRead(root)));
+    const show = c.submitted ? res.errs : [];   // CR-30 §3.5: the errors only after Create (none in red when the form opens)
+    root.querySelectorAll('[data-nkv]').forEach(el => el.classList.toggle('invalid', show.some(e => e.field === el.dataset.key)));
     $('ck_checks').innerHTML = checksHTML({ errs: show, warns: [], infos: [] }, '');
     root.querySelectorAll('[data-ck]').forEach(el => el.classList.toggle('invalid', show.some(e => e.field === el.dataset.key)));
     const btn = root.querySelector('[data-act="ckCreate"]'); if (btn) btn.disabled = (c.submitted && res.errs.length > 0) || (!!dup && !c.anyway);
@@ -648,16 +665,27 @@ KT.ui = (function () {
   function wireKolCreate(root, c, after) {
     root.querySelectorAll('[data-ck]').forEach(el => {
       const h = () => {
-        c.draft[el.dataset.ck] = el.value;
-        if (el.dataset.ck === 'contact_channel') { const ci = root.querySelector('[data-ck="contact_id"]'); if (ci) ci.placeholder = C.kol.contactIdPh[el.value] || C.kol.contactIdPh['']; }   // CR-14 §4.5
+        const k = el.dataset.ck; c.draft[k] = el.value;
+        if (k === 'contact_channel') { const ci = root.querySelector('[data-ck="contact_id"]'); if (ci) ci.placeholder = C.kol.contactIdPh[el.value] || C.newKol.contactPh; }   // CR-14 §4.5
+        if (k === 'handle') { c.draft._autoHandle = false; const hp = $('ck_uhelp'); if (hp) hp.textContent = ''; }
+        if (k === 'platform') c.draft._autoPlatform = false;
+        /* CR-30 §3.5 — the profile link fills the Platform and the Username (while they are empty or were filled from the link) */
+        if (k === 'profile_link') {
+          const pp = R.platformFromLink(el.value), uu = R.usernameFromLink(el.value), pi = root.querySelector('[data-ck="platform"]'), hi = root.querySelector('[data-ck="handle"]');
+          if (pp && (state().lookups.platform_list || []).includes(pp) && (!c.draft.platform || c.draft._autoPlatform)) { c.draft.platform = pp; c.draft._autoPlatform = true; if (pi) pi.value = pp; }
+          if (uu && (R.isBlank(c.draft.handle) || c.draft._autoHandle)) { c.draft.handle = uu; c.draft._autoHandle = true; if (hi) hi.value = uu; const hp = $('ck_uhelp'); if (hp) hp.textContent = C.newKol.usernameAuto; }
+        }
         after();
       };
-      el.addEventListener('input', h); el.addEventListener('change', () => { c.touched.add(el.dataset.key); h(); }); el.addEventListener('blur', () => { c.touched.add(el.dataset.key); after(); });
+      el.addEventListener('input', h); el.addEventListener('change', () => { c.touched.add(el.dataset.key); h(); });
     });
     root._ck = { c, after };
     if (!root.dataset.ckWired) {
       root.dataset.ckWired = '1'; root.addEventListener('change', e => { if (e.target.matches('[data-ckanyway]') && root._ck) { root._ck.c.anyway = e.target.checked; root._ck.after(); } });
       root.addEventListener('click', e => { const b = e.target.closest('[data-ckpt]'); if (b && root._ck) { root._ck.c.draft.partner_type = partnerSegPick(b, 'data-ckpt'); root._ck.after(); } });   // CR-25
+      root.addEventListener('input', e => { if (e.target.matches('[data-nkv]') && root._ck) root._ck.after(); });   // CR-30: Payee & shipping
+      /* CR-30 — Unlock to add: the vault's own dialog, then the section again (nothing typed is kept while locked) */
+      root.addEventListener('click', e => { if (!e.target.closest('[data-nkvunlock]') || !KT.payee) return; KT.payee.unlockDialog(() => { const v = root.querySelector('.nk-vault'); if (v) { v.outerHTML = KT.payee.nkVaultHTML(v.id.replace(/_vault$/, '')); } if (root._ck) root._ck.after(); }); });
     }
   }
   /* Add account (New deal panel · KOL drawer › + Add account): platform · handle · followers · profile link — the KOL Master checks (R.validateAddAccount) */

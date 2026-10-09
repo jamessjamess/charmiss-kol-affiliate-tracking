@@ -62,11 +62,12 @@ Object.assign(KT.rules, (function (R, C) {
       phases.filter(p => waits(p) && isApproved(p)).map(p => ({ kind: 'phase', id: p.phase_id, rec: p, fields: diff(p) })));
     const budget = R.pendingBudgetChange ? R.pendingBudgetChange(state, campaignId) : null;
     return { campaign: c, status: c.approval_status || 'approved', newPhases: isApproved(c) ? phases.filter(p => p.approval_status === 'pending') : [], changes, budget,
-      waiting: c.approval_status === 'pending' || (isApproved(c) && phases.some(p => p.approval_status === 'pending')) || changes.length > 0 || !!budget };
+      close: R.closeRequested && R.closeRequested(c) ? c.close_request : null,   // CR-29
+      waiting: c.approval_status === 'pending' || (isApproved(c) && phases.some(p => p.approval_status === 'pending')) || changes.length > 0 || !!budget || !!(R.closeRequested && R.closeRequested(c)) };
   }
 
   /* ===================== the cards (one a request) ===================== */
-  const REQUEST_TYPES = ['new_campaign', 'new_phase', 'change', 'budget_increase', 'budget_decrease'];
+  const REQUEST_TYPES = ['new_campaign', 'new_phase', 'change', 'budget_increase', 'budget_decrease', 'close'];   // CR-29: + Close campaign
   /* the pending ones, oldest first ({ id, type, kind, campaign_id, phase_id, change_id, by, at, note, round }) */
   const approvalRequests = state => R.requestsIn(state, 'pending');
   const approvalCount = state => approvalRequests(state).length;
@@ -104,7 +105,10 @@ Object.assign(KT.rules, (function (R, C) {
     return { campaignId, campaign: clone(campaignOf(state, campaignId)), phases: (state.phases || []).filter(p => p.campaign_id === campaignId).map(clone), order: (state.phases || []).map(p => p.phase_id),
       posts: (state.deal_posts || []).filter(p => ids.has(p.phase_override)).map(p => [p.post_id, p.phase_override]),
       budget: (state.campaign_budget_changes || []).filter(x => x.campaign_id === campaignId).map(clone),
-      products: (state.campaign_products || []).filter(x => x.campaign_id === campaignId).map(clone) };
+      products: (state.campaign_products || []).filter(x => x.campaign_id === campaignId).map(clone),
+      /* CR-29: a close may cancel deals — they (their shipments) come back too; the log rows written after go */
+      deals: (state.deals || []).filter(d => d.campaign_id === campaignId).map(clone), logN: (state.deal_status_log || []).length, devN: (state.deal_events || []).length,
+      ships: (state.sample_shipments || []).filter(x => (state.deals || []).some(d => d.deal_id === x.deal_id && d.campaign_id === campaignId)).map(clone) };
   }
   /* back to the snapshot · eventIds: the rows the decision wrote (they go) */
   function restoreSnapshot(state, snap, eventIds) {
@@ -118,6 +122,12 @@ Object.assign(KT.rules, (function (R, C) {
       .sort((a, b) => String(a.change_id).localeCompare(String(b.change_id)));
     if (snap.products && Array.isArray(state.campaign_products)) state.campaign_products = state.campaign_products.filter(x => x.campaign_id !== snap.campaignId).concat(snap.products.map(clone));
     const gone = new Set(eventIds || []); state.campaign_events = state.campaign_events.filter(e => !gone.has(e.event_id));
+    if (snap.deals) {
+      const dm = new Map(snap.deals.map(d => [d.deal_id, d])); state.deals = state.deals.map(d => (dm.has(d.deal_id) ? clone(dm.get(d.deal_id)) : d));
+      if (Array.isArray(state.deal_status_log)) state.deal_status_log.length = Math.min(state.deal_status_log.length, snap.logN);
+      if (Array.isArray(state.deal_events)) state.deal_events.length = Math.min(state.deal_events.length, snap.devN);
+      const sm = new Map((snap.ships || []).map(x => [x.shipment_id, x])); if (Array.isArray(state.sample_shipments)) state.sample_shipments = state.sample_shipments.map(x => (sm.has(x.shipment_id) ? clone(sm.get(x.shipment_id)) : x));
+    }
   }
 
   /* ---------- what a card says ---------- */

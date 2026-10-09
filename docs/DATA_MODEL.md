@@ -325,3 +325,38 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 
 ไม่มี migration · ไม่แตะยอดเงิน (Paid / Pending ตาม CR-05)
 
+## CR-29 — schema 22 (ปิด Campaign · Wrap-up)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `campaigns` | + `closed_at` | วันที่ / เวลาที่ปิด (มีค่า = **Complete**) · null = ยังไม่ปิด (เลย End date = Wrap-up) |
+| `campaigns` | + `closed_by` · `close_note` | ผู้ปิด (ผู้ Approve หรือ Manager / Admin ที่ปิดเอง · `"system"` จาก migration) · Close note |
+| `campaigns` | + `reopened_at` · `reopened_by` · `reopen_reason` | การเปิดอีกครั้งล่าสุด (Manager / Admin · เหตุผลบังคับ) |
+| `campaigns` | + `close_request` | คำขอปิดของ Staff = `{ status draft \| pending, note, cancel_open, requested_by, requested_at, checklist (ณ วันที่ส่ง), submit_round, returned_reason, returned_by, returned_at, last_submitted }` · null เมื่อไม่มี / ปิดแล้ว |
+| `campaign_events` | type `approval` + `request: 'close'` · to `close_requested` · `resubmitted` · `returned` · `withdrawn` · `approved` · `close_cancelled` · `draft_saved` · `draft_deleted` | เหมือนคำขออื่น (CR-21) |
+| `campaign_events` | type `status` · to `closed` (note = Close note · requested_by) · `reopened` (from complete · note = เหตุผล) | |
+
+สถานะ (คำนวณ ไม่เก็บ): Cancelled > Draft > Pending approval > Complete (`closed_at`) > On hold > ตามวันที่ (Not started · On going · **Wrap-up**) · Close requested = chip
+
+**Migration v22:** Campaign ที่ approved · ไม่ On hold / Cancelled · ทุก Phase จบแล้ว (End date < วันที่โหลด) → `closed_at` = End date · `closed_by` = "system" (ยัง Complete) · ที่ยังไม่จบไม่แตะ · ทุก Campaign ได้ field ใหม่เป็น null · รันซ้ำได้ผลเดิม · ตัวเลขเงินไม่เปลี่ยน
+
+## CR-30 — schema 23 (Gencodes · Other fee · Username)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `deal_gencodes` (ใหม่) | `code_id` (GC-00001) · `deal_id` · `post_id` (null = Not linked) · `type` (`tiktok_spark` \| `meta` \| `other`) · `code` · `received_at` · `created_by` · `deleted_at` (null = ใช้อยู่) | โค้ดเต็มอยู่ใน Backup · หน้าจอแสดงย่อ · Export ทั่วไป = จำนวนเท่านั้น · Export Gencodes เฉพาะ Manager / Admin |
+| `deals` | + `other_fee` (0) · `other_fee_note` (บังคับเมื่อ > 0) | รวมใน Total cost |
+| `kol_accounts.handle` | = **Username** (ไม่มี @ / ช่องว่าง) | ชื่อ field เดิม (ไฟล์ Import / Export เดิมใช้ได้) · หน้าจอเรียก Username |
+| `deal_events` | type `gencode_added` · `gencode_copied` · `gencode_edited` · `gencode_deleted` (to = 6 ตัวแรกของโค้ด) | ไม่เก็บโค้ดเต็มใน log |
+| `shipping_addresses` · `payee_profiles` | สร้างได้ตอน New KOL (เข้ารหัส CR-16 · default) | |
+
+**Migration v23:** `deal_gencodes` = [] · deals `other_fee` = 0 · `other_fee_note` = null · `handle` ตัด @ / ช่องว่าง · ไม่แตะยอดเงิน
+
+## CR-31 — schema คงที่ 23 (step_notes ทุกขั้น · IndexedDB archive)
+
+| ที่ | เปลี่ยน | หมายเหตุ |
+|---|---|---|
+| `step_notes.step_key` | `draft_1` · `draft_2` · `draft_3` (เดิม) + **`step_<ชื่อขั้น>`** (`step_contacted` · `step_confirm_qt` · `step_brief` · `step_script` · `step_approve` · `step_post`) | `R.stepKeyOf(step)` · `R.stepOfKey` · `R.stepNoteLabel` · บันทึกจาก Note ของ Move stage / toast Add note · log `step_note_updated` · Cancel ไม่สร้าง |
+| `shipping_addresses` | สร้างได้จาก Ship to › + New address (Move · Mark shipped · Edit shipment · Shipments › Missing) | เข้ารหัส CR-16 เหมือนเดิม · `sample_shipments.address_id` ผูกทันที |
+| localStorage → **IndexedDB `charmiss_kol_tracker_archive`** (store `kv`) | สำเนา `charmiss_kol_tracker_v1_before_v12` · `_before_v14` · `_before_v15` · `_corrupt` | ย้ายเมื่อเขียน + อ่านกลับตรงกันแล้วเท่านั้น · ข้อมูลทำงาน (`charmiss_kol_tracker_v1`) ยังอยู่ localStorage · prefs ต่อผู้ใช้ `dealview_<uid>` · `dealgroups2_<uid>` · `dealgroupsopen_<uid>` · `dealopencols_<uid>` |
+

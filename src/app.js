@@ -207,6 +207,8 @@
   applyTheme(pref.get('theme', 'light'));
   renderBanners();
   KT.photos.init();   // CR-16 §4.4 — the profile photos of this browser (IndexedDB) · the screens draw them once they are read
+  /* CR-31 §2.7 — the copies kept aside (before an upgrade · unreadable data) leave localStorage for IndexedDB: the room is for the working data */
+  KT.ui.store.offloadCopies().then(r => { if (r.moved.length && !KT.ui.store.status.canSave) { KT.ui.store.save(); KT.ui.renderBanners && KT.ui.renderBanners(); } }).catch(() => {});
   const h = parseHash();
   if (!h.tab && (KT.ui.me() || {}).role === 'accounting') { history.replaceState(null, '', '#payments/accounting'); Object.assign(h, { tab: 'payments', id: 'accounting' }); }
   if (!h.tab) history.replaceState(null, '', '#' + C.tabs[0].route);

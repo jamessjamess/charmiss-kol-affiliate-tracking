@@ -191,7 +191,7 @@ KT.screens.kol = (function () {
     if (!guard('kol.edit')) return;
     const c = { draft: Object.assign(R.createKolDraft('', U.me()), { _forDeal: false }), touched: new Set(), submitted: false, anyway: false };
     let dirty = false;
-    U.createModal({ size: 'M', title: T.newTitle, sub: T.newSub, opener, isDirty: () => dirty, focus: '#f_ck_display_name', body: U.kolCreateHTML(c.draft),
+    U.createModal({ size: 'M', title: T.newTitle, sub: T.newSub, opener, isDirty: () => dirty, focus: '#f_ck_display_name', body: U.kolCreateHTML(c.draft, { vault: true }),   // CR-30 §3.5: + Payee & shipping
       foot: [`<div class="checks" id="ck_checks"></div>`, U.cmButtons(C.bulk.ck.create, 'ck_ok', { attrs: ' data-act="ckCreate"' })],
       onClick: e => {
         const u = e.target.closest('[data-act="ckUse"]'); if (u) { const id = u.dataset.kolid; U.closeModal(); select(id); return; }
@@ -199,12 +199,16 @@ KT.screens.kol = (function () {
       } });
     const root = $('cm_root'), chk = () => U.kolCreateCheck(root, c);
     U.wireKolCreate(root, c, () => { dirty = true; chk(); }); chk();
-    function create() {
-      c.submitted = true; const r = chk(); if (r.res.errs.length || (r.dup && !c.anyway) || !guard('kol.edit')) return;
+    async function create() {
+      c.submitted = true; const r = chk(); if (r.res.errs.length || (r.dup && !c.anyway) || !guard('kol.edit')) { const bad = root.querySelector('.invalid'); if (bad) bad.scrollIntoView({ block: 'center' }); return; }
+      const vx = KT.payee.nkVaultRead(root);   // CR-30 §3.5 — Payee & shipping: read once, encrypted below, the boxes wiped
       const s = state(), recs = R.createKolRecords(c.draft, { kolId: store.newId('kol'), accountId: store.newId('account') });
       s.kol_master.push(recs.kol); if (recs.account) s.kol_accounts.push(recs.account);
+      let vaultMsg = '';
+      if (vx.ship || vx.bank) { try { vaultMsg = KT.payee.nkVaultLabels(await KT.payee.nkVaultSave(recs.kol.kol_id, vx)); } catch (e) { vaultMsg = null; } }
+      KT.payee.nkVaultWipe(root);
       U.closeModal(); commit(); renderList(); flashRow(recs.kol.kol_id);
-      U.toastAction(C.common.created(T.thing), C.common.open, () => select(recs.kol.kol_id), 8000);
+      U.toastAction(C.common.created(T.thing) + (vaultMsg ? ` · ${C.newKol.vaultSaved(vaultMsg)}` : vaultMsg === null ? ` · ${C.newKol.vaultFailed}` : ''), C.common.open, () => select(recs.kol.kol_id), 8000);
     }
   }
   /* a new row lit up for 5 s (the list shows enough rows to reach it) */

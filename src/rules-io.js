@@ -37,7 +37,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== Looker / analysis CSVs (§10.1) ===================== */
   const DEALS_COLS = ['deal_id', 'campaign_id', 'campaign_name', 'primary_phase_id', 'primary_phase_name', 'phase_ids', 'legacy_phase_id', 'kol_id', 'kol_name', 'partner_type', 'kol_tier', 'tier_followers', 'pillar', 'status', 'sub_status', 'journey_sort',
     'draft_rounds', 'payment_term', 'commit_type', 'docs_done', 'docs_done_date', 'paid_50', 'paid_50_date', 'paid_full', 'paid_full_date', 'payment_state', 'pic', 'rate_card', 'gencode_expense', 'gencode_period',
-    'gencode_start_date', 'gencode_end_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'total_cost', 'delivered', 'delivery_date', 'products', 'brief_date', 'expected_script_date', 'script_date',
+    'gencode_start_date', 'gencode_end_date', 'basket_fee', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note', 'gencodes', 'total_cost', 'delivered', 'delivery_date', 'products', 'brief_date', 'expected_script_date', 'script_date',
     'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date', 'expected_approve_date', 'approved_date', 'expected_post_date',
     'link_brief', 'cta', 'posts_planned', 'posts_done', 'first_post_date', 'last_post_date', 'views', 'likes', 'comments', 'saves', 'shares', 'next_step', 'due_date',
     'is_overdue', 'cancel_reason', 'remark', 'is_legacy'];
@@ -56,7 +56,7 @@ Object.assign(KT.rules, (function (R, C) {
       const c = ctx.campaigns.get(d.campaign_id) || {}, k = ctx.kols.get(d.kol_id) || {}, step = R.stepOf(state.lookups, d.sub_status) || {};
       const info = ctx.phaseIdx.deal.get(d.deal_id) || { primary: null, keys: new Set() }, p = ctx.phases.get(info.primary) || {};
       const sum = R.dealPostSummary(ctx, d.deal_id), nx = R.nextStep(state.lookups, d).step;
-      return Object.assign({}, d, {
+      return Object.assign({}, d, { gencodes: R.gencodeCount ? R.gencodeCount(state, d.deal_id) : 0,   // CR-30: how many codes (never the codes)
         campaign_id: d.campaign_id, campaign_name: c.campaign_name, primary_phase_id: p.phase_id || null, primary_phase_name: p.phase_id ? R.phaseName(state, p.phase_id) : null, products: R.dealProductsCsv(state, d.deal_id),
         phase_ids: [...info.keys].filter(x => ctx.phases.has(x)), kol_name: k.display_name, partner_type: R.partnerTypeLabel(state.lookups, R.partnerTypeOf(k)), journey_sort: step.sort_order,   // CR-25
         kol_tier: (ctx.tiers.get(d.deal_id) || {}).tier || R.UNKNOWN_TIER, tier_followers: (ctx.tiers.get(d.deal_id) || {}).followers ?? null,

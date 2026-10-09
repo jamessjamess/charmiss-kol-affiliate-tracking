@@ -49,6 +49,7 @@ KT.budget = (function () {
   function open(cid, o = {}) {
     if (!U.guard('campaign.draft')) return;
     const s = state(), c = campById(cid); if (!c) return;
+    if (R.isClosed(c)) { U.toast(C.close.noBudgetAdjust); return; }   // CR-29 §3.5: a Complete Campaign's budget stays
     const d = o.changeId ? (s.campaign_budget_changes || []).find(x => x.change_id === o.changeId && x.status === 'draft') : R.budgetDraftOf(s, cid, userId());
     ab = { cid, changeId: d ? d.change_id : null, type: d ? d.type : 'increase', amount: d ? String(d.amount || '') : '', allocs: d ? Object.fromEntries((d.allocations || []).map(a => [a.phase_id, String(a.amount)])) : {},
       reason: d ? d.reason || '' : '', note: d ? d.note || '' : '', touched: new Set(), submitted: false, dirty: false, o, inPanel: U.modalOpen() };

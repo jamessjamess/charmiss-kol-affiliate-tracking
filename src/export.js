@@ -40,20 +40,30 @@ KT.export = (function (R, C) {
       total: [O.colTotal, '', '', '', '', t.budget, r2(t.committed), dec(t.usedPct), r2(t.remaining), r2(t.pending), t.deals] };
   }
   /* KOL tier mix (§4.1 Row 2): every tier with a committed deal — spend and deals with their shares */
+  /* CR-31 §2.1 — By campaign: the committed deals of the Campaign (its Phase) */
+  const campMix = x => R.campaignMixDeals(x.state, x.campaignId, x.phaseId || null);
   function tiermix(x) {
-    const m = R.tierMix(x.state, x.from, x.to, x.today, stOf(x));
-    return { key: 'tiermix', name: O.sheet.tiermix,
+    const m = x.campaignId ? R.tierMixOf(x.state, campMix(x)) : R.tierMix(x.state, x.from, x.to, x.today, stOf(x));
+    return { key: x.campaignId ? 'tiermix_camp' : 'tiermix', name: O.sheet.tiermix,
       header: [O.tierLabel, O.colFollowers, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`],
       rows: m.rows.filter(t => t.deals).map(t => [t.tier, followers(t), r2(t.spend), dec(t.spendPct), t.deals, dec(t.dealsPct)]),
       total: [O.colTotal, '', r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0] };
   }
   /* CR-13 §4.2 — Pillar mix: the rows of the card (Not set last) · % of total (CR-19 §4.7: no Target / Δ) */
   function pillarmix(x) {
-    const m = R.pillarMix(x.state, x.from, x.to, x.today, stOf(x)), lab = k => (k === R.NOT_SET ? O.notSet : k);
-    return { key: 'pillarmix', name: O.sheet.pillarmix,
+    const m = x.campaignId ? R.pillarMixOf(x.state, campMix(x)) : R.pillarMix(x.state, x.from, x.to, x.today, stOf(x)), lab = k => (k === R.NOT_SET ? O.notSet : k);
+    return { key: x.campaignId ? 'pillarmix_camp' : 'pillarmix', name: O.sheet.pillarmix,
       header: [O.pillarLabel, O.mSpend, `${O.mSpend} %`, O.mDeals, `${O.mDeals} %`],
       rows: m.rows.map(p => [lab(p.pillar), r2(p.spend), dec(p.spendPct), p.deals, dec(p.dealsPct)]),
       total: [O.colTotal, r2(m.total.spend), m.total.spend ? 1 : 0, m.total.deals, m.total.deals ? 1 : 0] };
+  }
+  /* CR-29 §3.4 — Platform mix: the rows of the card (Not set last) · Spend · Deals with their shares */
+  function platformmix(x) {
+    const m = x.campaignId ? R.platformMixOf(x.state, campMix(x)) : R.platformMix(x.state, x.from, x.to, x.today, stOf(x)), lab = k => (k === R.NOT_SET ? O.notSet : k);
+    return { key: x.campaignId ? 'platformmix_camp' : 'platformmix', name: O.sheet.platformmix,
+      header: [O.platformLabel, O.mDeals, `${O.mDeals} %`, O.mSpend, `${O.mSpend} %`],
+      rows: m.rows.map(p => [lab(p.platform), p.deals, dec(p.dealsPct), r2(p.spend), dec(p.spendPct)]),
+      total: [O.colTotal, m.total.deals, m.total.deals ? 1 : 0, r2(m.total.spend), m.total.spend ? 1 : 0] };
   }
   /* CR-19 §4.5 — Campaign timeline: a row per Campaign per bar (week from Monday, or day — the bars on screen) · Posted · Planned (posts) · Spend */
   function timeline(x) {
@@ -90,8 +100,7 @@ KT.export = (function (R, C) {
     const k = R.portfolioKpis(x.state, x.from, x.to, x.today, stOf(x)), rows = [];
     const add = (card, metric, value) => rows.push([card, metric, value]);
     add(O.kCampaigns, O.kCampaigns, k.campaigns.n);
-    ['ongoing', 'not_started', 'complete', 'on_hold', 'cancelled'].forEach(st => { if (k.campaigns.by[st]) add(O.kCampaigns, statusLabel(st), k.campaigns.by[st]); });
-    if (k.campaigns.next) add(O.kCampaigns, O.nextToEndL, `${k.campaigns.next.campaign.campaign_name} · ${daysText(k.campaigns.next.left)}`);
+    ['ongoing', 'wrap_up', 'not_started', 'pending', 'on_hold', 'complete', 'cancelled'].forEach(st => { if (k.campaigns.by[st]) add(O.kCampaigns, statusLabel(st), k.campaigns.by[st]); });   // CR-29: no Next to end
     add(O.committed, MN.committed.h, r2(k.money.committed)); add(O.committed, MN.budget.h, k.money.budget); add(O.committed, MN.used.h, dec(k.money.usedPct));
     add(O.committed, MN.remaining.h, r2(k.money.remaining)); add(O.committed, MN.pending.h, r2(k.money.pending));
     add(O.kPaid, O.kPaid, r2(k.paid.paid)); add(O.kPaid, O.pctOfCommitted, dec(k.paid.pct)); add(O.kPaid, O.outstanding, r2(k.paid.outstanding));
@@ -111,7 +120,10 @@ KT.export = (function (R, C) {
     return { key: x.campaignId ? 'budgetactual_camp' : 'budgetactual', name: O.sheet.budgetactual,
       header: [B.col.month, B.col.budget, B.col.posted, B.col.upcoming, B.col.late, B.col.variance, B.col.pct, B.col.status],
       rows: b.months.map(m => [monthName(m.key), r2(m.budget), r2(m.posted), r2(m.upcoming), r2(m.late), r2(m.variance), dec(m.pct), m.status ? `${B.statusWord[m.status]} ${R.fmtNum(Math.round(m.amount))}` : '']),
-      total: [O.colTotal, r2(t.budget), r2(t.posted), r2(t.upcoming), r2(t.late), r2(act - t.budget), t.budget ? dec(act / t.budget * 100) : null, ''] };
+      total: [O.colTotal, r2(t.budget), r2(t.posted), r2(t.upcoming), r2(t.late), r2(act - t.budget), t.budget ? dec(act / t.budget * 100) : null, ''],
+      /* CR-29 §3.2 — the summary rows (off the card's top line): To date · Rest of year (period / campaign) */
+      extra: [b.toDate ? [B.toDateL, r2(b.toDate.planned), r2(b.toDate.posted), null, null, r2(b.toDate.posted - b.toDate.planned), dec(b.toDate.pct), b.toDate.status ? `${B.statusWord[b.toDate.status]} ${R.fmtNum(Math.round(b.toDate.amount))}` : ''] : null,
+        b.rest ? [x.campaignId ? B.restCampaign : x.preset === 'this_year' ? B.restYear : B.restPeriod, r2(b.rest.planned), null, r2(b.rest.upcoming), null, r2(b.rest.upcoming - b.rest.planned), b.rest.planned ? dec(b.rest.upcoming / b.rest.planned * 100) : null, ''] : null].filter(Boolean) };
   }
 
   /* ===================== By campaign (§4.4–4.5) ===================== */
@@ -221,18 +233,26 @@ KT.export = (function (R, C) {
   }
   function draftnotes(x) {
     const s = x.state, NT = C.notes;
-    const rows = (s.step_notes || []).slice().sort((a, b) => (a.deal_id + a.step_key).localeCompare(b.deal_id + b.step_key)).map(n => [n.deal_id, `Draft ${String(n.step_key).replace(/\D/g, '')}`, (n.links || []).length, (n.image_ids || []).length, dmy(String(n.updated_at || '').slice(0, 10))]);
+    const rows = (s.step_notes || []).slice().sort((a, b) => (a.deal_id + a.step_key).localeCompare(b.deal_id + b.step_key)).map(n => [n.deal_id, R.stepNoteLabel(s.lookups, n.step_key), (n.links || []).length, (n.image_ids || []).length, dmy(String(n.updated_at || '').slice(0, 10))]);
     return { key: 'draftnotes', name: NT.sheet, header: NT.exportCols, rows, total: null };
   }
 
-  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
+  /* CR-30 §3.1 — Export › Gencodes (Manager / Admin only — the Deals page ⋯): every code in full for the ads team · not in any other export */
+  function gencodes(x) {
+    const G = C.gencode;
+    return { key: 'gencodes', name: G.sheet, header: G.exportCols,
+      rows: R.gencodeExportRows(x.state, x.today).map(r => [r.campaign, r.kol, r.deal.deal_id, G.types[r.g.type] || r.g.type, r.g.code,
+        r.post ? (r.account ? `${r.account.platform} @${r.account.handle}` : r.post.post_id) : G.notLinked, r.account ? r.account.platform : '', dmy(R.dateOfTimestamp(r.g.received_at)),
+        dmy(r.deal.gencode_start_date), dmy(r.validity.until), G.status[r.validity.status]]), total: null };
+  }
+  const WIDGETS = { gencodes, packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, platformmix, tiermix_camp: tiermix, pillarmix_camp: pillarmix, platformmix_camp: platformmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
     summary_ops: summaryOps, workqueue: workQueue };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
   /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
   /* CR-19 §4.5: Campaign timeline in place of Activity */
   /* CR-20: + Packages · Draft notes (counts) at the end */
-  const TABS = { all: ['summary', 'budgetactual', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'budgetactual_camp', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-24: no Pillar allocation · Operations = Work queue · CR-26: + Budget vs Actual (after the KPI · after Phase budget)
+  const TABS = { all: ['summary', 'budgetactual', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'platformmix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'budgetactual_camp', 'pillarmix_camp', 'tiermix_camp', 'platformmix_camp', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-29: + Platform mix · CR-24: no Pillar allocation · Operations = Work queue · CR-26: + Budget vs Actual (after the KPI · after Phase budget)
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */
@@ -240,10 +260,11 @@ KT.export = (function (R, C) {
   function sheetOf(t, meta) {
     const top = meta ? [[O.meta.tab, meta.tab], [O.meta.scope, meta.scope]].concat(meta.status ? [[O.meta.status, meta.status]] : [], [[O.meta.exported, meta.at], [O.meta.by, meta.by], []]) : [];
     const bold = r => r.map(v => (v == null || v === '' ? '' : { v, bold: true }));
-    const rows = top.map(r => (r.length ? [{ v: r[0], bold: true }, r[1]] : r)).concat([bold(t.header)], t.rows.map(r => r.map(v => (v == null ? '' : v))), t.total ? [bold(t.total)] : []);
+    const rows = top.map(r => (r.length ? [{ v: r[0], bold: true }, r[1]] : r)).concat([bold(t.header)], t.rows.map(r => r.map(v => (v == null ? '' : v))), t.total ? [bold(t.total)] : [],
+      (t.extra || []).map(r => r.map(v => (v == null ? '' : v))));   // CR-29: summary rows after the Total
     return { name: t.name, rows, widths: t.header.map((h, i) => (i ? Math.max(12, Math.min(28, String(h).length + 4)) : 30)), freeze: top.length + 1 };
   }
-  const csvOf = t => R.toCSV(t.header, t.rows.concat(t.total ? [t.total] : []).map(r => r.map(v => (v == null ? '' : v))));
+  const csvOf = t => R.toCSV(t.header, t.rows.concat(t.total ? [t.total] : [], t.extra || []).map(r => r.map(v => (v == null ? '' : v))));
   /* <Card>_<scope>_<yyyy-mm-dd>: a preset by its name (This-year), a custom range by its dates */
   const scopeName = (preset, from, to) => (preset && preset !== 'custom' && O.presets[preset] ? O.presets[preset].replace(/\s+/g, '-') : `${from}_${to}`);
   /* a name in a file name: letters, digits and Thai kept · the rest become "-" */

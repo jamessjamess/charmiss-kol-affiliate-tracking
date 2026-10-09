@@ -242,7 +242,7 @@ KT.screens.shipments = (function () {
     const kolCell = r => `<td class="sh-kol stk${pick ? '' : ' at0'}"><span class="kname"><b>${U.nameHTML((r.kol && r.kol.display_name) || r.sh.kol_id || '')}</b>${U.copyBtnHTML((r.kol && r.kol.display_name) || '')}</span>${r.deal ? '' : `<span class="muted small">${esc(SH.noDeal)}</span>`}</td>`;
     const cb = r => (pick ? `<td class="cb"><input type="checkbox" data-shsel="${esc(r.sh.shipment_id)}"${sv.sel.has(r.sh.shipment_id) ? ' checked' : ''} aria-label="${esc((r.kol && r.kol.display_name) || r.sh.shipment_id)}"></td>` : '');
     /* CR-16 §4.3 — Address: the label of the address it goes to + on file / missing */
-    const addr = r => { const a = shipAddr(r.sh); return `<td class="nowrap sh-addr">${a ? `<span class="sh-al">${esc(a.label)}</span> ` : ''}${a && a.secure ? `<span class="chip ok-chip" title="${esc(SM.addressOnFile)}">${esc(SM.onFile)}</span>` : `<span class="muted small" title="${esc(SM.noAddress)}">${esc(SM.missing)}</span>`}</td>`; };
+    const addr = r => { const a = shipAddr(r.sh); return `<td class="nowrap sh-addr">${a ? `<span class="sh-al">${esc(a.label)}</span> ` : ''}${a && a.secure ? `<span class="chip ok-chip" title="${esc(SM.addressOnFile)}">${esc(SM.onFile)}</span>` : `<span class="muted small" title="${esc(SM.noAddress)}">${esc(SM.missing)}</span>${r.sh.kol_id || r.deal ? ` <button type="button" class="link small" data-shnewaddr="${esc(r.sh.shipment_id)}">${esc(C.move.newAddress)}</button>` : ''}`}</td>`; };   // CR-31 §2.3
     /* CR-17 §4.3 — Simple mode: the Pick list column only when a row is on one */
     const plCol = !KT.samples.isSimple() || rows.some(r => r.sh.pick_list_id && R.pickListById(s, r.sh.pick_list_id));
     const pl = r => { if (!plCol) return ''; const p = r.sh.pick_list_id && R.pickListById(s, r.sh.pick_list_id); return `<td>${p ? `<button type="button" class="link small" data-shpl="${esc(p.pick_list_id)}">${esc(p.name)}</button>` : dash}</td>`; };
@@ -279,8 +279,16 @@ KT.screens.shipments = (function () {
   }
   const trackCell = sh => { const url = R.trackingLink(settings(), sh.carrier, sh.tracking_no); return !sh.tracking_no ? '' : url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(sh.tracking_no)} ↗</a>` : esc(sh.tracking_no); };
 
+  function newAddressFor(shId) {
+    const s = state(), sh = (s.sample_shipments || []).find(x => x.shipment_id === shId); if (!sh) return;
+    const kolId = sh.kol_id || ((s.deals.find(d => d.deal_id === sh.deal_id) || {}).kol_id); if (!kolId) return;
+    const go2 = () => KT.payee.addressDialog({ kolId, onSaved: rec => { const x = (state().sample_shipments || []).find(y => y.shipment_id === shId); if (x && rec) { x.address_id = rec.address_id; commit(); } draw(); } });
+    if (KT.payee.nkVaultState() === 'locked') KT.payee.unlockDialog(go2); else go2();
+  }
   function bodyClick(e) {
     if (e.target.closest('a') || e.target.closest('[data-copyname]') || e.target.closest('details.menu > summary')) return;
+    /* CR-31 §2.3 — Missing › + New address: the vault unlocked first · the new address goes to this shipment */
+    const na = e.target.closest('[data-shnewaddr]'); if (na) { newAddressFor(na.dataset.shnewaddr); return; }
     if (e.target.closest('[data-shimp]')) { sv.showImported = !sv.showImported; draw(); return; }
     if (e.target.id === 'sh_all') { const on = e.target.checked; sv.rows.forEach(r => (on ? sv.sel.add(r.sh.shipment_id) : sv.sel.delete(r.sh.shipment_id))); draw(); return; }
     const cb = e.target.closest('[data-shsel]'); if (cb) { cb.checked ? sv.sel.add(cb.dataset.shsel) : sv.sel.delete(cb.dataset.shsel); drawBulk(); return; }

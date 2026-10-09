@@ -373,5 +373,105 @@ KT.payee = (function () {
     });
   }
 
-  return { tabHTML, fillSecure, onClick, openDialog: openDialog_, addressDialog, unlockDialog, setupDialog, changeDialog, resetDialog };
+  /* ===================== CR-30 §3.5 — New KOL › Payee & shipping (optional) ===================== */
+  /* the section of a create form: locked until the vault is unlocked (Unlock to add) · a shipping address (Label · Recipient · Address · Phone) and a bank
+     account (Bank · Account name · Account number) · what is typed goes straight into KT.vault.encrypt when the KOL is created and the boxes are wiped —
+     it never sits in the state, localStorage, a backup or a log · on screen afterwards only labels: "Home" · "Kasikorn Bank (KBank) ···1234" */
+  const nkvState = () => { const v = vaultOf(); return !v || !V.available() ? 'none' : V.isUnlocked(v) && can('payee.unlock') ? 'open' : 'locked'; };
+  const NKV_SHIP = ['label', 'recipient', 'address', 'phone'], NKV_BANK = ['bank_name', 'account_name', 'account_no'];
+  function nkVaultHTML(prefix) {
+    const NK = C.newKol, st = nkvState(), id = k => `${prefix}_v_${k}`;
+    const inp = (k, label, o = {}) => `<div class="field${o.wide ? ' wide' : ''}"><label for="${id(k)}">${esc(label)}</label>${o.area ? `<textarea id="${id(k)}" data-nkv="${k}" data-key="nkv_${k}" rows="2" spellcheck="false"></textarea>`
+      : `<input id="${id(k)}" data-nkv="${k}" data-key="nkv_${k}" autocomplete="off" spellcheck="false"${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${o.list ? ` list="${o.list}"` : ''}${o.num ? ' inputmode="numeric"' : ''}>`}</div>`;
+    const body = st === 'none' ? `<div class="hint">${esc(NK.vaultNone)}</div>`
+      : st === 'locked' ? `<div class="nk-lock">🔒 <span>${esc(NK.vaultLocked)}</span>${can('payee.unlock') ? `<button type="button" class="btn small" data-nkvunlock>${esc(NK.unlockToAdd)}</button>` : ''}<span class="muted small">${esc(NK.vaultSkip)}</span></div>`
+      : `<h4>${esc(NK.shipH)}</h4><div class="fields">${inp('label', PY.label, { ph: PY.addrLabelPh })}${inp('recipient', PY.recipient)}${inp('address', SM.shipAddress, { area: 1, wide: 1 })}${inp('phone', SM.shipPhone, { num: 1 })}</div>` +
+        `<h4>${esc(NK.bankH)}</h4><div class="fields">${inp('bank_name', PY.bank.bank_name, { list: prefix + '_banks' })}${inp('account_name', PY.bank.account_name)}${inp('account_no', PY.bank.account_no, { num: 1 })}</div>` +
+        `<datalist id="${prefix}_banks">${(PY.banks || []).map(b => `<option value="${esc(b)}">`).join('')}</datalist><div class="hint">${esc(NK.bankLater)}</div>`;
+    return `<details class="nk-vault" id="${prefix}_vault"${st === 'open' ? ' open' : ''}><summary>${st === 'open' ? '🔓' : '🔒'} ${esc(NK.vault)}</summary><div class="nk-vb">${body}</div></details>`;
+  }
+  /* what is typed (nothing kept anywhere else) → { ship | null, bank | null } — a part left empty is skipped */
+  function nkVaultRead(root) {
+    if (!root || nkvState() !== 'open') return { ship: null, bank: null };
+    const val = k => { const el = root.querySelector(`[data-nkv="${k}"]`); return el ? el.value : ''; };
+    const ship = Object.fromEntries(NKV_SHIP.map(k => [k, val(k)])), bank = Object.fromEntries(NKV_BANK.map(k => [k, val(k)]));
+    return { ship: NKV_SHIP.some(k => R.trim(ship[k])) ? ship : null, bank: NKV_BANK.some(k => R.trim(bank[k])) ? bank : null };
+  }
+  /* the checks (a part that is started must be complete) · error keys nkv_<field> · Full name and the rest of the bank details: later, in Payee details */
+  function nkVaultCheck(x) {
+    const errs = [];
+    if (x.ship) {
+      if (!R.trim(x.ship.label)) errs.push({ field: 'nkv_label', msg: C.msg.payeeRequired(PY.label) });
+      else if (R.looksSensitive(x.ship.label)) errs.push({ field: 'nkv_label', msg: C.msg.sensitive });
+      R.validateShip(x.ship).forEach(e => errs.push({ field: 'nkv_' + e.field, msg: e.msg }));
+    }
+    if (x.bank) R.validateBankDetails(Object.assign({ full_name: '-' }, x.bank)).errs.forEach(e => errs.push({ field: 'nkv_' + e.field.replace(/^b_/, ''), msg: e.msg }));
+    return errs;
+  }
+  /* after the KOL is pushed: the address and the payee, encrypted, each the KOL's default → { address, payee } (null for a part not given) · throws when the browser cannot encrypt */
+  async function nkVaultSave(kolId, x) {
+    const v = vaultOf(), s = state(), now = nowISO(), uid = userId(), out = { address: null, payee: null };
+    if (!v || !(x.ship || x.bank)) return out;
+    const shipSecure = x.ship ? await V.encrypt(v, R.shipRecord(x.ship)) : null, bankSecure = x.bank ? await V.encrypt(v, R.bankRecord(Object.assign({ full_name: '' }, x.bank))) : null;
+    if (x.ship) { const rec = R.newAddress({ address_id: store.newId('address'), kol_id: kolId, label: R.trim(x.ship.label), is_default: true, secure: shipSecure, now, user: uid }); s.shipping_addresses.push(rec); R.withDefault(s.shipping_addresses, 'address_id', rec.address_id); out.address = rec; }
+    if (x.bank) {
+      const p = R.blankPayee(s, { payee_id: store.newId('payee'), kol_id: kolId, user: uid, now });
+      Object.assign(p, { secure: bankSecure, bank_name: R.trim(x.bank.bank_name) || null, account_last4: R.last4(x.bank.account_no), details_version: 1, details_updated_at: now, details_updated_by: uid });
+      s.payee_profiles.push(p); R.withDefault(s.payee_profiles, 'payee_id', p.payee_id); out.payee = p;
+      s.deal_events.push({ event_id: store.newEventId(), deal_id: null, payee_id: p.payee_id, type: 'payee_details_changed', from: null, to: null, changed_at: now, changed_by: uid, note: null });
+    }
+    return out;
+  }
+  /* CR-31 §2.3 — Ship to › + New address, in place (Move stage · Mark shipped · Edit shipment): locked until the vault is unlocked (Unlock to add) ·
+     Label · Recipient name · Address · Phone · Set as default · encrypted when the form is saved (addrInlineSave) — the boxes are wiped, only the label stays */
+  const AI_FIELDS = ['label', 'recipient', 'address', 'phone'];
+  function addrInlineHTML(prefix, v, o = {}) {
+    const st = nkvState(), MV = C.move, x = v || {}, id = k => `${prefix}_ai_${k}`;
+    if (st === 'none') return `<div class="ai-box hint">${esc(C.newKol.vaultNone)}</div>`;
+    /* o.inlinePass — inside a small dialog (Mark shipped · Edit shipment): the passphrase is typed here — the Unlock dialog would take that dialog's place */
+    if (st === 'locked') return `<div class="ai-box nk-lock">🔒 <span>${esc(C.newKol.vaultLocked)}</span>${!can('payee.unlock') ? '' : o.inlinePass
+      ? `<span class="ai-pass"><input type="password" data-aipass aria-label="${esc(VT.pass)}" placeholder="${esc(VT.pass)}" autocomplete="off"><button type="button" class="btn small" data-aiunlockgo>${esc(VT.unlockOk)}</button></span><span class="err" data-aipasserr></span>`
+      : `<button type="button" class="btn small" data-aiunlock>${esc(C.newKol.unlockToAdd)}</button>`}</div>`;
+    const inp = (k, label, o = {}) => `<div class="field${o.wide ? ' wide' : ''}"><label for="${id(k)}">${esc(label)}${o.req ? ' <span class="req">*</span>' : ''}</label>` +
+      (o.area ? `<textarea id="${id(k)}" data-ai="${k}" data-key="ai_${k}" rows="2" spellcheck="false">${esc(x[k] || '')}</textarea>` : `<input id="${id(k)}" data-ai="${k}" data-key="ai_${k}" value="${esc(x[k] || '')}" autocomplete="off" spellcheck="false"${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${o.num ? ' inputmode="numeric"' : ''}>`) + `<div class="mv-err" data-err="ai_${k}"></div></div>`;
+    return `<div class="ai-box"><div class="ai-h">🔓 ${esc(MV.newAddressH)}</div><div class="fields">${inp('label', PY.label, { req: 1, ph: PY.addrLabelPh })}${inp('recipient', PY.recipient, { req: 1 })}${inp('address', SM.shipAddress, { area: 1, wide: 1, req: 1 })}${inp('phone', SM.shipPhone, { num: 1 })}` +
+      `<div class="field wide"><label class="tick"><input type="checkbox" data-ai="default"${x.default ? ' checked' : ''}> ${esc(MV.setDefault)}</label></div></div></div>`;
+  }
+  /* the passphrase typed in the box (o.inlinePass) → true once the vault is open · the box is cleared either way */
+  async function addrInlineUnlock(root) {
+    const inp = root && root.querySelector('[data-aipass]'), err = root && root.querySelector('[data-aipasserr]'), btn = root && root.querySelector('[data-aiunlockgo]');
+    const vault = vaultOf(); if (!inp || !vault || !inp.value) return false;
+    if (btn) { btn.disabled = true; btn.textContent = VT.working; }
+    const ok = await V.unlock(vault, inp.value); inp.value = '';
+    if (!ok) { if (btn) { btn.disabled = false; btn.textContent = VT.unlockOk; } if (err) err.textContent = VT.wrong; inp.focus(); }
+    return ok;
+  }
+  /* what is typed (kept only by the form while it is open) · null while locked / no vault */
+  function addrInlineRead(root) {
+    if (!root || nkvState() !== 'open' || !root.querySelector('[data-ai="label"]')) return null;
+    const out = Object.fromEntries(AI_FIELDS.map(k => [k, (root.querySelector(`[data-ai="${k}"]`) || {}).value || '']));
+    out.default = !!(root.querySelector('[data-ai="default"]') || {}).checked;
+    return out;
+  }
+  /* the checks → [{ field: ai_label | ai_recipient | ai_address, msg }] (locked or no vault: one line) */
+  function addrInlineCheck(kolId, x) {
+    if (!x) return [{ field: 'ai_box', msg: nkvState() === 'none' ? C.newKol.vaultNone : C.newKol.vaultLocked }];
+    const s = state(), errs = R.validateAddressLabel(s, kolId, x.label, null).concat(R.validateShip(x));
+    return errs.map(e => ({ field: 'ai_' + e.field, msg: e.msg }));
+  }
+  /* encrypted → the address record (its default when ticked or the KOL has none) */
+  async function addrInlineSave(kolId, x) {
+    const v = vaultOf(), s = state(), now = nowISO(), uid = userId();
+    const secure = await V.encrypt(v, R.shipRecord(x));
+    const rec = R.newAddress({ address_id: store.newId('address'), kol_id: kolId, label: R.trim(x.label), is_default: false, secure, now, user: uid });
+    s.shipping_addresses.push(rec);
+    if (x.default || !R.addressesOfKol(s, kolId).some(a => a.is_default && a.address_id !== rec.address_id)) R.withDefault(s.shipping_addresses, 'address_id', rec.address_id);
+    return rec;
+  }
+  const nkVaultWipe = root => { if (root) root.querySelectorAll('[data-nkv]').forEach(el => { el.value = ''; }); };
+  /* the labels left on screen (never the details) */
+  const nkVaultLabels = out => [out.address ? out.address.label : '', out.payee ? PY.bankLine(out.payee.bank_name, out.payee.account_last4) : ''].filter(Boolean).join(' · ');
+
+  return { tabHTML, fillSecure, onClick, openDialog: openDialog_, addressDialog, unlockDialog, setupDialog, changeDialog, resetDialog,
+    nkVaultHTML, nkVaultRead, nkVaultCheck, nkVaultSave, nkVaultWipe, nkVaultLabels, nkVaultState: nkvState, addrInlineHTML, addrInlineUnlock, addrInlineRead, addrInlineCheck, addrInlineSave };
 })();

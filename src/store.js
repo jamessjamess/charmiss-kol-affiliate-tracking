@@ -123,7 +123,12 @@
                          [{ key, label, active }] — the default list is put in at load when there is none
    (CR-24, schema stays 21) lookups.ops_stuck_days (7 at load when there is none — Settings › Operations mode)
    (CR-25, schema stays 21) kols.partner_type kol · affiliate · both (null = KOL · nothing migrated) · lookups.partner_types [{ key, label }]
-                         (put in at load when there is none — Settings › Lists › Partner types) */
+                         (put in at load when there is none — Settings › Lists › Partner types)
+   schema_version 22 (CR-29) — rules-close.js migrateV22: campaigns + closed_at · closed_by · close_note · reopened_at · reopened_by · reopen_reason ·
+                         close_request (null) · a Campaign Complete by its dates (End date before the day it is loaded) → closed_at = its End date ·
+                         closed_by "system" (still Complete) · one not ended is untouched (past its End date later = Wrap-up until closed) — the money does not change
+   schema_version 23 (CR-30) — rules-gencode.js migrateV23: deal_gencodes [] (code_id · deal_id · post_id · type tiktok_spark | meta | other · code · received_at ·
+                         created_by · deleted_at) · deals + other_fee (0) · other_fee_note · kol_accounts.handle = the Username (no @) — the money does not change */
 
 KT.store = (function (R) {
   'use strict';
@@ -133,11 +138,11 @@ KT.store = (function (R) {
   const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
   const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 21;
+  const SCHEMA_VERSION = 23;
   const QUOTA_MB = 5;
-  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes'];
+  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes', 'deal_gencodes'];
   /* collections that older versions do not have yet (they are created by migrate) */
-  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12, shipping_addresses: 15, campaign_budget_changes: 17, kol_packages: 19, step_notes: 19 };
+  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12, shipping_addresses: 15, campaign_budget_changes: 17, kol_packages: 19, step_notes: 19, deal_gencodes: 23 };
   /* client-side IDs continue from the highest number in use */
   const ID_FORMATS = {
     kol: { prefix: 'K', coll: 'kol_master', key: 'kol_id', width: 4 },
@@ -146,6 +151,7 @@ KT.store = (function (R) {
     deal: { prefix: 'D', coll: 'deals', key: 'deal_id', width: 6 },
     payee: { prefix: 'PY-', coll: 'payee_profiles', key: 'payee_id', width: 4 },
     address: { prefix: 'AD-', coll: 'shipping_addresses', key: 'address_id', width: 4 },   // CR-16 §4.3
+    gencode: { prefix: 'GC-', coll: 'deal_gencodes', key: 'code_id', width: 5 },   // CR-30 §3.1
     line: { prefix: 'PL-', coll: 'payment_lines', key: 'line_id', width: 6 },
     post: { prefix: 'P', coll: 'deal_posts', key: 'post_id', width: 6 },
     user: { prefix: 'U', coll: 'users', key: 'user_id', width: 3 },
@@ -325,6 +331,10 @@ KT.store = (function (R) {
   function toV20(obj) { R.migrateV20(obj); }
   /* v20 → v21 (CR-22 §4): the shipment method · KOL buys own · Product purchase */
   function toV21(obj) { R.migrateV21(obj); }
+  /* v21 → v22 (CR-29 §4): a Campaign is Complete only once closed — the ones Complete by their dates today are closed by "system" on their End date */
+  function toV22(obj, now) { R.migrateV22(obj, R.dateOfTimestamp((now || new Date()).toISOString())); }
+  /* v22 → v23 (CR-30 §4): Gencodes · Other fee · the Username */
+  function toV23(obj) { R.migrateV23(obj); }
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -347,6 +357,8 @@ KT.store = (function (R) {
     if (obj.schema_version === 18) toV19(obj);
     if (obj.schema_version === 19) toV20(obj);
     if (obj.schema_version === 20) toV21(obj);
+    if (obj.schema_version === 21) toV22(obj, now);
+    if (obj.schema_version === 22) toV23(obj);
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)
@@ -449,12 +461,38 @@ KT.store = (function (R) {
       save();
     }
     function newId(kind) { const f = ID_FORMATS[kind]; return nextId(f.prefix, state[f.coll], f.key, f.width); }
+    /* CR-31 §2.7 — what this browser holds for the tracker: every localStorage key of it (key + text, in characters) and each collection of the state */
+    function storageReport() {
+      const items = []; let total = 0;
+      if (storage) { try { for (let i = 0; i < storage.length; i++) { const k = storage.key(i); if (!k || !k.startsWith('charmiss_kol_tracker')) continue; const n = k.length + String(storage.getItem(k) || '').length; items.push({ key: k, chars: n }); total += n; } } catch (e) { /* not listable */ } }
+      const stores = state ? COLLECTIONS.map(k => ({ key: k, chars: JSON.stringify(state[k] || []).length })).sort((a, b) => b.chars - a.chars) : [];
+      return { total, items: items.sort((a, b) => b.chars - a.chars), stores, state: state ? JSON.stringify(state).length : 0, quota: QUOTA_MB * 1024 * 1024 };
+    }
+    /* the copies kept aside (before v12 · v14 · v15 · unreadable data) → IndexedDB: written, read back, compared — only then taken out of localStorage
+       (a copy that could not be stored there stays where it is) → { moved [keys], freed (characters) } */
+    async function offloadCopies(archive) {
+      const A = archive || (typeof KT !== 'undefined' && KT.archive); if (!A || !A.available() || !storage) return { moved: [], freed: 0 };
+      const moved = []; let freed = 0;
+      for (const k of [BEFORE_KEY, BEFORE14_KEY, BEFORE15_KEY, CORRUPT_KEY]) {
+        let v = null; try { v = storage.getItem(k); } catch (e) { v = null; }
+        if (!v) continue;
+        try { await A.put(k, v); const back = await A.get(k); if (back !== v) continue; storage.removeItem(k); moved.push(k); freed += v.length; } catch (e) { /* stays in localStorage */ }
+      }
+      return { moved, freed };
+    }
+    /* the newest copy kept before an upgrade, wherever it is (localStorage, else IndexedDB) */
+    async function beforeCopyAnywhere(archive) {
+      const t = beforeCopy(); if (t) return t;
+      const A = archive || (typeof KT !== 'undefined' && KT.archive); if (!A || !A.available()) return null;
+      for (const k of [BEFORE15_KEY, BEFORE14_KEY, BEFORE_KEY]) { try { const v = await A.get(k); if (v) return v; } catch (e) { /* none */ } }
+      return null;
+    }
     /* the copy kept before an upgrade (text — the newest: before v14, else before v12) · null when there is none */
     function beforeCopy() { try { return storage ? storage.getItem(BEFORE15_KEY) || storage.getItem(BEFORE14_KEY) || storage.getItem(BEFORE_KEY) : null; } catch (e) { return null; } }
 
     return {
       get state() { return state; },
-      status, save, backup, previewRestore, restore, reset, newId, beforeCopy,
+      status, save, backup, previewRestore, restore, reset, newId, beforeCopy, storageReport, offloadCopies, beforeCopyAnywhere,
       newLogId: () => nextNumber(state.deal_status_log, 'log_id'),
       newEventId: () => nextNumber(state.deal_events, 'event_id'),
       newCampaignEventId: () => nextNumber(state.campaign_events, 'event_id'),

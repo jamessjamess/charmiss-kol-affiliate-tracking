@@ -77,12 +77,14 @@ KT.screens.settings = (function () {
 
   /* ===================== Data ===================== */
   function dataHTML() {
-    const s = state(), mb = store.sizeChars() / 1024 / 1024, ok = store.status.canSave;
+    const s = state(), rep = store.storageReport(), mb = rep.total / 1024 / 1024, ok = store.status.canSave;   // CR-31 §2.7: all of it (the data · copies · settings)
+    const top = rep.stores.slice(0, 3).map(x => `${x.key} ${(x.chars / 1024 / 1024).toFixed(2)}`).join(' · ');
     return `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>${esc(K.navData)}</h3></div>
         <p class="muted" style="margin:0 0 12px">${esc(K.storageLine)}</p>
         ${ok ? '' : `<div class="check err" style="margin-bottom:12px">✕ <span>${esc(C.banner.cannotSave)}</span></div>`}
         ${kv(K.lastBackup, s.local.last_backup_at ? R.fmtDateTime(s.local.last_backup_at) : K.never, s.local.last_backup_at ? '' : 'over')}
-        ${kv(K.dataSize, K.sizeOf(mb.toFixed(2), S.QUOTA_MB))}
+        ${kv(K.dataSize, K.usingOf(mb.toFixed(1), S.QUOTA_MB), mb > S.QUOTA_MB * 0.85 ? 'over' : '')}
+        <div class="hint" style="margin:-4px 0 8px">${esc(K.largest(top))}</div>
         ${kv(K.photos, KT.photos.available() ? K.photosLine(R.fmtNum(KT.photos.totals().n), (KT.photos.totals().bytes / 1048576).toFixed(2)) : C.profile.photoOff)}
         <div class="btns" style="margin-top:16px"><button type="button" class="btn primary" data-act="backup">${esc(K.backupNow)}</button>
           ${can('data.restore') ? `<button type="button" class="btn" data-act="restore">${esc(K.restore)}</button><button type="button" class="btn danger" data-act="reset">${esc(K.reset)}</button>` : ''}</div>

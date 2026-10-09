@@ -999,7 +999,8 @@ KT.screens.payments = (function () {
       (x.deal ? `<button type="button" class="link" data-pddeal="${esc(x.deal_id)}" title="${esc(D.openDeal)}">${esc(x.deal_id)}</button>` : '') + (simp ? simpleChip(st) : statusChip(st)) + `</div>${nav}</div>`;
     const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><b>${v}</b></div>`;
     const amount = `<section class="pd-sec"><h4>${esc(D.amount)}</h4>` + kv(D.milestone, esc(C.pay.milestone[x.milestone] || x.milestone)) + kv(D.due, x.due_date ? esc(R.dmy(x.due_date)) : `<span class="muted">${esc(D.noDue)}</span>`) +
-      kv(D.gross, money(x.tax.gross)) + kv(D.wht(x.tax.wht_rate || 0), money(x.tax.wht)) + kv(D.net, `<span class="pd-net">${money(x.tax.net)}</span>`) + `</section>`;
+      kv(D.gross, money(x.tax.gross)) + kv(D.wht(x.tax.wht_rate || 0), money(x.tax.wht)) + kv(D.net, `<span class="pd-net">${money(x.tax.net)}</span>`) +
+      (x.deal && Number(x.deal.other_fee) > 0 ? `<div class="hint">${esc(C.pay.otherLine(R.baht(x.deal.other_fee), x.deal.other_fee_note || ''))}</div>` : '') + `</section>`;   // CR-30 §3.2: "Other: <note>" in the deal's Total cost
     const canChange = !x.run_id && !R.linePayeeLocked(x.line) && !!x.kol_id && R.payeesOfKol(s, x.kol_id).length > 1 && (x.deal ? can('deal.edit') && R.canRequest(s, U.actor(), x.deal) : can('payment.manual'));
     const payee = x.payee ? `${esc(x.payee.label || PY.primary)} <span class="muted small">· ${esc(PY.types[x.payee.payee_type] || '')}</span>` : `<span class="muted">${esc(D.noPayee)}</span>`;   // CR-16: no account number
     const payTo = `<section class="pd-sec"><h4>${esc(D.payTo)}</h4><div class="pd-row">${payee}${canChange ? ` <button type="button" class="link" data-pdpayto>${esc(D.change)}</button>` : ''}` +

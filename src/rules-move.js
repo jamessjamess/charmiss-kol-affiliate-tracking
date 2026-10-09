@@ -19,11 +19,12 @@ Object.assign(KT.rules, (function (R, C) {
   const isHttps = v => /^https:\/\/\S+$/i.test(trim(v));
   const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined;
   const round2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
-  const COST_FORM = ['gencode_expense', 'gencode_period', 'gencode_start_date', 'asset_fee', 'expediting_fee'];
-  const MONEY_FORM = ['rate_card', 'gencode_expense', 'asset_fee', 'expediting_fee'];
+  const COST_FORM = ['gencode_expense', 'gencode_period', 'gencode_start_date', 'asset_fee', 'expediting_fee', 'other_fee', 'other_fee_note'];   // CR-30 §3.2: + Other fee (+ its note)
+  const MONEY_FORM = ['rate_card', 'gencode_expense', 'asset_fee', 'expediting_fee', 'other_fee'];
+  const TEXT_FORM = ['gencode_start_date', 'other_fee_note'];
   const EXPECTED = ['expected_script_date', 'expected_draft1_date', 'expected_draft2_date', 'expected_draft3_date', 'expected_approve_date', 'expected_post_date'];
   const LABEL = () => ({ rate_card: C.move.rateCard, gencode_expense: C.move.gencodeCost, gencode_period: C.move.gencodeDays, gencode_start_date: C.move.gencodeStart,
-    asset_fee: C.move.assetFee, expediting_fee: C.move.expeditingFee, expected_post_date: C.move.postDue, expected_script_date: C.move.expScript, expected_approve_date: C.move.expApprove,
+    asset_fee: C.move.assetFee, expediting_fee: C.move.expeditingFee, other_fee: C.deal.f.other_fee, other_fee_note: C.deal.f.other_fee_note, expected_post_date: C.move.postDue, expected_script_date: C.move.expScript, expected_approve_date: C.move.expApprove,
     expected_draft1_date: C.move.expDraft(1), expected_draft2_date: C.move.expDraft(2), expected_draft3_date: C.move.expDraft(3) });
   const isBriefStep = s => !!s && s.date_field === 'brief_date';
 
@@ -56,10 +57,10 @@ Object.assign(KT.rules, (function (R, C) {
     f = f || {};
     const v = Object.assign({}, deal);
     if (has(f, 'pillar') && !isBlank(f.pillar)) v.pillar = f.pillar;
-    if (has(f, 'paymentTerm')) v.payment_term = isBlank(f.paymentTerm) ? null : f.paymentTerm;
+    if (has(f, 'paymentTerm') && !isBlank(f.paymentTerm)) v.payment_term = f.paymentTerm;   // CR-31 §2.6: left empty = the deal's own stays
     if (has(f, 'packageId')) v.package_id = f.packageId || null;
     if (has(f, 'packageUnits')) v.package_units = f.packageUnits;
-    if (has(f, 'rateCard')) v.rate_card = f.rateCard;
+    if (has(f, 'rateCard') && !isBlank(f.rateCard)) v.rate_card = f.rateCard;   // CR-31 §2.6: left empty = the deal's own stays
     COST_FORM.forEach(k => { if (f.costs && has(f.costs, k)) v[k] = f.costs[k]; });
     if (R.termOf(v) !== 'package') { v.package_id = null; v.package_units = 1; }
     else { const p = R.packageById(state, v.package_id), n = Number(v.package_units); if (p && Number.isInteger(n) && n >= 1) v.rate_card = round2(R.unitPrice(p) * n); }
@@ -101,10 +102,11 @@ Object.assign(KT.rules, (function (R, C) {
      required — "+ Add Draft k+1 round" asks Draft k+1) · Approve: the Post due · Expected approve is never asked */
   function nextExpected(state, to, plan) {
     const k = R.draftNo(to);
+    /* CR-30 §3.3 — Brief: Expected script (optional) first, then Expected Draft 1 * · Draft k → Expected Draft k+1 optional (CR-23 §3.2 made it required) */
     if (isBriefStep(to)) { const sc = R.stepsOf(state.lookups).find(R.isScriptStep);
-      return [{ field: 'expected_draft1_date', req: true }].concat(sc && sc.active !== false && R.inPlan(sc, plan) ? [{ field: 'expected_script_date', req: true }] : []); }
+      return (sc && sc.active !== false && R.inPlan(sc, plan) ? [{ field: 'expected_script_date', req: false }] : []).concat([{ field: 'expected_draft1_date', req: true }]); }
     if (R.isScriptStep(to)) return [{ field: 'expected_draft1_date', req: true }];
-    if (k) return plan.drafts > k ? [{ field: `expected_draft${k + 1}_date`, req: true }] : [{ field: 'expected_post_date', req: false }];
+    if (k) return plan.drafts > k ? [{ field: `expected_draft${k + 1}_date`, req: false }] : [{ field: 'expected_post_date', req: false }];
     if (R.isApproveStep(to)) return [{ field: 'expected_post_date', req: true }];
     return [];
   }
@@ -157,6 +159,7 @@ Object.assign(KT.rules, (function (R, C) {
         set('gencode_expense', 'opt');
         if (num(v.gencode_expense) > 0) { set('gencode_period', 'req'); set('gencode_start_date', 'opt'); }
         set('asset_fee', 'opt'); set('expediting_fee', 'opt'); set('expected_post_date', 'opt');
+        set('other_fee', 'opt'); set('other_fee_note', num(v.other_fee) > 0 ? 'req' : 'opt');   // CR-30 §3.2: a note once there is an Other fee
       }
     }
     /* §4.9 — the steps a forward move passes: each gets a date (Contacted is offered, not asked) */
@@ -171,6 +174,7 @@ Object.assign(KT.rules, (function (R, C) {
       out.post = !deal.is_legacy;
       if (out.approve) set('approve_date', 'req');
       if (out.post) set('posts', 'req');
+      if (num(v.gencode_expense) > 0) set('gencodes', 'opt');   // CR-30 §3.1: the codes may be pasted right here
     } else out.skipped = between.filter(s => R.requiredInPlan(s, plan));
     /* §4.12 — Brief link / Script link when the move reaches or passes Brief / Script */
     const brief = R.stepsOf(L).find(isBriefStep), script = R.stepsOf(L).find(R.isScriptStep);
@@ -231,7 +235,7 @@ Object.assign(KT.rules, (function (R, C) {
     /* CR-02 §4.2 — Draft k beyond the plan: the round is added with the move (ticked) */
     if ((req.kind === 'forward' || req.kind === 'back') && k && k > plan.drafts) {
       if (!f.addRound) errs.push(issue('to', M.moveDraftNotInPlan(k, plan.drafts), 'add_round'));
-      else infos.push(issue('to', M.moveAddsRound(plan.drafts, k)));
+      else infos.push(Object.assign(issue('to', M.moveAddsRound(plan.drafts, k)), { code: 'rounds' }));   // CR-30 §3.3: one line in the footer
     }
     if (req.kind === 'leaveCancel') {
       const prev = R.stepBeforeCancel(state, deal);
@@ -282,6 +286,8 @@ Object.assign(KT.rules, (function (R, C) {
       else if (!Number.isInteger(Number(v.gencode_period)) || Number(v.gencode_period) < 1) errs.push(issue('gencode_period', M.moveDays));
     }
     if (F.gencode_start_date && !isBlank(v.gencode_start_date) && !isISODate(v.gencode_start_date)) errs.push(issue('gencode_start_date', M.dateInvalid(LB.gencode_start_date)));
+    if (F.other_fee_note === 'req' && isBlank(v.other_fee_note)) errs.push(issue('other_fee_note', M.otherFeeNote));   // CR-30 §3.2
+    if (F.other_fee_note && R.looksSensitive(v.other_fee_note)) errs.push(issue('other_fee_note', M.sensitive));
     /* §4.12 — links */
     ['link_brief', 'script_link'].forEach(x => { if (F[x] && !isBlank(v[x]) && !isHttps(v[x])) errs.push(issue(x, M.linkHttps)); });
     /* §4.15 — next expected: the required one · never before the move date · after the Post due only warns */
@@ -374,7 +380,8 @@ Object.assign(KT.rules, (function (R, C) {
       if (t !== 'package') d.package_paid = false;
       const money = x => (isBlank(x) ? null : Number(x));
       if (has(f, 'rateCard') || t === 'package') d.rate_card = money(v.rate_card);
-      COST_FORM.forEach(x => { if (f.costs && has(f.costs, x)) d[x] = x === 'gencode_start_date' ? v[x] || null : money(v[x]); });
+      COST_FORM.forEach(x => { if (f.costs && has(f.costs, x)) d[x] = TEXT_FORM.includes(x) ? (isBlank(v[x]) ? null : trim(v[x])) : money(v[x]); });
+      if (f.costs && has(f.costs, 'other_fee') && isBlank(d.other_fee)) d.other_fee = 0;   // CR-30: none = 0
       if (num(d.gencode_expense) > 0 && isBlank(d.gencode_start_date) && f.costs && has(f.costs, 'gencode_expense') && isISODate(v.expected_post_date)) d.gencode_start_date = v.expected_post_date;   // §4.11: Gencode start = Post due when left empty
       ['expected_post_date', 'link_brief', 'script_link'].concat(EXPECTED).forEach(x => { if (v[x] !== deal[x] && (has(f, 'postDue') || has(f, 'linkBrief') || has(f, 'scriptLink') || (f.expected && has(f.expected, x)))) d[x] = v[x] || null; });
     }
@@ -443,11 +450,13 @@ Object.assign(KT.rules, (function (R, C) {
     const fields = ['package_id', 'package_units', 'rate_card', 'product_purchase_fee'].concat(COST_FORM, ['expected_post_date', 'link_brief', 'script_link'], EXPECTED.filter(x => x !== 'expected_post_date'));
     const changes = R.diffFields(deal, d, [...new Set(fields)]).concat(postsChanged ? R.diffPosts(before, list) : []);
     if (changes.length) editEv = R.editEvent(deal, changes, Object.assign(evCtx(), { note: null }), 'edit');
-    /* §4.13 — the draft's notes */
+    /* §4.13 — the draft's notes · CR-31 §2.5: the Note of any move is the note of the step it reaches (its links / images kept) — not for Cancel */
     let rec = null, noteEv = null;
-    if (forward && req.notesDraft && f.notes) {
-      const key = R.draftKey(req.notesDraft), old = R.stepNoteOf(state, deal.deal_id, key);
-      rec = R.stepNoteRecord(deal.deal_id, key, f.notes, { now: ctx.now, user: ctx.user });
+    const stepNote = forward && req.notesDraft && f.notes ? { key: R.draftKey(req.notesDraft), n: f.notes }
+      : !R.isCancelStep(to) && trim(f.note) ? { key: R.stepKeyOf(to), n: null } : null;
+    if (stepNote) {
+      const key = stepNote.key, old = R.stepNoteOf(state, deal.deal_id, key);
+      rec = R.stepNoteRecord(deal.deal_id, key, stepNote.n || { note: trim(f.note), links: old ? old.links : [], image_ids: old ? old.image_ids : [] }, { now: ctx.now, user: ctx.user });
       if (R.sameNote(old, rec) || (!old && R.stepNoteEmpty(rec))) rec = null;
       else noteEv = R.stepNoteEvent(deal.deal_id, key, old, rec, evCtx());
     }
@@ -465,6 +474,8 @@ Object.assign(KT.rules, (function (R, C) {
     if (R.campaignCancelled(state, deal.campaign_id)) return blocked(M.campaignCancelledEdit);
     if (to.active === false) return blocked(M.moveStepInactive);
     if (from && R.isCancelStep(from)) { const prev = R.stepBeforeCancel(state, deal); return prev && toSub !== prev ? blocked(M.moveLeaveCancelOnly(prev)) : { kind: 'dialog' }; }
+    /* CR-31 §2.4 — Draft 1 / 2 / 3 · Approve: the work the KOL sends — always the dialog, to confirm the day it was done */
+    if (R.draftNo(to) || R.isApproveStep(to)) return { kind: 'dialog', confirm: true };
     const nx = R.nextStep(L, deal), one = (nx.step && nx.step.sub_status === toSub) || nx.optional.some(s => s.sub_status === toSub);
     if (one && !missingRequired(state, deal, toSub).length) {
       const r = checkMove(state, deal, toSub, { date: today, today });
@@ -484,6 +495,20 @@ Object.assign(KT.rules, (function (R, C) {
     return { before, after: round2(before - total), total };
   }
 
-  return { stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter,
+  /* CR-31 §2.4 — the date of a move says what it is: Contacted on · QT confirmed on · Brief sent on · Script approved on · Draft k done on · Approved on · Posted on */
+  function moveDateLabel(step) {
+    const D = C.move.dateFor; if (!step) return C.move.date;
+    if (R.draftNo(step)) return D.draft(R.draftNo(step));
+    if (R.isPostStep(step)) return D.post;
+    if (R.isApproveStep(step)) return D.approve;
+    if (R.isScriptStep(step)) return D.script;
+    if (isBriefStep(step)) return D.brief;
+    if (step.sub_status === QT) return D.qt;
+    if (step.sub_status === 'Contacted') return D.contacted;
+    return C.move.date;
+  }
+  /* before Confirm QT (Contacted): Rate card / Payment term start empty — empty keeps what the deal has */
+  const beforeQt = (lookups, toSub) => { const to = R.stepOf(lookups, toSub), qt = R.stepOf(lookups, QT); return !!to && !!qt && !R.isCancelStep(to) && to.sort_order < qt.sort_order; };
+  return { moveDateLabel, beforeQt, stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter,
     CANCEL_OTHER, CANCEL_REASON_KEYS, cancelReasonsDefault, cancelReasonsOf, cancelReasonLabel, cancelImpact };
 })(KT.rules, KT.content));
