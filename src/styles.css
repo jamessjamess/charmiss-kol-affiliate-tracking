@@ -2115,3 +2115,121 @@ td.act,th.act{width:36px;padding-left:2px;padding-right:2px;text-align:center}
 .dm-steps td:last-child{white-space:normal}
 @media (max-width:900px){.dm-two,.dm-costgrid{grid-template-columns:1fr}}
 
+
+/* ===================== CR-23 — Products given · Cancelled deals · drop zone · Ship by · Cancel dialog · Deal modal fixes ===================== */
+/* §3.8 — the Deal modal: the box itself never scrolls (only its body) · the tabs stay in view · the 3 Overview cards the same height */
+.drawer-wrap.dmodal .drawer.dm{overflow:clip}
+.drawer.dm .dr-body{scroll-padding-top:56px}
+.drawer.dm .dm-tabs{position:sticky;top:-16px;z-index:2;background:var(--bg);margin:0 -20px 12px;padding:6px 20px 0}
+.dm-cards{align-items:stretch}
+.dm-cards>.sec{display:flex;flex-direction:column}
+.dm-golink{margin-top:auto;padding-top:8px;text-align:right}
+.dm-datewarn .link{font-weight:600}
+.dm-fwarn{margin-top:4px}
+/* §3.3 — the drop zone at the bottom while a card is dragged */
+.dz-bar{position:fixed;bottom:16px;z-index:30;display:flex;gap:12px;pointer-events:auto}
+.dz{display:flex;align-items:center;justify-content:center;min-height:64px;border:2px dashed;border-radius:12px;font-weight:600;font-size:14px;padding:8px 16px;text-align:center;box-shadow:var(--shadow-lg)}
+.dz-post{flex:3;background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.dz-cancel{flex:1;min-height:52px;align-self:flex-end;background:var(--err-soft);border-color:var(--err);color:var(--err)}
+.dz.over{border-style:solid;filter:brightness(.97)}
+.dz-post.over{background:var(--ok);color:var(--surface)}
+.dz-cancel.over{background:var(--err);color:var(--surface)}
+.dz.off{opacity:.45;cursor:not-allowed}
+@media (max-width:767px){.dz-bar{flex-direction:column}.dz-cancel{align-self:stretch}}
+/* §3.3 — the short Post dialog: what is complete, in one line each */
+.mv-done{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.mv-doneline{color:var(--ok);border-color:var(--ok);background:var(--ok-soft);font-weight:600}
+.mv-enter{margin-left:auto;align-self:center}
+/* §3.6 — the Cancel dialog's list of what it undoes */
+.mv-impact{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.mv-impact .tick{font-weight:600}
+/* §3.4 — Shipments: the ones with no Ship by */
+.sh-noshipby{margin:-4px 0 12px;padding:8px 12px;border-radius:8px;background:var(--surface-2);color:var(--muted);font-size:13px}
+.sh-noshipby .link{font-weight:600}
+/* §3.1 — Products given */
+.pg-tiles{margin-bottom:12px}
+.pg-tile{min-height:0}
+.pg-tile .v{font-size:24px}
+.pgtbl .pg-code{font-variant-numeric:tabular-nums;color:var(--muted);margin-right:4px}
+.pgtbl tr.pg-none td{color:var(--muted)}
+@media (max-width:767px){.pg-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* §3.7 — Cancelled deals */
+.cx-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:10px}
+.cx-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cx-chips .chipbtn{height:28px}
+.cx-chips .n{font-variant-numeric:tabular-nums;color:var(--muted);margin-left:2px}
+.cx-kol{display:inline-flex;align-items:center;gap:8px}
+.cxtbl .cx-detail{max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* §3.5 — a date outside the Campaign: orange under its field (Move stage · New deal · Deal modal) */
+.mv-phase .warn,.dm-fwarn .warn,[data-sphase] .warn,#nk_phase .warn{color:var(--warn)}
+.dm-stack{display:flex;flex-direction:column;gap:12px;min-width:0}
+.dm-stack .smtbl td:first-child{min-width:160px}
+
+/* ===================== CR-24 — Operations = Work queue ===================== */
+.wq-camps .popover.wq-camppop{min-width:260px;max-height:360px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:10px}
+.wq-camppop .btns{display:flex;gap:6px;margin-bottom:4px}
+.wq-wl{margin-left:4px}
+.wq-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.wq-tile{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font:inherit;color:var(--text);cursor:pointer;min-width:0}
+.wq-tile:hover{background:var(--surface-2)}
+.wq-tile .n{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+.wq-tile .t{font-size:13px;color:var(--text-2);font-weight:600}
+.wq-tile .sub{font-size:12px;color:var(--muted)}
+.wq-tile.t-overdue:not(.zero) .n{color:var(--err)}
+.wq-tile.zero .n,.wq-tile.zero .t{color:var(--muted)}
+.wq-tile.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft, var(--info-soft))}
+.wq-card .card-head{flex-wrap:wrap;gap:8px}
+.wq-fchip{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;border-radius:999px;background:var(--accent-soft, var(--info-soft));color:var(--accent, var(--info));font-size:13px;font-weight:600}
+.wq-fchip .icon-btn{width:24px;height:24px}
+.wq-sec{border-top:1px solid var(--border)}
+.wq-sec:first-of-type{border-top:0}
+.wq-sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 4px;font-size:14px}
+.wq-sec>summary::-webkit-details-marker{display:none}
+.wq-sec>summary .chev{display:inline-flex;transition:transform .15s;color:var(--muted)}
+.wq-sec[open]>summary .chev{transform:rotate(90deg)}
+.wq-sec>summary .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.wq-sec.s-overdue>summary b{color:var(--err)}
+.wqtbl td{vertical-align:middle;max-width:none;overflow:visible}   /* (names never cut with …) */
+.wqtbl .wq-kol{display:inline-flex;align-items:center;gap:8px}
+.wqtbl .wq-b{text-align:right;white-space:nowrap}
+.wqtbl .wq-today{color:var(--warn)}
+.chip.wq-w.w-us{background:var(--info-soft);color:var(--info)}
+.chip.wq-w.w-kol{background:var(--surface-2);color:var(--text-2)}
+.chip.wq-stuck{background:var(--warn-soft);color:var(--warn);font-weight:600}
+.wq-empty{padding:16px 4px}
+.wq-flow{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.wq-step{flex:1 0 96px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font:inherit;color:var(--text);cursor:pointer;text-align:left}
+.wq-step:hover{background:var(--surface-2)}
+.wq-step .sn{font-size:12px;color:var(--text-2);font-weight:600;white-space:nowrap}
+.wq-step .n{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.wq-step .avg{font-size:12px;color:var(--muted)}
+.wq-step .stk{font-size:12px;color:var(--muted)}
+.wq-step .stk.on{color:var(--err);font-weight:600}
+.wq-step.zero .n{color:var(--muted)}
+.wq-step.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft, var(--info-soft))}
+.wq-fix{margin-top:16px}
+.wq-fix>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px}
+.wq-fix>summary::-webkit-details-marker{display:none}
+.wq-fix>summary .chev{display:inline-flex;transition:transform .15s;color:var(--muted)}
+.wq-fix[open]>summary .chev{transform:rotate(90deg)}
+.wq-fixlist{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column}
+.wq-fixlist li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 0;border-top:1px solid var(--border)}
+.wq-fixlist .wq-fixw{min-width:200px}
+.wq-fixlist .wq-fixt{flex:1;min-width:0;color:var(--text-2)}
+.ops-stuck{max-width:320px;margin-top:12px}
+@media (max-width:1100px){.wq-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* phones: a row is a card — Due · KOL · Next action · the button */
+@media (max-width:767px){
+  .wq-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wqtbl thead{display:none}
+  .wqtbl,.wqtbl tbody{display:block}
+  .wqtbl tr.wq-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:10px 4px;border-top:1px solid var(--border)}
+  .wqtbl tr.wq-row td{border:0;padding:0;height:auto;min-height:0;line-height:1.35}
+  .wqtbl tr.wq-row td.wq-k,.wqtbl tr.wq-row td.wq-a{white-space:normal;overflow-wrap:anywhere}
+  .wqtbl .wq-c,.wqtbl .wq-st,.wqtbl .wq-wc,.wqtbl .wq-in,.wqtbl .wq-p{display:none}
+  .wqtbl .wq-due{grid-column:1;grid-row:1;font-size:12px}
+  .wqtbl .wq-k{grid-column:1;grid-row:2}
+  .wqtbl .wq-a{grid-column:1;grid-row:3;color:var(--text-2)}
+  .wqtbl .wq-b{grid-column:2;grid-row:1 / span 3;align-self:center}
+  .wq-step{flex:0 0 96px}
+}

@@ -22,16 +22,20 @@ Object.assign(KT.rules, (function (R, C) {
         pic: shipPic(state, sh, deal), purpose: PURPOSES.includes(sh.purpose) ? sh.purpose : 'review', status: R.sampleStatus(sh, today) };
     });
   }
-  /* f = { campaign, pic ('' all · '__none' · a name), purpose, q (KOL · @handle · shipment / deal ID · tracking no.), status (a status or 'noShipBy') } */
+  /* f = { campaign, pic ('' all · '__none' · a name), purpose, q (KOL · @handle · shipment / deal ID · tracking no.), status (a status or 'noShipBy'),
+     CR-23 §3.1: product (a TR code · '__none' = no products recorded), phase (the deal is in that Phase — R.phaseIndex) } */
   function filterShipRows(state, rows, f) {
     const q = trim(f.q).toLowerCase().replace(/^@/, ''), handles = new Map();
+    const idx = f.phase ? R.phaseIndex(state) : null, inPhase = r => !!r.deal && ((idx.deal.get(r.deal.deal_id) || {}).keys || new Set()).has(f.phase);
     if (q) (state.kol_accounts || []).forEach(a => { handles.set(a.kol_id, (handles.get(a.kol_id) || '') + ' ' + String(a.handle || '').toLowerCase()); });
     return rows.filter(r => {
       if (f.campaign && r.campaign_id !== f.campaign) return false;
       if (f.pic && (f.pic === '__none' ? !isBlank(r.pic) : r.pic !== f.pic)) return false;
       if (f.purpose && r.purpose !== f.purpose) return false;
       if (f.method && (r.sh.method || 'warehouse') !== f.method) return false;   // CR-22 §3.3
-      if (f.status && (f.status === 'noShipBy' ? !(r.status === 'to_ship' && !isISODate(r.sh.ship_by)) : r.status !== f.status)) return false;
+      if (f.status && (f.status === 'noShipBy' ? !(r.status === 'to_ship' && !R.shipByDate(r.sh)) : r.status !== f.status)) return false;
+      if (f.product && (f.product === '__none' ? (r.sh.items || []).length > 0 : !(r.sh.items || []).some(x => x.tr_code === f.product))) return false;
+      if (f.phase && !inPhase(r)) return false;
       if (q) {
         const kid = r.kol && r.kol.kol_id, hay = [r.kol && r.kol.display_name, handles.get(kid), r.sh.shipment_id, r.sh.deal_id, r.sh.tracking_no].map(v => String(v || '').toLowerCase()).join(' ');
         if (!hay.includes(q)) return false;
@@ -40,14 +44,14 @@ Object.assign(KT.rules, (function (R, C) {
     });
   }
   const tabOfStatus = st => (st === 'shipped' ? 'in-transit' : st === 'delivered' || st === 'not_required' || st === 'purchased' ? 'delivered' : 'to-ship');
-  const toShipGroup = r => (r.status === 'kol_purchase' ? 'kol_purchase' : r.status === 'problem' ? 'problem' : r.status === 'overdue' ? 'overdue' : r.status === 'this_week' ? 'this_week' : isISODate(r.sh.ship_by) ? 'later' : 'noShipBy');
+  const toShipGroup = r => (r.status === 'kol_purchase' ? 'kol_purchase' : r.status === 'problem' ? 'problem' : r.status === 'overdue' ? 'overdue' : r.status === 'this_week' ? 'this_week' : R.shipByDate(r.sh) ? 'later' : 'noShipBy');
   const daysInTransit = (sh, today) => (isISODate(sh.shipped_date) ? Math.max(0, dayDiff(today, sh.shipped_date)) : null);
   /* the rows of one tab in their order — To ship: Overdue → This week → Later → No ship-by date → Problem, by Ship by · In transit: the oldest
      shipped first · Delivered: the newest first; what came from the old files (or the clean-up) is hidden unless showImported → { rows, hidden } */
   function shipTab(rows, tab, today, showImported) {
     let list = rows.filter(r => tabOfStatus(r.status) === tab), hidden = 0;
     const id = (a, b) => String(a.sh.shipment_id).localeCompare(String(b.sh.shipment_id));
-    if (tab === 'to-ship') list.sort((a, b) => TO_SHIP_GROUPS.indexOf(toShipGroup(a)) - TO_SHIP_GROUPS.indexOf(toShipGroup(b)) || String(a.sh.ship_by || '9999').localeCompare(String(b.sh.ship_by || '9999')) || id(a, b));
+    if (tab === 'to-ship') list.sort((a, b) => TO_SHIP_GROUPS.indexOf(toShipGroup(a)) - TO_SHIP_GROUPS.indexOf(toShipGroup(b)) || String(R.shipByDate(a.sh) || '9999').localeCompare(String(R.shipByDate(b.sh) || '9999')) || id(a, b));
     else if (tab === 'in-transit') list.sort((a, b) => String(a.sh.shipped_date || '9999').localeCompare(String(b.sh.shipped_date || '9999')) || id(a, b));
     else {
       const imp = list.filter(r => R.isLegacyDelivered(r.sh)); hidden = imp.length;
@@ -60,7 +64,7 @@ Object.assign(KT.rules, (function (R, C) {
   function shipCards(rows) {
     const c = { overdue: 0, this_week: 0, in_transit: 0, noShipBy: 0, problem: 0 };
     rows.forEach(r => { if (r.status === 'overdue') c.overdue++; else if (r.status === 'this_week') c.this_week++; else if (r.status === 'shipped') c.in_transit++; else if (r.status === 'problem') c.problem++;
-      else if (r.status === 'to_ship' && !isISODate(r.sh.ship_by)) c.noShipBy++; });
+      else if (r.status === 'to_ship' && !R.shipByDate(r.sh)) c.noShipBy++; });
     return c;
   }
   const tabCounts = rows => ({ 'to-ship': rows.filter(r => tabOfStatus(r.status) === 'to-ship').length, 'in-transit': rows.filter(r => r.status === 'shipped').length,
@@ -140,12 +144,11 @@ Object.assign(KT.rules, (function (R, C) {
     if (!(d.items || []).length) warns.push({ field: 'items', msg: C.samples.noProducts });
     return { errs, warns, infos: [] };
   }
-  /* o = {id, user, now} → the shipment (To ship) · with a deal: its Campaign, Ship by follows the deal unless one is given · without: source 'other' */
+  /* o = {id, user, now} → the shipment (To ship) · with a deal: its Campaign · without: source 'other' · CR-23 §3.4: Ship by = the date typed (none → not set) */
   function newManualShipment(state, d, o) {
-    const deal = d.deal_id ? state.deals.find(x => x.deal_id === d.deal_id) : null, auto = deal ? R.shipBy(deal, state.lookups.sample_settings) : null;
-    const sb = isISODate(d.ship_by) ? d.ship_by : auto;
+    const deal = d.deal_id ? state.deals.find(x => x.deal_id === d.deal_id) : null;
     return { shipment_id: o.id, deal_id: deal ? deal.deal_id : null, kol_id: d.kol_id, items: (d.items || []).map(x => ({ tr_code: x.tr_code, qty: Math.max(1, Math.round(Number(x.qty) || 1)) })),
-      ship_by: sb || null, status: 'to_ship', ship_by_overridden: !!deal && isISODate(d.ship_by) && d.ship_by !== auto, shipped_date: null, carrier: null, tracking_no: null, delivered_date: null,
+      ship_by: null, ship_by_date: isISODate(d.ship_by) ? d.ship_by : null, status: 'to_ship', ship_by_overridden: false, shipped_date: null, carrier: null, tracking_no: null, delivered_date: null,
       problem_reason: null, not_required_reason: null, source: deal ? 'manual' : 'other', note: trim(d.note) || null, purpose: d.purpose,
       campaign_id: deal ? deal.campaign_id : d.campaign_id || null, pick_list_id: null, address_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };
   }

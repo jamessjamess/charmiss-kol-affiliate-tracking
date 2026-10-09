@@ -220,9 +220,10 @@
     test('TC-33: To ship (All campaigns) 8 = Overdue 7 + No ship-by date 1 · In transit 0 · Delivered 214 − 8 · Mine as Pizza 4', () => {
       const st = fresh(), rows = R.shipRows(st, TD), tab = R.shipTab(rows, 'to-ship', TD, false);
       assert.equal(tab.rows.length, 8);
-      assert.deepEqual(tab.rows.map(R.toShipGroup), ['overdue', 'overdue', 'overdue', 'overdue', 'overdue', 'overdue', 'overdue', 'noShipBy']);
+      /* CR-23 §3.4 — the 7 Overdue came from the old sum: every one is "Ship by not set" now */
+      assert.deepEqual(tab.rows.map(R.toShipGroup), ['noShipBy', 'noShipBy', 'noShipBy', 'noShipBy', 'noShipBy', 'noShipBy', 'noShipBy', 'noShipBy']);
       const c = R.shipCards(rows);
-      assert.deepEqual([c.overdue, c.this_week, c.in_transit, c.noShipBy, c.problem], [7, 0, 0, 1, 0]);
+      assert.deepEqual([c.overdue, c.this_week, c.in_transit, c.noShipBy, c.problem], [0, 0, 0, 8, 0]);
       assert.deepEqual(R.tabCounts(rows), { 'to-ship': 8, 'in-transit': 0, delivered: 206 });
       assert.equal(R.shipTab(R.filterShipRows(st, rows, { pic: 'Pizza' }), 'to-ship', TD).rows.length, 4);
       assert.ok(tab.rows.every(r => r.purpose === 'review' && r.campaign_id && r.deal));
@@ -268,7 +269,7 @@
       assert.deepEqual(R.validateNewShipment(st, d).errs, []);
       assert.deepEqual(R.validateNewShipment(st, Object.assign({}, d, { deal_id: st.deals.find(x => x.kol_id !== k.kol_id).deal_id })).errs.map(e => e.field), ['deal_id']);
       const sh = R.newManualShipment(st, d, { id: 'SH999999', user: 'U007', now: 'x' }); st.sample_shipments.push(sh);
-      assert.deepEqual([sh.deal_id, sh.source, sh.purpose, sh.campaign_id, sh.status, sh.ship_by], [null, 'other', 'gifting', camp, 'to_ship', '2026-10-10']);
+      assert.deepEqual([sh.deal_id, sh.source, sh.purpose, sh.campaign_id, sh.status, sh.ship_by_date, R.shipByDate(sh)], [null, 'other', 'gifting', camp, 'to_ship', '2026-10-10', '2026-10-10']);   // CR-23: ship_by_date
       assert.ok(!['address', 'ship_address', 'phone', 'recipient'].some(f => f in sh));
       const r = R.shipTab(R.shipRows(st, TD), 'to-ship', TD).rows.find(x => x.sh === sh);
       assert.deepEqual([r.deal, r.kol.kol_id, r.pic, R.toShipGroup(r)], [null, k.kol_id, 'Pizza', 'this_week']);
@@ -277,7 +278,9 @@
     test('TC-39 / TC-40: Delivered hides the 206 imported (Show imported) · Operations Shipments to ship for Pizza = 4 (with or without a deal)', () => {
       const st = fresh(), rows = R.shipRows(st, TD), d = R.shipTab(rows, 'delivered', TD, false);
       assert.deepEqual([d.rows.length, d.hidden, R.shipTab(rows, 'delivered', TD, true).rows.length], [0, 206, 206]);
-      assert.deepEqual([R.shipmentsToShip(st, { pic: 'Pizza' }, TD).length, R.shipmentsToShip(st, {}, TD).length], [4, 7]);
+      assert.deepEqual([R.shipmentsToShip(st, { pic: 'Pizza' }, TD).length, R.shipmentsToShip(st, {}, TD).length], [0, 0], 'CR-23 §3.4: no Ship by set yet → nothing due');
+      st.sample_shipments.find(x => x.source === 'auto' && x.status === 'to_ship').ship_by_date = '2026-10-05';
+      assert.equal(R.shipmentsToShip(st, {}, TD).length, 1);
       assert.ok(R.PERMISSIONS.some(p => p.key === 'shipment.ship') && C.roles.perm['shipment.ship']);
       assert.equal(C.samples.filter, 'Shipment status');
     });
@@ -344,8 +347,7 @@
       assert.equal(R.onlyProduct(st, ''), null);
     });
     test('Allocation note: more than half of the spend without a pillar → "Most spend has no pillar"', () => {
-      const st = fresh(), a = R.pillarAllocation(st, camp(st, 'Charming').campaign_id);
-      assert.equal(R.mostSpendNoPillar(a.actual), a.actual.money[R.NOT_SET] / a.actual.total > 0.5);
+      /* (CR-24 §3: the Pillar allocation card is gone — the note stays on Pillar mix) */
       assert.deepEqual([R.mostSpendNoPillar({ total: 100, money: { [R.NOT_SET]: 51 } }), R.mostSpendNoPillar({ total: 100, money: { [R.NOT_SET]: 50 } }), R.mostSpendNoPillar({ total: 0, money: {} })], [true, false, false]);
     });
   });

@@ -75,9 +75,12 @@
       pending('D000270').forEach(p => { p.expected_post_date = '2026-10-13'; });  // Amp · last day of the window
       pending('D000290').forEach(p => { p.expected_post_date = '2026-10-14'; });  // Amp · one day too late
       deal('D000114').expected_script_date = '2026-10-07';                         // Pizza · Brief → Script (CR-15)
+      /* CR-23 §3.2: D000287 / D000270 are at their last Draft — the next is Approve (no date: not due) · an Approve date set → due by it */
+      assert.deepEqual(R.upcomingDues(s, 'Amp', TD, 7).map(r => [r.deal.deal_id, r.due, R.stepShort(r.step.sub_status)]), [['D000291', '2026-10-08', 'Script']]);
+      deal('D000287').expected_approve_date = TD; deal('D000270').expected_approve_date = '2026-10-13'; deal('D000290').expected_approve_date = '2026-10-14';
       const rows = R.upcomingDues(s, 'Amp', TD, 7);
       assert.deepEqual(rows.map(r => [r.deal.deal_id, r.due, R.stepShort(r.step.sub_status)]),
-        [['D000287', TD, 'Post'], ['D000291', '2026-10-08', 'Script'], ['D000270', '2026-10-13', 'Post']]);
+        [['D000287', TD, 'Approve'], ['D000291', '2026-10-08', 'Script'], ['D000270', '2026-10-13', 'Approve']]);
       assert.deepEqual(R.upcomingDues(s, 'Pizza', TD, 7).map(r => r.deal.deal_id), ['D000114']);
       assert.deepEqual(R.upcomingDues(s, { pic: 'Amp', campaign: 'XX' }, TD, 7), [], 'the Campaign scope narrows it');
       assert.deepEqual(R.upcomingDues(s, 'Amp', '2026-10-07', 7).map(r => r.deal.deal_id), ['D000291', 'D000270', 'D000290'], 'a past due date drops out');

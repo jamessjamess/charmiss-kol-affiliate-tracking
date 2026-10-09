@@ -275,3 +275,22 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 
 **Migration v21** (`rules-samples.js migrateV21` · รันซ้ำได้ผลเดิม): shipment เดิมทั้งหมด method = warehouse · items ว่าง → สินค้าของ deal (qty 1) · purchase_amount / purchased_date null · deals.product_purchase_fee null · ไม่แตะยอดเงิน → Committed ฿1,783,579 · Paid ฿774,579 · Pending ฿98,000 เท่าเดิม
 
+## CR-23 — schema คงที่ 21 (Ship by ที่คนตั้ง · เหตุผล Cancel)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `sample_shipments` | + `ship_by_date` (null = Ship by not set) | วันที่คนตั้ง (Move stage · New deal · Deal modal · Shipments) = due ของ shipment (`R.shipByDate`) · `ship_by` เดิมเป็นค่าคำนวณ CR-10 → ใช้เป็น hint "Suggested" เท่านั้น (ค่าที่คนแก้เอง ✎ / shipment ไม่มี deal ยังนับ) |
+| `deals` | + `cancel_reason_key` (null = Other) | key จาก `lookups.cancel_reasons` · `cancel_reason` (เดิม) = Detail · ออกจาก Cancel → ล้างทั้งคู่ |
+| `lookups.cancel_reasons` (ใหม่) | [{ key, label, active }] kol_declined · price · no_response · schedule · content · brand_change · other | ใส่ค่า default ตอนโหลดถ้ายังไม่มี (`store.migrate` ทุกครั้ง · ไม่ขึ้น schema) · Settings › Lists › Cancel reasons (Other คงที่) |
+
+ไม่มี migration · ไม่แตะยอดเงิน · stage ตอนยกเลิกอ่านจาก `deal_status_log` (log ไป Cancel → `from_sub_status`)
+
+## CR-24 — schema คงที่ 21 (Operations = Work queue)
+
+| ที่ | Field | ค่า |
+|---|---|---|
+| `lookups.ops_stuck_days` (ใหม่) | จำนวนวัน (1–365 · default 7) | deal อยู่ขั้นเดิมนานกว่านี้และยังไม่ Overdue = Stuck · ใส่ 7 ตอนโหลดถ้ายังไม่มี (`store.migrate` · ไม่ขึ้น schema) · Settings › Operations mode |
+| localStorage (ต่อผู้ใช้) | `opspic_<uid>` (เดิม) · `opscamps_<uid>` (JSON · null = default) · `opswait_<uid>` ('' · us · kol) · `opsfold_<uid>` (section ที่พับ) | try/catch |
+
+ไม่มี migration · ไม่แตะยอดเงิน · Pillar allocation (`R.pillarAllocation`) ถูกตัด — portfolio ของ All campaigns ยังมี pillar mix ของแต่ละ Campaign
+

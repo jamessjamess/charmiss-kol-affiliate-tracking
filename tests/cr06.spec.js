@@ -269,9 +269,9 @@
     test('TC-26 (CR-13 · CR-15): Charming, All PICs — All 101 · List 3 + In process 11 (= the 14 open) · Complete 87 · Cancelled 0 · Overdue 2', () => {
       const s = fresh(), t = R.dealTabs(s, scoped(s, ''), TD, null, { tab: 'all' });
       assert.deepEqual(R.DEAL_TABS.map(k => t.counts[k]), [101, 3, 11, 87, 0]);
-      assert.equal(t.chips.overdue, 2, 'CR-15: pangxnstory (Brief) waits on Script — no due date yet');
+      assert.equal(t.chips.overdue, 1, 'CR-15: pangxnstory (Brief) waits on Script — no due date yet · CR-23 §3.2: tuckpx (last Draft) waits on Approve — no due');
       const rows = scoped(s, '');
-      assert.equal(rows.filter(d => R.hasReason(d, 'overdue', t.why)).length, 2);
+      assert.equal(rows.filter(d => R.hasReason(d, 'overdue', t.why)).length, 1);
       assert.equal(rows.filter(d => R.inDealTab(d, 'list') || R.inDealTab(d, 'inprocess')).every(d => d.status === 'List' || d.status === 'Inprocess'), true);
     });
     test('TC-23 / TC-24 (CR-13): Me (Ja) open 9 · Pang open 3 · Unassigned open 1 (List + In process)', () => {
@@ -285,7 +285,7 @@
       const byPic = R.groupDeals(s, open, 'pic', ctx, TD);
       assert.equal(byPic.reduce((a, g) => a + g.rows.length, 0), 14);
       assert.equal(byPic[byPic.length - 1].key, '', 'Unassigned last');
-      assert.deepEqual(R.attentionReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx).map(x => x.key), ['shipOverdue'], 'CR-13 §4.5: its sample is past Ship by · CR-15: at Brief it waits on Script (no due)');
+      assert.deepEqual(R.attentionReasons(s, s.deals.find(d => d.deal_id === 'D000098'), TD, ctx).map(x => x.key), [], 'CR-15: at Brief it waits on Script (no due) · CR-23 §3.4: its Ship by was the old sum — not a due');
     });
     test('summary of the scope: Committed ฿863,700 / ฿850,000 · Pending ฿5,100 · Paid ฿233,500', () => {
       const s = fresh(), ctx = R.dealContext(s), t = R.dealTiles(s, scoped(s, ''), { campaignId: 'CH', phaseIds: null }, TD, ctx.phaseIdx);

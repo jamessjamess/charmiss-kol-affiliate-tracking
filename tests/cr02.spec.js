@@ -48,7 +48,7 @@
       assert.equal(x.committed + x.shortlist, 1881579, 'Committed + Shortlist (CR-03 split)');
       assert.equal(x.budget, 2748400);
       assert.equal(x.paid, 774579);
-      assert.equal(x.overdue, 5, 'CR-15: 11 before — the 6 deals at Brief wait on Script, which has no due date yet');
+      assert.equal(x.overdue, 1, 'CR-15: 11 → 5 (the 6 deals at Brief wait on Script) · CR-23 §3.2: → 1 (4 deals at their last Draft wait on Approve — our own work, no due)');
       assert.equal(x.unpaid, 130);
       const expected = { CH: 868800, KS: 348300, AC: 84500, PH: 579979 };
       for (const [id, v] of Object.entries(expected)) { const c = R.campaignSummary(s, id); assert.equal(c.committed + c.shortlist, v, id); }

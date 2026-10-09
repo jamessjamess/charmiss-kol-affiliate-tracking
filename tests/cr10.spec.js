@@ -273,7 +273,8 @@
       assert.equal(s.schema_version, S.SCHEMA_VERSION); assert.ok(S.SCHEMA_VERSION >= 11);
       const leg = list.filter(x => x.source === 'legacy'), auto = list.filter(x => x.source === 'auto');
       assert.deepEqual([leg.length, leg.filter(x => x.delivered_date).length, leg.filter(x => !x.delivered_date).length, leg.every(x => x.status === 'delivered')], [206, 120, 86, true]);
-      assert.deepEqual([auto.length, auto.filter(x => R.sampleStatus(x, TD) === 'overdue').length, auto.filter(x => !x.ship_by).length], [8, 7, 1]);
+      assert.deepEqual([auto.length, auto.filter(x => R.sampleStatus(x, TD) === 'overdue').length, auto.filter(x => !x.ship_by).length], [8, 0, 1], 'CR-23 §3.4: the old sum is not a due — none Overdue');
+      assert.ok(auto.every(x => R.shipByDate(x) === null), 'CR-23 §3.4: every one "Ship by not set"');
       assert.deepEqual(s.lookups.sample_settings.lead_days, 7);
       const v10 = JSON.parse(JSON.stringify(s)); v10.schema_version = 10; delete v10.sample_shipments; delete v10.lookups.sample_settings;
       const m = S.migrate(JSON.parse(JSON.stringify(v10)));
@@ -286,7 +287,7 @@
     test('TC-53: Perfect Heart — Overdue 5 · No ship-by date 1 · Overdue first in the group order · Charming 2 · Kiss 0', () => {
       const s = fresh(), rowsOf = name => R.sampleRows(s, s.deals.filter(d => d.campaign_id === camp(s, name).campaign_id), TD).filter(r => r.sh.source === 'auto');
       const c = R.sampleCounts(rowsOf('Perfect'));
-      assert.deepEqual([c.overdue, c.noShipBy], [5, 1]);
+      assert.deepEqual([c.overdue, c.noShipBy], [0, 6], 'CR-23 §3.4: the 5 Overdue came from the sum — now "Ship by not set"');
       assert.equal(R.SAMPLE_STATUSES[0], 'overdue');
       assert.deepEqual(rowsOf('Charming').map(r => [(R.kolById(s, r.deal.kol_id) || {}).display_name, r.sh.ship_by]).sort(), [['pangxnstory', '2026-06-10'], ['pearriepai', '2026-09-27']]);
       assert.equal(rowsOf('Kiss').length, 0);
@@ -296,13 +297,15 @@
       Object.assign(d, { sub_status: 'Confirm QT', status: R.stepOf(s.lookups, 'Confirm QT').status, expected_draft1_date: '2026-10-20' });
       s.deal_products.push({ deal_id: d.deal_id, tr_code: 'TR1', qty: 2, note: null }, { deal_id: d.deal_id, tr_code: 'TR2', qty: 1, note: null });
       const evs = R.syncShipments(s, ctxS(s)), sh = R.shipmentsOf(s, d.deal_id)[0];
-      assert.deepEqual([evs.length >= 1, sh.status, sh.source, sh.ship_by, R.itemsText(sh.items), R.sampleStatus(sh, TD)], [true, 'to_ship', 'auto', '2026-10-13', 'TR1×2, TR2×1', 'this_week']);
+      /* CR-23 §3.4 — no Ship by is set for you: the sum (Draft 1 − 7 days) is only the suggestion · set by hand → it is the due · cleared → not set */
+      assert.deepEqual([evs.length >= 1, sh.status, sh.source, R.shipByDate(sh), R.itemsText(sh.items), R.sampleStatus(sh, TD)], [true, 'to_ship', 'auto', null, 'TR1×2, TR2×1', 'to_ship']);
+      assert.equal(R.shipBySuggest(d, s.lookups.sample_settings).date, '2026-10-13');
       d.expected_draft1_date = '2026-10-30'; R.syncShipments(s, ctxS(s));
-      assert.equal(sh.ship_by, '2026-10-23');
+      assert.deepEqual([R.shipByDate(sh), R.shipBySuggest(d, s.lookups.sample_settings).date], [null, '2026-10-23']);
       R.updateShipment(sh, { kind: 'ship_by', date: '2026-10-15' }, { now: 'x', user: 'U000', eventId: 1 }); d.expected_draft1_date = '2026-11-30'; R.syncShipments(s, ctxS(s));
-      assert.deepEqual([sh.ship_by, sh.ship_by_overridden], ['2026-10-15', true]);
+      assert.deepEqual([sh.ship_by_date, R.shipByDate(sh), R.sampleStatus(sh, TD)], ['2026-10-15', '2026-10-15', 'to_ship']);   // (9 days away)
       R.updateShipment(sh, { kind: 'ship_by', date: null }, { now: 'x', user: 'U000', eventId: 2 }); R.syncShipments(s, ctxS(s));
-      assert.deepEqual([sh.ship_by, sh.ship_by_overridden], ['2026-11-23', false]);
+      assert.deepEqual([sh.ship_by_date, R.shipByDate(sh)], [null, null]);
       assert.equal(R.syncShipments(s, ctxS(s)).length, 0, 'nothing new the second time');
     });
     test('TC-56 / TC-57: Mark shipped (Kerry · tracking) → Shipped · Mark delivered → Delivered and deals.delivered = true · a cancelled deal → Not required "Deal cancelled"', () => {
@@ -314,19 +317,28 @@
       const d0 = s.deals.find(d => d.deal_id === shs[0].deal_id); assert.deepEqual([d0.delivered, d0.delivery_date], [true, '2026-10-07']);
       assert.ok(R.validateShipment({ kind: 'problem', reason: ' ' }, TD).errs.length);
       const t = s.sample_shipments.find(x => x.source === 'auto' && x.status === 'to_ship'), dt = s.deals.find(d => d.deal_id === t.deal_id);
+      /* CR-23 §3.6 — the Cancel itself (R.applyMove · Also cancel the sample shipment ✓) makes it Not required · the reconcile no longer does */
+      const rc = R.applyMove(s, dt, 'Cancel', { date: TD, cancelReasonKey: 'kol_declined', cancelReason: '' }, { logId: 99001, eventId: 99001, now: new Date('2026-10-06T03:00:00Z'), user: 'U000' });
+      const t2 = rc.shipments.find(x => x.shipment_id === t.shipment_id);
+      assert.deepEqual([t2.status, t2.not_required_reason], ['not_required', 'Deal cancelled']);
+      assert.equal(R.applyMove(s, dt, 'Cancel', { date: TD, cancelReasonKey: 'kol_declined', cancelReason: '', cancelShipments: false }, { logId: 99002, eventId: 99002, now: new Date('2026-10-06T03:00:00Z'), user: 'U000' }).shipments.length, 0, 'unticked: left as it is');
       dt.status = 'Cancel'; dt.sub_status = 'Cancel'; R.syncShipments(s, ctxS(s));
-      assert.deepEqual([t.status, t.not_required_reason], ['not_required', 'Deal cancelled']);
+      assert.equal(t.status, 'to_ship', 'the reconcile leaves it');
       const track = R.sampleTrack(R.shipmentsOf(s, shs[1].deal_id), TD);
       assert.deepEqual([track.kind, track.carrier], ['shipped', 'Kerry Express']);
     });
     test('TC-60 / TC-61: Operations — Samples to ship for Pizza = 4 · Ship sample in the due list · Viewer / Accounting cannot change shipments', () => {
       const s = fresh();
-      assert.equal(R.samplesToShip(s, { pic: 'Pizza' }, TD).length, 4);
-      assert.equal(R.samplesToShip(s, { pic: '' }, TD).length, 7);
+      /* CR-23 §3.4 — the old sums are no due: nothing to ship by a date until a person sets one */
+      assert.deepEqual([R.samplesToShip(s, { pic: 'Pizza' }, TD).length, R.samplesToShip(s, { pic: '' }, TD).length], [0, 0]);
+      const pz = s.sample_shipments.filter(x => x.source === 'auto' && (s.deals.find(y => y.deal_id === x.deal_id) || {}).pic === 'Pizza');
+      assert.equal(pz.length, 4);
+      pz[0].ship_by_date = R.addDays(TD, -1);
+      assert.equal(R.samplesToShip(s, { pic: 'Pizza' }, TD).length, 1);
       const d = s.deals.find(x => x.deal_id === R.samplesToShip(s, { pic: 'Pizza' }, TD)[0].deal.deal_id);
       assert.deepEqual(['admin', 'kol_manager', 'viewer', 'accounting'].map(role => R.canEditShipment({ role, active: true }, d)), [true, true, false, false]);
       assert.deepEqual([R.canEditShipment(s.users.find(u => u.display_name === 'Pizza'), d), R.canEditShipment(s.users.find(u => u.display_name === 'Amp'), d)], [true, false]);
-      const sh = s.sample_shipments.find(x => x.source === 'auto' && x.ship_by); sh.ship_by = R.addDays(TD, 3);
+      const sh = pz[1]; sh.ship_by_date = R.addDays(TD, 3);
       assert.ok(R.sampleDues(s, {}, TD, 7).some(r => r.sample.shipment_id === sh.shipment_id));
       assert.equal(R.trackingLink({ tracking_url: { 'Kerry Express': 'https://track.example/?t={tracking}' } }, 'Kerry Express', 'KE 1'), 'https://track.example/?t=KE%201');
     });

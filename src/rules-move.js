@@ -5,8 +5,12 @@
    packageUnits, rateCard, costs {gencode_expense, gencode_period, gencode_start_date, asset_fee, expediting_fee}, postDue, linkBrief, scriptLink,
    expected {field: date}, steps {sub_status: date}, alsoContacted, contactedDate, drafts {k: 'done' | 'not_needed'}, approveDate,
    posts [{post_id | account_id, link}], notes {note, links, image_ids},
-   CR-22: cta, ship { method npd | warehouse | self_purchase, items [{tr_code, qty}], address_id, purchase_amount, note } }.
-   Adds to KT.rules (load after rules-package.js). */
+   CR-22: cta, ship { method npd | warehouse | self_purchase, items [{tr_code, qty}], address_id, purchase_amount, note },
+   CR-23: ship.ship_by (Ship by * for NPD / Warehouse · Buy by for KOL buys own) · cancelReasonKey (lookups.cancel_reasons) · cancelReason (= Detail) ·
+   cancelShipments (false = leave the To ship shipments as they are) }.
+   CR-23 §3.2 — Next expected is what the KOL hands in next, always required (Draft k+1 · Post due at Approve) · the last Draft asks the Post due
+   (not required) · Expected approve is never asked (our own work). §3.6 — Cancel: a reason from the list (+ Detail, needed for Other) and what it
+   undoes (cancelImpact). Adds to KT.rules (load after rules-package.js). */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
   const M = C.msg, { isBlank, trim, isISODate, num, dmy } = R;
@@ -22,6 +26,30 @@ Object.assign(KT.rules, (function (R, C) {
     asset_fee: C.move.assetFee, expediting_fee: C.move.expeditingFee, expected_post_date: C.move.postDue, expected_script_date: C.move.expScript, expected_approve_date: C.move.expApprove,
     expected_draft1_date: C.move.expDraft(1), expected_draft2_date: C.move.expDraft(2), expected_draft3_date: C.move.expDraft(3) });
   const isBriefStep = s => !!s && s.date_field === 'brief_date';
+
+  /* ===================== CR-23 §3.6 — why a deal is cancelled (lookups.cancel_reasons · Settings › Lists) ===================== */
+  const CANCEL_OTHER = 'other';
+  const CANCEL_REASON_KEYS = ['kol_declined', 'price', 'no_response', 'schedule', 'content', 'brand_change', CANCEL_OTHER];
+  const cancelReasonsDefault = () => CANCEL_REASON_KEYS.map(key => ({ key, label: C.cancel.reasons[key], active: true }));
+  /* the list (Other always there, last) */
+  function cancelReasonsOf(lookups) {
+    const l = (lookups || {}).cancel_reasons, list = Array.isArray(l) && l.length ? l.filter(x => x && x.key) : cancelReasonsDefault();
+    const other = list.find(x => x.key === CANCEL_OTHER) || { key: CANCEL_OTHER, label: C.cancel.reasons.other, active: true };
+    return list.filter(x => x.key !== CANCEL_OTHER).concat([Object.assign({}, other, { active: true })]);
+  }
+  /* a deal cancelled before CR-23 has no key → Other */
+  const cancelReasonLabel = (lookups, key) => { const x = cancelReasonsOf(lookups).find(r => r.key === (key || CANCEL_OTHER)); return (x && trim(x.label)) || C.cancel.reasons[key] || key || C.cancel.reasons.other; };
+  /* what a Cancel undoes, shown before it is done: the money it gives back to the Campaign (from Confirm QT) · the shipments still To ship (cancelled
+     with it when ticked) · the ones on the way / delivered (stay) · a package use given back · money already sent / paid (a warning) */
+  function cancelImpact(state, deal) {
+    const L = state.lookups, ships = R.shipmentsOf ? R.shipmentsOf(state, deal.deal_id) : [];
+    const counts = deal.status !== 'Cancel' && !R.isShortlist(L, deal);
+    const lines = (state.payment_lines || []).filter(l => l.deal_id === deal.deal_id);
+    const paid = deal.paid_full || deal.paid_50 || deal.package_paid || lines.some(l => l.status === 'paid') ? 'paid' : lines.some(l => l.status === 'submitted' || l.status === 'in_run') ? 'sent' : null;
+    const pk = R.termOf(deal) === 'package' && deal.package_id && R.usesPackage(L, deal) ? R.packageById(state, deal.package_id) : null;
+    return { release: counts ? R.totalCost(deal) : 0, toCancel: ships.filter(x => x.status === 'to_ship' || x.status === 'kol_purchase'),
+      kept: ships.filter(x => ['shipped', 'delivered', 'purchased', 'problem'].includes(x.status)), pkg: pk ? { pkg: pk, units: Number(deal.package_units) || 1 } : null, paid };
+  }
 
   /* the deal as it would be with what the form holds (a value not in the form = the deal's own) · a Package term: Rate card = unit price × uses */
   function valuesOf(state, deal, f) {
@@ -68,13 +96,16 @@ Object.assign(KT.rules, (function (R, C) {
     }
     return { drafts };
   }
-  /* §4.15 — the date the KOL is expected to hand in the next piece of work (no new fields: CR-15's) */
+  /* §4.15 — the date the KOL is expected to hand in the next piece of work (no new fields: CR-15's) · CR-23 §3.2: always required · Brief: Draft 1
+     (+ Script when the plan has it) · Draft k with Draft k+1 in the plan: Draft k+1 · the last Draft: the Post due (filled with the deal's, not
+     required — "+ Add Draft k+1 round" asks Draft k+1) · Approve: the Post due · Expected approve is never asked */
   function nextExpected(state, to, plan) {
     const k = R.draftNo(to);
-    if (isBriefStep(to)) return [{ field: 'expected_draft1_date', req: true }, { field: 'expected_script_date', req: false }];
+    if (isBriefStep(to)) { const sc = R.stepsOf(state.lookups).find(R.isScriptStep);
+      return [{ field: 'expected_draft1_date', req: true }].concat(sc && sc.active !== false && R.inPlan(sc, plan) ? [{ field: 'expected_script_date', req: true }] : []); }
     if (R.isScriptStep(to)) return [{ field: 'expected_draft1_date', req: true }];
-    if (k) return plan.drafts > k ? [{ field: `expected_draft${k + 1}_date`, req: false }] : [{ field: 'expected_approve_date', req: false }];
-    if (R.isApproveStep(to)) return [{ field: 'expected_post_date', req: false }];
+    if (k) return plan.drafts > k ? [{ field: `expected_draft${k + 1}_date`, req: true }] : [{ field: 'expected_post_date', req: false }];
+    if (R.isApproveStep(to)) return [{ field: 'expected_post_date', req: true }];
     return [];
   }
 
@@ -93,7 +124,9 @@ Object.assign(KT.rules, (function (R, C) {
     set('date', 'req');
     if (deal.sub_status === toSub) { out.kind = 'same'; return out; }
     if (from && R.isCancelStep(from)) { out.kind = 'leaveCancel'; set('note', 'req'); return out; }
-    if (R.isCancelStep(to)) { out.kind = 'cancel'; set('cancel_reason', 'req'); set('note', 'opt'); return out; }
+    /* CR-23 §3.6 — Cancel: Reason * (the list) · Detail (needed for Other) · Date (a form with no list key: the Detail alone, as before) */
+    if (R.isCancelStep(to)) { out.kind = 'cancel'; const keyed = has(f, 'cancelReasonKey'); if (keyed) set('cancel_reason_key', 'req');
+      set('cancel_reason', !keyed || f.cancelReasonKey === CANCEL_OTHER ? 'req' : 'opt'); if (!keyed) set('note', 'opt'); return out; }
     if (to.sort_order < fromSort) { out.kind = 'back'; set('note', 'req'); return out; }
     out.kind = 'forward'; set('note', 'opt');
     const qt = R.stepOf(L, QT), qtSort = qt ? qt.sort_order : Infinity, term = R.termOf(v), plan = planAfter(state, deal, to, f);
@@ -104,7 +137,7 @@ Object.assign(KT.rules, (function (R, C) {
     const ships = R.shipmentsOf ? R.shipmentsOf(state, deal.deal_id) : [];
     if (to.sort_order >= qtSort) {
       if (!ships.length) { out.ship = true; set('ship_method', 'req'); set('ship_items', 'req'); set('ship_note', 'opt');
-        const m = (f.ship || {}).method; if (m !== 'self_purchase') set('ship_to', 'opt'); else set('purchase_amount', 'opt'); }
+        const m = (f.ship || {}).method; if (m !== 'self_purchase') { set('ship_to', 'opt'); set('ship_by', 'req'); } else { set('purchase_amount', 'opt'); set('ship_by', 'opt'); } }   // CR-23 §3.4: Ship by * · Buy by
       else out.shipSummary = ships.filter(x => x.status !== 'not_required').pop() || ships[ships.length - 1];
     }
     out.plan = plan;
@@ -205,7 +238,10 @@ Object.assign(KT.rules, (function (R, C) {
       if (prev) { if (toSub !== prev) errs.push(issue('to', M.moveLeaveCancelOnly(prev))); }
       else infos.push(issue('to', M.moveLeaveCancelUnknown));
       if (!note) errs.push(issue('note', M.moveLeaveCancelNote));
-    } else if (req.kind === 'cancel') { if (!trim(f.cancelReason)) errs.push(issue('cancel_reason', M.moveCancelReason)); }
+    } else if (req.kind === 'cancel') {
+      if (F.cancel_reason_key === 'req' && !cancelReasonsOf(L).some(r => r.key === f.cancelReasonKey)) errs.push(issue('cancel_reason_key', M.cancelReasonRequired, 'cancel_reason'));
+      else if (F.cancel_reason === 'req' && !trim(f.cancelReason)) errs.push(issue('cancel_reason', F.cancel_reason_key ? M.cancelDetailRequired : M.moveCancelReason));
+    }
     else if (req.kind === 'back') { if (!note) errs.push(issue('note', M.moveBackNote)); }
     if (req.kind !== 'forward') return out();
     const LB = LABEL();
@@ -218,6 +254,12 @@ Object.assign(KT.rules, (function (R, C) {
       else if (items.some(x => !Number.isInteger(Number(x.qty)) || Number(x.qty) < 1)) errs.push(issue('ship_items', M.shipQtyWhole));
       if (sh.method === 'self_purchase' && !isBlank(sh.purchase_amount) && (isNaN(sh.purchase_amount) || Number(sh.purchase_amount) < 0)) errs.push(issue('purchase_amount', M.moveMoney(C.move.purchaseAmount)));
       if (R.looksSensitive(sh.note)) errs.push(issue('ship_note', M.sensitive));
+      /* CR-23 §3.4 — Ship by * (NPD / Warehouse) · Buy by (KOL buys own): not before the move · after the Draft 1 due only warns */
+      const sb = sh.ship_by, sbL = sh.method === 'self_purchase' ? C.move.buyBy : C.move.shipBy;
+      if (isBlank(sb)) { if (F.ship_by === 'req') errs.push(issue('ship_by', M.shipByRequired, 'ship')); }
+      else if (!isISODate(sb)) errs.push(issue('ship_by', M.dateInvalid(sbL)));
+      else if (isISODate(f.date) && sb < f.date) errs.push(issue('ship_by', M.shipByBeforeMove(sbL)));
+      else if (isISODate(v.expected_draft1_date) && sb > v.expected_draft1_date) warns.push(issue('ship_by', M.shipByAfterDraft1));
     }
     /* §4.7 · §4.11 — Confirm QT details */
     if (F.pillar === 'req' && isBlank(v.pillar)) errs.push(issue('pillar', M.movePillarRequired, 'pillar'));
@@ -248,7 +290,7 @@ Object.assign(KT.rules, (function (R, C) {
     const given = x => (x === 'expected_post_date' ? has(f, 'postDue') : !!f.expected && has(f.expected, x)) && (v[x] || null) !== (deal[x] || null);   // typed / changed in the form (a date the deal already had, shown as it is, never blocks)
     const expField = (x, required) => {
       const val = v[x];
-      if (isBlank(val)) { if (required) errs.push(issue(x, x === 'expected_draft1_date' ? M.moveExpectedDraft1 : M.dateInvalid(LB[x]), 'expected')); return; }
+      if (isBlank(val)) { if (required) errs.push(issue(x, x === 'expected_post_date' ? M.movePostDueRequired : x === 'expected_script_date' ? M.moveExpectedScript : /draft\d/.test(x) ? M.moveExpectedDraft(Number(x.replace(/\D/g, ''))) : M.dateInvalid(LB[x]), 'expected')); return; }
       if (!isISODate(val)) { errs.push(issue(x, M.dateInvalid(LB[x]))); return; }
       if (given(x) && isISODate(moveDate) && val < moveDate) { errs.push(issue(x, M.moveExpectedBefore, 'expected_before')); return; }
       if (x !== 'expected_post_date' && isISODate(postDue) && val > postDue) warns.push(issue(x, M.moveExpectedAfterDue(dmy(postDue).slice(0, 5))));
@@ -346,10 +388,11 @@ Object.assign(KT.rules, (function (R, C) {
       if (x.step.date_field && (x.given || isBlank(d[x.step.date_field]))) d[x.step.date_field] = x.date;
     });
     if (to.date_field && isBlank(deal[to.date_field])) d[to.date_field] = f.date;
-    if (R.isCancelStep(to)) d.cancel_reason = trim(f.cancelReason);
-    else if (R.isCancelled(deal)) d.cancel_reason = null;
+    /* CR-23 §3.6 — the reason (key) and its Detail (cancel_reason, the old free text) · leaving Cancel clears both */
+    if (R.isCancelStep(to)) { d.cancel_reason = trim(f.cancelReason) || null; d.cancel_reason_key = has(f, 'cancelReasonKey') ? f.cancelReasonKey || null : deal.cancel_reason_key || null; }
+    else if (R.isCancelled(deal)) { d.cancel_reason = null; d.cancel_reason_key = null; }
     const notes = [];
-    if (R.isCancelStep(to)) notes.push(trim(f.cancelReason));
+    if (R.isCancelStep(to)) notes.push(has(f, 'cancelReasonKey') ? [cancelReasonLabel(L, f.cancelReasonKey), trim(f.cancelReason)].filter(Boolean).join(': ') : trim(f.cancelReason));
     if (trim(f.note)) notes.push(trim(f.note));
     const log = mkLog(to, f.date, notes.join(' · ') || null);
     /* a rate quote when the deal reaches Confirm QT with a rate (CR-07) — not for a package (its price is the package's) */
@@ -382,11 +425,19 @@ Object.assign(KT.rules, (function (R, C) {
     if (forward && req.fields.ship_method === 'req' && f.ship && R.SHIP_METHODS.includes(f.ship.method)) {
       const own = f.ship.method === 'self_purchase', amt = own && !isBlank(f.ship.purchase_amount) ? round2(Number(f.ship.purchase_amount)) : null;
       shipment = Object.assign(R.newShipment({ id: ctx.shipmentId ? ctx.shipmentId() : null, deal: d, items: (f.ship.items || []).filter(x => x && x.tr_code).map(x => ({ tr_code: x.tr_code, qty: Math.max(1, Math.round(Number(x.qty) || 1)) })),
-        shipBy: own ? null : R.shipBy(d, L.sample_settings), status: own ? 'kol_purchase' : 'to_ship', source: 'move', user: ctx.user, now: stamp, method: f.ship.method, purchaseAmount: amt }),
+        shipByDate: isISODate(f.ship.ship_by) ? f.ship.ship_by : null, status: own ? 'kol_purchase' : 'to_ship', source: 'move', user: ctx.user, now: stamp, method: f.ship.method, purchaseAmount: amt }),   // CR-23 §3.4: the date given, never a sum
       { address_id: own ? null : f.ship.address_id || null, note: trim(f.ship.note) || null, purpose: 'review', campaign_id: d.campaign_id, pick_list_id: null });
       if (own) d.product_purchase_fee = amt;
       shipEv = { event_id: ev(), deal_id: deal.deal_id, shipment_id: shipment.shipment_id, type: 'sample', from: null, to: shipment.status, changed_at: stamp, changed_by: ctx.user || null, note: null };
     }
+    /* CR-23 §3.8 #3 — a deal with no Products takes the shipment's */
+    const products = shipment && shipment.items.length && !R.dealProductList(state, deal.deal_id).length ? shipment.items.map(x => ({ tr_code: x.tr_code, qty: x.qty })) : null;
+    /* CR-23 §3.6 — Cancel: the shipments still To ship / KOL purchase become Not required (unless the dialog's tick is off) */
+    const shipments = [], shipEvs = [];
+    if (R.isCancelStep(to) && f.cancelShipments !== false) (state.sample_shipments || []).filter(x => x.deal_id === deal.deal_id && (x.status === 'to_ship' || x.status === 'kol_purchase')).forEach(sh => {
+      shipments.push(Object.assign({}, sh, { status: 'not_required', not_required_reason: C.samples.dealCancelled, updated_at: stamp, updated_by: ctx.user || null }));
+      shipEvs.push({ event_id: ev(), deal_id: deal.deal_id, shipment_id: sh.shipment_id, type: 'sample', from: sh.status, to: 'not_required', changed_at: stamp, changed_by: ctx.user || null, note: C.samples.dealCancelled });
+    });
     /* one edit event for the values the move changed (pillar / term have their own) */
     let editEv = null;
     const fields = ['package_id', 'package_units', 'rate_card', 'product_purchase_fee'].concat(COST_FORM, ['expected_post_date', 'link_brief', 'script_link'], EXPECTED.filter(x => x !== 'expected_post_date'));
@@ -400,7 +451,7 @@ Object.assign(KT.rules, (function (R, C) {
       if (R.sameNote(old, rec) || (!old && R.stepNoteEmpty(rec))) rec = null;
       else noteEv = R.stepNoteEvent(deal.deal_id, key, old, rec, evCtx());
     }
-    return { deal: d, log, logs, quote, event, events: [event, pillarEv, termEv, ctaEv, editEv, noteEv, shipEv].filter(Boolean), posts: postsChanged ? list : null, note: rec, shipment };
+    return { deal: d, log, logs, quote, event, events: [event, pillarEv, termEv, ctaEv, editEv, noteEv, shipEv].concat(shipEvs).filter(Boolean), posts: postsChanged ? list : null, note: rec, shipment, products, shipments };
   }
 
   /* ===================== §4.9 — a card dropped on a stage ===================== */
@@ -433,5 +484,6 @@ Object.assign(KT.rules, (function (R, C) {
     return { before, after: round2(before - total), total };
   }
 
-  return { stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter };
+  return { stageRequirements, missingRequired, valuesOf, qtGaps, nextExpected, stepDates, checkMove, applyMove, dropPlan, moveBudget, planAfterMoveForm: planAfter,
+    CANCEL_OTHER, CANCEL_REASON_KEYS, cancelReasonsDefault, cancelReasonsOf, cancelReasonLabel, cancelImpact };
 })(KT.rules, KT.content));

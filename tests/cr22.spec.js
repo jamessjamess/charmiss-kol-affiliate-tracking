@@ -26,7 +26,7 @@
     mk('D000319', 'j.chatae', 'Contacted', null, '2026-10-08');
     return s;
   }
-  const qtForm = o => Object.assign({ date: TD, today: TD, pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '100000', cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'TEST1', qty: '2' }] } }, o || {});
+  const qtForm = o => Object.assign({ date: TD, today: TD, pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '100000', cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'TEST1', qty: '2' }], ship_by: TD } }, o || {});   // CR-23 §3.4: + Ship by
   const move = (s, d, to, f) => {
     let sid = 900; const r = R.applyMove(s, d, to, f, { logId: nextLog(s), quoteId: 'Q99999', eventId: nextEv(s), now: new Date(NOW), user: 'U000', shipmentId: () => 'SH' + String(++sid).padStart(6, '0') });
     s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); r.events.forEach(e => s.deal_events.push(e)); if (r.quote) s.kol_rate_quotes.push(r.quote); if (r.shipment) s.sample_shipments.push(r.shipment);
@@ -87,9 +87,8 @@
       assert.deepEqual([r.shipment.status, r.shipment.purchased_date, R.tabOfStatus(R.sampleStatus(r.shipment, TD)), R.openShipment(r.shipment)], ['purchased', TD, 'delivered', false]);
       assert.equal(R.quotesOfKol(b, kolBy(b, 'helppaoduay').kol_id)[0].product_purchase_fee, undefined, 'the rate quote does not carry the purchase');
       const c = setup(), r2 = move(c, deal(c, 'D000318'), 'Confirm QT', qtForm({ ship: { method: 'self_purchase', items: [{ tr_code: 'TEST2', qty: 1 }] } }));
-      c.deals[c.deals.indexOf(r2.deal)] = Object.assign({}, r2.deal, { status: 'Cancel', sub_status: 'Cancelled' });
-      R.syncShipments(c, { shipmentId: () => 'SH999999', eventId: () => 1, now: NOW, user: 'U000' });
-      assert.equal(r2.shipment.status, 'not_required', 'a cancelled deal: KOL purchase → Not required');
+      const rc = R.applyMove(c, r2.deal, 'Cancel', { date: TD, cancelReasonKey: 'price', cancelReason: '' }, { logId: nextLog(c), eventId: nextEv(c), now: new Date(NOW), user: 'U000' });   // CR-23 §3.6: the Cancel does it
+      assert.equal(rc.shipments.find(x => x.shipment_id === r2.shipment.shipment_id).status, 'not_required', 'a cancelled deal: KOL purchase → Not required');
       assert.deepEqual(R.SHIP_METHODS, ['npd', 'warehouse', 'self_purchase']);
       assert.deepEqual(['npd', 'warehouse', 'self_purchase'].map(k => R.shipMethodLabel(c.lookups, k)), ['NPD', 'Warehouse', 'KOL buys own']);
     });

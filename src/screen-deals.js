@@ -142,7 +142,8 @@ KT.screens.deals = (function () {
       /* CR-10 §4.14: Operations › Samples to ship → Deals › Samples of that PIC */
       if (p.samples) { go('shipments', { tab: 'to-ship', campaign: p.samples.campaign || '', pic: p.samples.pic || 'all' }); return; }   // CR-11 §4.10
       /* CR-11 §4.12: Operations › Metrics due → Performance of that Campaign / PIC, status Due */
-      if (p.perf) { dl.view = 'performance'; pref.set('dealview', 'performance'); if (p.perf.campaign) { dl.f.campaign = p.perf.campaign; dl.f.phaseSel = 'all'; yearFor(p.perf.campaign); } if (p.perf.pic !== undefined) choosePic(p.perf.pic || 'all'); dl.pf = Object.assign(R.blankPerfFilter(), { mstatus: p.perf.status || '' }); }
+      if (p.perf) { dl.view = 'performance'; pref.set('dealview', 'performance'); if (p.perf.q != null) { dl.f.q = p.perf.q; $('dl_q').value = p.perf.q; } if (p.perf.campaign) { dl.f.campaign = p.perf.campaign; dl.f.phaseSel = 'all'; yearFor(p.perf.campaign); } if (p.perf.pic !== undefined) choosePic(p.perf.pic || 'all'); dl.pf = Object.assign(R.blankPerfFilter(), { mstatus: p.perf.status || '' }); }
+      if (p.view && VIEWS.includes(p.view)) { dl.view = p.view; pref.set('dealview', p.view); }   // CR-24 §4.4: Stage flow › Shortlist → the Pipeline
       if (p.section === 'shipments') chooseDealTab('ships'); else if (p.section === 'costs') chooseDealTab('costs');   // CR-22 §3.6
       if (p.deal && p.deal !== '__new__') { id = p.deal; const d0 = dealById(id); if (d0 && d0.campaign_id !== dl.f.campaign) { dl.f.campaign = d0.campaign_id; dl.f.phaseSel = 'all'; } if (d0 && !inYear(state(), d0.campaign_id)) yearFor(d0.campaign_id); }
     }
@@ -150,8 +151,8 @@ KT.screens.deals = (function () {
     if (id && dealById(id) && !(dl.id === id && editing())) {
       if (editing() && dl.id !== id) toast(C.common.blockWhileEditing);
       else { Object.assign(dl, { mode: 'view', id, nav: navList(id) }); renderPanel();
-        /* CR-11 §4.10 — from Shipments: the drawer opens at its Shipments section */
-        if (p && p.section === 'shipments') { const el = $('drawer_content').querySelector('.smsec'); if (el) { el.scrollIntoView({ block: 'start' }); el.classList.add('pf-hit'); setTimeout(() => el.classList.remove('pf-hit'), 2400); } } }
+        /* CR-11 §4.10 — from Shipments: the Shipments section lights up (CR-22: on its tab · CR-23 §3.8: the modal stays at its top) */
+        if (p && p.section === 'shipments') { const el = $('drawer_content').querySelector('.smsec'); if (el) { el.classList.add('pf-hit'); setTimeout(() => el.classList.remove('pf-hit'), 2400); } } }
     } else if (editing()) renderPanel();
     markSelected();
   }
@@ -906,6 +907,15 @@ KT.screens.deals = (function () {
       if (prev) prev.insertAdjacentHTML('afterend', `<button type="button" class="bcol mini ghost" data-step="${esc(st.sub_status)}" title="${esc(st.sub_status)}"><span class="vt">${esc(st.sub_status)}</span><span class="n">0</span></button>`);
     });
     drag = { id: d.deal_id, plans: new Map(cols().map(col => [col.dataset.step, R.dropPlan(s, d, col.dataset.step, td)])) };
+    /* CR-23 §3.3 — any stage before Post: a drop zone at the bottom of the screen (the Post / Cancelled sections are often below it) */
+    const postSt = R.stepsOf(s.lookups).find(R.isPostStep), cancelSt = R.stepsOf(s.lookups).find(R.isCancelStep), cur = R.stepOf(s.lookups, d.sub_status);
+    if (postSt && cancelSt && cur && cur.sort_order < postSt.sort_order && d.status !== 'Cancel') {
+      const pp = R.dropPlan(s, d, postSt.sub_status, td), cp = R.dropPlan(s, d, cancelSt.sub_status, td);
+      drag.zone = { post: pp.kind === 'instant' || pp.kind === 'dialog', cancel: cp.kind === 'instant' || cp.kind === 'dialog', postSub: postSt.sub_status, cancelSub: cancelSt.sub_status };
+      const z = (k, label, ok, msg) => `<div class="dz dz-${k}${ok ? '' : ' off'}" data-dz="${k}"${ok ? '' : ` title="${esc(msg || '')}"`}>${esc(label)}</div>`;
+      setTimeout(() => { if (!drag || drag.id !== d.deal_id || $('dl_dz')) return; const r = $('dl_body').getBoundingClientRect(), left = Math.max(8, r.left), right = Math.min(innerWidth - 8, r.right);
+        $('dl_body').insertAdjacentHTML('beforeend', `<div class="dz-bar" id="dl_dz" style="left:${left}px;width:${Math.max(240, right - left)}px">${z('post', D.dropPost, drag.zone.post, pp.msg)}${z('cancel', D.dropCancel, drag.zone.cancel, cp.msg)}</div>`); }, 0);
+    }
     e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', d.deal_id);
     c.classList.add('dragging');
     cols().forEach(col => { const p = drag.plans.get(col.dataset.step);
@@ -915,6 +925,7 @@ KT.screens.deals = (function () {
       if (p.kind === 'blocked') { col.dataset.tip = col.title; col.title = p.msg; } });
   }
   function dragEnd() {
+    const dz = $('dl_dz'); if (dz) dz.remove();
     document.querySelectorAll('#dl_body .dragging').forEach(x => x.classList.remove('dragging'));
     document.querySelectorAll('#dl_body .bcol.ghost').forEach(x => x.remove());
     cols().forEach(col => { col.classList.remove('drop-ok', 'drop-no', 'drop-bad', 'over', 'peek'); if (col.dataset.tip != null) { col.title = col.dataset.tip; delete col.dataset.tip; } });
@@ -922,6 +933,8 @@ KT.screens.deals = (function () {
   }
   function dragOver(e) {
     if (!drag) return;
+    const z = e.target.closest('[data-dz]');
+    if (z) { if (drag.zone && drag.zone[z.dataset.dz]) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; z.classList.add('over'); } else e.dataTransfer.dropEffect = 'none'; return; }
     const col = e.target.closest('[data-step]'); if (!col) return;
     const p = drag.plans.get(col.dataset.step);
     /* a folded column opens while a card passes over it */
@@ -929,9 +942,13 @@ KT.screens.deals = (function () {
     if (p && (p.kind === 'instant' || p.kind === 'dialog')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; col.classList.add('over'); }
     else e.dataTransfer.dropEffect = 'none';
   }
-  function dragLeave(e) { const col = e.target.closest('[data-step]'); if (col && !col.contains(e.relatedTarget)) col.classList.remove('over', 'peek'); }
+  function dragLeave(e) { const z = e.target.closest('[data-dz]'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('over'); const col = e.target.closest('[data-step]'); if (col && !col.contains(e.relatedTarget)) col.classList.remove('over', 'peek'); }
   function dropOn(e) {
     if (!drag) return;
+    /* CR-23 §3.3 — the drop zone: Post = the Move stage dialog, short (always — the posted link) · Cancel = the Cancel dialog */
+    const z = e.target.closest('[data-dz]');
+    if (z) { e.preventDefault(); const id = drag.id, zone = drag.zone, k = z.dataset.dz; dragEnd(); if (!zone || !zone[k] || !guard('deal.edit')) { renderLeft(); return; }
+      if (k === 'post') openMove(id, zone.postSub, true, { compact: true }); else openMove(id, zone.cancelSub, true, { cancelOnly: true }); return; }
     const col = e.target.closest('[data-step]'); if (!col) return;
     e.preventDefault();
     const id = drag.id, to = col.dataset.step; dragEnd();
@@ -991,7 +1008,7 @@ KT.screens.deals = (function () {
   const owner = {
     kind: 'deal',   // CR-20 §4.6: a modal (L · ~1120px · 90vh · ui.sizeDrawer) — no side drawer of its own any more
     isDirty: () => editing() && dl.dirty,
-    onClose: () => { const over = dl.over, id = dl.id; dl.over = null; Object.assign(dl, { mode: 'none', id: null, sec: null, draft: null, posts: null, ticks: null, backTo: null, backKol: null, nav: null }); dl.touched.clear();
+    onClose: () => { const over = dl.over, id = dl.id; dl.over = null; dl.shownId = null; Object.assign(dl, { mode: 'none', id: null, sec: null, draft: null, posts: null, ticks: null, backTo: null, backKol: null, nav: null }); dl.touched.clear();
       if (U.currentTab() === 'deals' && !over) setHash('deals'); markSelected(); if (over) over();
       /* focus goes back to the card / row it came from (the Pipeline keeps its scroll) */
       const el = id && document.querySelector(`#dl_body [data-id="${CSS.escape(id)}"]`); if (el) el.focus({ preventScroll: true }); },
@@ -1010,13 +1027,15 @@ KT.screens.deals = (function () {
     dl.backKol = x.backKol || null; dl.nav = null;
     if (!(dl.id === id && editing())) Object.assign(dl, { mode: 'view', id, sec: null });
     renderPanel();
+    /* CR-24 §4.6 — Operations › Data to fix: straight to the field (a word of Missing · a post's date) */
+    if (x.missing) goMissing(x.missing); else if (x.postfix) goPostFix(x.postfix.kind, x.postfix.post || 0);
   }
   function renderPanel() {
     let html;
     if (dl.mode === 'view') { const d = dealById(dl.id); if (!d) { U.closeDrawer(); return; } html = viewHTML(d); if (!dl.over) setHash('deals/' + d.deal_id); }
     else return;
     const keep = dl.sec && $('drawer_content').querySelector('.dr-body') ? $('drawer_content').querySelector('.dr-body').scrollTop : null;
-    const first = U.drawerOwner() !== owner;
+    const first = U.drawerOwner() !== owner, other = dl.shownId !== dl.id; dl.shownId = dl.id;
     if (!first) fillDrawer(html); else openDrawer(owner, html);
     const box = $('drawer_content');
     box.onclick = panelClick;
@@ -1029,6 +1048,8 @@ KT.screens.deals = (function () {
     if (dl.mode === 'view') KT.samples.fillSecure($('drawer_content'));
     if (editing()) { wireForm(); check(); }
     if (keep != null) $('drawer_content').querySelector('.dr-body').scrollTop = keep;
+    /* CR-23 §3.8 #2 — a deal (another one, or the modal opening) starts at the top: the warning bar and the tabs are seen first */
+    else if (first || other) { box.scrollTop = 0; const b = box.querySelector('.dr-body'); if (b) b.scrollTop = 0; }
   }
   const closeBtn = `<button type="button" class="icon-btn" data-dr-close aria-label="${esc(C.common.close)}" title="${esc(C.common.close)}">${ICON.close}</button>`;
 
@@ -1216,11 +1237,12 @@ KT.screens.deals = (function () {
       kvAuto(F.total_cost, R.baht(R.totalCost(d)), 'total') + (d.kol_id ? `<div class="hint" style="margin-top:6px">${KT.move.lastRateHTML(s, R.lastRateCard(s, d.kol_id, d.deal_id), 'data-act="useLastRate"')}</div>` : '');
     /* CR-19 §4.6 — the pillar with its colour */
     const info2 = `<div class="kv"><span>${esc(F.pillar)}</span><b>${R.isBlank(d.pillar) ? `<span class="muted">${C.common.none}</span>` : U.pillarChipHTML(d.pillar)}${lockMark(lockOf(d, 'pillar'))}</b></div>` + kvF(d, 'pic', d.pic) + `<div class="kv"><span>${esc(F.cta)}</span><b>${d.cta ? esc(d.cta) : `<span class="muted">${C.common.none}</span>`}${ctaChip(d)}${lockMark(lockOf(d, 'cta'))}</b></div>` +
+      (shipProductsHTML(s, d) ||
       kvF(d, 'products', [R.dealProductsText(s, R.dealProductList(s, d.deal_id))].concat(R.dealProductList(s, d.deal_id).filter(x => d.campaign_id && !R.campaignHasProduct(s, d.campaign_id, x.tr_code))   // CR-09 §4.7: kept after it left the Campaign
-        .map(x => C.msg.productKeptNotInCampaign(R.productShort(R.productByCode(s, x.tr_code) || { product_name: x.tr_code })))).filter(Boolean).join(' · ')) +   // CR-10 §4.14: delivery lives in Samples
+        .map(x => C.msg.productKeptNotInCampaign(R.productShort(R.productByCode(s, x.tr_code) || { product_name: x.tr_code })))).filter(Boolean).join(' · '))) +   // CR-10 §4.14: delivery lives in Samples
       `<div class="kv"><span>${esc(F.link_brief)}</span><b>${d.link_brief ? `<a href="${esc(d.link_brief)}" target="_blank" rel="noopener">${esc(D.open)} ↗</a>` : `<span class="muted">${C.common.none}</span>`}${lockMark(lockOf(d, 'link_brief'))}</b></div>` +
       `<div class="kv"><span>${esc(F.script_link)}</span><b>${d.script_link ? `<a href="${esc(d.script_link)}" target="_blank" rel="noopener">${esc(D.open)} ↗</a>` : `<span class="muted">${C.common.none}</span>`}${lockMark(lockOf(d, 'script_link'))}</b></div>` +
-      kvF(d, 'remark', d.remark) + (d.status === 'Cancel' ? kvF(d, 'cancel_reason', d.cancel_reason) : '');
+      kvF(d, 'remark', d.remark) + (d.status === 'Cancel' ? kvF(d, 'cancel_reason', [R.cancelReasonLabel(s.lookups, d.cancel_reason_key), d.cancel_reason].filter(Boolean).join(' — ')) : '');   // CR-23 §3.6: the reason · its Detail
     const phases = R.phasesOfCampaign(s, d.campaign_id);
     const postCards = posts.map(x => { const a = ctx.accounts.get(x.account_id) || {}, done = R.postDone(x);
       return `<div class="post" data-post="${esc(x.post_id)}"><div class="top"><span>${pfIcon(a.platform || x.platform || 'Other', done ? 'posted' : 'planned', done ? D.tipPosted(a.platform || x.platform, R.dmy(x.post_date)) : D.tipPlanned(a.platform || x.platform, R.dmy(x.expected_post_date)))} @${esc(a.handle || '')}${lockMark(lockOf(d, 'account_id', x))}</span><span class="st ${done ? 'done' : 'list'}">${esc(done ? D.posted : D.planned)}</span></div>` +
@@ -1250,7 +1272,7 @@ KT.screens.deals = (function () {
       </div>
       <div class="dr-body">
         ${missingHTML(s, d)}
-        ${issues.errs.length || issues.warns.length ? `<section class="sec"><div class="checks">${checksHTML(issues, '')}</div></section>` : ''}
+        ${issues.errs.length || issues.warns.length ? `<section class="sec"><div class="checks">${checksDmHTML(issues)}</div></section>` : ''}
         ${journeySecHTML(s, d, posts)}
         ${tabsHTML(d)}
         <div class="dm-tab" data-dmpane="${esc(tabNow(d))}">${tabBody(tabNow(d), { s, d, ctx, td, info2, costs, pay, posts, postCards, source })}</div>
@@ -1263,6 +1285,25 @@ KT.screens.deals = (function () {
     const T2 = D.tabs2, cur = tabNow(d);
     return `<div class="stabs dm-tabs" role="tablist">${DTABS.map(k => `<button type="button" role="tab" data-dmtab="${k}" class="${k === cur ? 'on' : ''}" aria-selected="${k === cur}">${esc(T2[k])}</button>`).join('')}</div>`;
   }
+  /* CR-23 §3.5 — the bar's warnings: a post's date / the Post due outside the Campaign say so with Change date · Pick phase (they open the field) */
+  function checksDmHTML(issues) {
+    const fix = w => w.kind === 'post_outside' || w.kind === 'post_due_outside', ok = can('deal.edit');
+    const btns = w => (!ok ? '' : w.kind === 'post_due_outside' ? ` <button type="button" class="link" data-postfix="due">${esc(D.changeDate)}</button>`
+      : ` <button type="button" class="link" data-postfix="date" data-post="${w.post}">${esc(D.changeDate)}</button> · <button type="button" class="link" data-postfix="phase" data-post="${w.post}">${esc(D.pickPhase)}</button>`);
+    return checksHTML({ errs: issues.errs, warns: issues.warns.filter(w => !fix(w)), infos: issues.infos || [] }, '') +
+      issues.warns.filter(fix).map(w => `<div class="check warn dm-datewarn">! <span>${esc(w.msg)}${btns(w)}</span></div>`).join('');
+  }
+  async function goPostFix(kind, i) {
+    const sec = kind === 'due' ? 'timeline' : 'posts';
+    chooseDealTab(SEC_TAB[sec]);
+    if (dl.sec !== sec) await startSection(sec); else renderPanel();
+    const box = $('drawer_content');
+    let el = kind === 'due' ? box.querySelector('[data-key="expected_post_date"]') : kind === 'phase' ? box.querySelector(`[data-key="post${i}_phase_override"]`) : $(`f_post${i}_post_date`);
+    if (el && el.type === 'hidden') { const w = el.closest('.dfield'); el = w ? w.querySelector('.dtext') : null; }
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' }); el.focus();
+    if (el.tagName === 'SELECT' && typeof el.showPicker === 'function') { try { el.showPicker(); } catch (e) { /* not now */ } }
+  }
   /* "Missing: Assigned to · CTA · Rate card" — each word opens its field */
   function missingHTML(s, d) {
     const miss = R.dealMissing(s, d); if (!miss.length || !can('deal.edit')) return '';
@@ -1273,8 +1314,9 @@ KT.screens.deals = (function () {
     if (tab === 'costs') return `<div class="dm-two"><div>${secCard(d, 'costs', D.secCosts, costs)}</div><div>${secCard(d, 'payment', D.secPayment, pay.replace('</b></div>', `${termChip(d)}${lockMark(lockOf(d, 'payment_term'))}</b></div>`))}` +
       `<section class="sec">${budgetHTML(s, d, ctx).replace('style="margin:12px 0 0"', '')}</section></div></div>`;
     if (tab === 'timeline') return secCard(d, 'timeline', D.secTimeline, stepsTableHTML(s, d)) + `<section class="sec">${planLineHTML(s, d)}</section>`;
-    if (tab === 'ships') return `<div class="dm-two"><div>${KT.samples.sectionHTML(d)}</div><div>${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
-      can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}</div></div>`;
+    /* CR-23 §3.8 — Shipments full width (product names · the row's buttons fit), the posts under it */
+    if (tab === 'ships') return `<div class="dm-stack">${KT.samples.sectionHTML(d)}${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
+      can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}</div>`;
     if (tab === 'history') return `${source}<section class="sec"><div class="sec-h"><span>${esc(D.secHistory)}</span></div>${historyHTML(s, d)}</section>`;
     /* Overview: Deal · Money · Next */
     const term = R.termOf(d), st = R.paymentState(d, td), payee = R.payeeOfDeal(s, d), nx = R.nextStep(s.lookups, d), ships = R.shipmentsOf(s, d.deal_id), sh = ships.filter(y => y.status !== 'not_required').pop();
@@ -1282,10 +1324,17 @@ KT.screens.deals = (function () {
       `<div class="kv"><span>${esc(D.payStatus)}</span><b>${st === 'free' ? '—' : `<span class="pay"><b class="${U.PAY_CLS[st]}">${esc(C.payState[st])}</b></span>`}</b></div>` +
       `<div class="kv"><span>${esc(D.payTo)}</span><b>${esc(payee ? payee.label || C.payee.primary : C.common.none)}</b></div>`;
     const next = `<div class="kv"><span>${esc(D.nextStep)}</span><b>${nx.step ? esc(nx.step.sub_status) : `<span class="muted">${esc(D.noNext)}</span>`}</b></div>` +
-      `<div class="kv"><span>${esc(D.nextDue)}</span><b>${dueHTML(s, d, td) || '—'}</b></div><div class="kv"><span>${esc(D.postDueL)}</span><b>${R.dmy(d.expected_post_date) || '—'}</b></div>` +
+      `<div class="kv"><span>${esc(D.nextDue)}</span><b>${dueHTML(s, d, td) || `<span class="muted">${esc(D.noDueDate)}</span>`}</b></div><div class="kv"><span>${esc(D.postDueL)}</span><b>${R.dmy(d.expected_post_date) || '—'}</b></div>` +
       `<div class="kv"><span>${esc(D.shipmentL)}</span><b>${sh ? esc(KT.samples.summaryText(sh)) : `<span class="muted">${esc(C.samples.noShipments)}</span>`}</b></div>`;
-    return `<div class="dm-cards">${secCard(d, 'info', D.cardDeal, info2)}<section class="sec"><div class="sec-h"><span>${esc(D.cardMoney)}</span></div>${money2}</section>` +
-      `<section class="sec"><div class="sec-h"><span>${esc(D.cardNext)}</span></div>${next}</section></div>`;
+    const goLink = (tab, label) => `<div class="dm-golink"><button type="button" class="link" data-dmgo="${tab}">${esc(label)}</button></div>`;   // CR-23 §3.8 #6
+    return `<div class="dm-cards">${secCard(d, 'info', D.cardDeal, info2)}<section class="sec"><div class="sec-h"><span>${esc(D.cardMoney)}</span></div>${money2}${goLink('costs', D.viewCosts)}</section>` +
+      `<section class="sec"><div class="sec-h"><span>${esc(D.cardNext)}</span></div>${next}${goLink('timeline', D.viewTimeline)}</section></div>`;
+  }
+  /* CR-23 §3.8 #3 — Products "—" while its shipment has some: "Use shipment products" (null when the deal has products, or nothing to take) */
+  function shipProductsHTML(s, d) {
+    if (R.dealProductList(s, d.deal_id).length) return '';
+    const sh = R.shipmentsOf(s, d.deal_id).filter(x => x.status !== 'not_required' && (x.items || []).length).pop(); if (!sh) return '';
+    return `<div class="kv"><span>${esc(F.products)}</span><b><span class="muted">${C.common.none}</span>${can('deal.edit') && R.sectionEditable(s, d, 'info', U.actor()) ? ` <button type="button" class="link small" data-act="useShipProducts">${esc(D.useShipProducts)}</button>` : ''}</b></div>`;
   }
   /* Timeline & content: one row a step — Step · Expected · Done · Links / notes */
   function stepsTableHTML(s, d) {
@@ -1320,7 +1369,7 @@ KT.screens.deals = (function () {
         ${fieldOr(stored, 'link_brief', F.link_brief, inpF(d, 'link_brief', 'url'), { wide: 1 }, d.link_brief)}
         ${fieldOr(stored, 'script_link', F.script_link, inpF(d, 'script_link', 'url'), { wide: 1 }, d.script_link)}
         ${field('remark', F.remark, `<textarea id="f_remark" data-f="remark" data-key="remark">${esc(asText(d.remark))}</textarea>`, { wide: 1 })}
-        ${d.status === 'Cancel' ? field('cancel_reason', F.cancel_reason, inpF(d, 'cancel_reason'), { wide: 1 }) : ''}
+        ${d.status === 'Cancel' ? field('cancel_reason', `${F.cancel_reason} · ${C.cancel.detail}`, inpF(d, 'cancel_reason'), { wide: 1, hint: esc(R.cancelReasonLabel(state().lookups, d.cancel_reason_key)) }) : ''}
       </div>`;
     if (key === 'payment') return payFormHTML(d, false, R.kolById(s, d.kol_id), stored);
     if (key === 'costs') {
@@ -1494,7 +1543,11 @@ KT.screens.deals = (function () {
       if (dl.sec === 'payment' && d.payment_term === 'package') res.errs.push(...packageErrs(s, stored, d));
       if (dl.sec === 'costs' && fields.some(f => lockOf(stored, f).needsReason) && !R.trim(dl.costReason)) res.errs.push({ field: 'cost_reason', msg: C.msg.costReasonRequired });
     }
-    $('dl_checks').innerHTML = checksHTML({ errs: res.errs, warns: res.warns.filter(w => w.kind !== 'phase'), infos: res.infos }, res.errs.length ? '' : C.common.ok);
+    $('dl_checks').innerHTML = checksHTML({ errs: res.errs, warns: res.warns.filter(w => w.kind !== 'phase' && w.kind !== 'post_outside' && w.kind !== 'post_due_outside'), infos: res.infos }, res.errs.length ? '' : C.common.ok);
+    /* CR-23 §3.5 — a Post due / Post date outside the Campaign: orange under its field */
+    box.querySelectorAll('.dm-fwarn').forEach(x => x.remove());
+    res.warns.filter(w => w.kind === 'post_outside' || w.kind === 'post_due_outside').forEach(w => { const el = box.querySelector(`[data-key="${CSS.escape(w.field)}"]`), fd = el && el.closest('.field');
+      if (fd) fd.insertAdjacentHTML('beforeend', `<div class="hint dm-fwarn"><span class="warn">${esc(w.msg)}</span></div>`); });
     if ($('dl_total')) $('dl_total').textContent = R.baht(R.totalCost(d));
     U.priceRefFree(box, R.termOf(d) === 'free');
     if ($('dl_gend')) $('dl_gend').textContent = R.dmy(R.gencodeEndDate(d)) || C.common.none;
@@ -1624,9 +1677,13 @@ KT.screens.deals = (function () {
     /* CR-22 §3.6 — a tab · a word of "Missing: …" (its tab, its section open, the field focused — Assigned to opens its list) */
     const tb = e.target.closest('[data-dmtab]'); if (tb) { if (dl.sec) { toast(C.common.blockWhileEditing); return; } chooseDealTab(tb.dataset.dmtab); renderPanel(); return; }
     const ms = e.target.closest('[data-missing]'); if (ms) { goMissing(ms.dataset.missing); return; }
+    const pf = e.target.closest('[data-postfix]'); if (pf) { goPostFix(pf.dataset.postfix, +pf.dataset.post || 0); return; }   // CR-23 §3.5
+    const gt = e.target.closest('[data-dmgo]'); if (gt) { if (dl.sec) { toast(C.common.blockWhileEditing); return; } chooseDealTab(gt.dataset.dmgo); renderPanel(); return; }   // CR-23 §3.8 #6
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const act = b.dataset.act, d = dl.draft;
     if (act === 'useLastRate') { useLastRate(b.dataset.amount); return; }
+    if (act === 'useShipProducts') { const s = state(), id = dl.id, sh = R.shipmentsOf(s, id).filter(x => x.status !== 'not_required' && (x.items || []).length).pop();
+      if (!sh || !guard('deal.edit') || R.dealProductList(s, id).length) return; R.setDealProducts(s, id, sh.items.map(x => ({ tr_code: x.tr_code, qty: x.qty }))); commit(D.shipProductsSet(id)); renderLeft(); renderPanel(); return; }
     if (act === 'secCancel') cancelSection();
     else if (act === 'secSave') save();
     else if (act === 'move') openMove(dl.id);
@@ -1709,11 +1766,12 @@ KT.screens.deals = (function () {
 
   /* ===================== Move stage (CR-20: screen-move.js — what the target needs comes from R.stageRequirements) ===================== */
   /* fromDrop: a card dropped on that stage — Cancel puts it back where it was */
-  function openMove(id = dl.id, preset, fromDrop) {
+  function openMove(id = dl.id, preset, fromDrop, o2) {
     if (!guard('deal.edit')) return;
     if (dl.sec && dl.id === id) { toast(C.common.blockWhileEditing); return; }
-    KT.move.open(id, preset, { opener: document.activeElement, onCancel: () => { if (fromDrop) renderLeft(); },
-      onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); } });
+    const cancel = !!preset && R.isCancelStep(R.stepOf(state().lookups, preset));   // CR-23 §3.6: ⋯ › Cancel · the Cancelled section → the Cancel dialog
+    KT.move.open(id, preset, Object.assign({ opener: document.activeElement, onCancel: () => { if (fromDrop) renderLeft(); },
+      onDone: () => { renderLeft(); if (dl.mode === 'view' && dl.id === id) renderPanel(); }, cancelOnly: cancel }, o2 || {}));
   }
 
   function reset() { Object.assign(dl, { mode: 'none', id: null, draft: null, posts: null, ticks: null, status: '', f: blankFilter(), selected: new Set(), limit: PAGE }); dl.touched.clear(); }

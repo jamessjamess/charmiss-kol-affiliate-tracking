@@ -306,10 +306,16 @@ Object.assign(KT.rules, (function (R, C) {
           if (td && isISODate(p.post_date) && Math.abs(dayDiff(td, p.post_date)) > 2) warns.push(issue(f('post_date'), M.postTiktokDate(n, R.dmy(td), R.dmy(p.post_date))));
         }
       }
-      /* CR-03 §4.4 — the post's Phase comes from its date; when the date cannot decide, a Phase must be picked */
+      /* CR-03 §4.4 — the post's Phase comes from its date · CR-23 §3.5: only a post with its Post date says why (before / after the Campaign ·
+         between Phases · in two Phases — Change date · Pick phase) until a Phase is picked · a post not posted yet: the deal's Post due (below) */
       if (camp && phases.length) {
-        const r = R.resolvePostPhase(p, phases);
-        if (r.slot === 'needs') warns.push(issue(f('phase_override'), M.postNeedsPhase(n)));
+        if (isISODate(p.post_date)) {
+          const r = R.resolvePostPhase(p, phases), chk = R.postDateCheck(state, d.campaign_id, p.post_date);
+          if (!(r.override && phases.some(x => x.phase_id === r.override) && !r.overrideUnused)) {   // (a Phase picked by hand settles it)
+            if (['before', 'after', 'between'].includes(chk.kind)) warns.push(Object.assign(issue(f('post_date'), R.postDateText(chk, p.post_date, C.deal.postDateWord), 'post_outside'), { post: i }));
+            else if (r.kind === 'overlap' && !r.phase) warns.push(Object.assign(issue(f('phase_override'), M.postInTwoPhases(n, R.dmy(p.post_date).slice(0, 5)), 'post_outside'), { post: i }));
+          }
+        }
         if (R.postFarOutside(p, phases)) infos.push(issue(f('post_date'), M.postFarOutside(n, R.dmy(R.postDateOf(p)))));
       }
       if (OPEN.includes(d.status) && isISODate(p.expected_post_date) && p.expected_post_date < today && isBlank(p.post_date))
@@ -318,6 +324,11 @@ Object.assign(KT.rules, (function (R, C) {
       if (METRIC_KEYS.some(k => !isBlank(p[k]) && Number(p[k]) > 0) && isBlank(p.metrics_updated_at)) infos.push(issue(f('metrics_updated_at'), M.metricsNoDate(n)));
     });
 
+    /* CR-23 §3.5 — the Post due (not posted yet) outside the Campaign / between Phases: once for the deal ("Post due 25/10 is before …") */
+    if (camp && phases.length && OPEN.includes(d.status) && isISODate(d.expected_post_date) && (!posts.length || posts.some(p => !R.postDone(p)))) {
+      const t = R.postDateText(R.postDateCheck(state, d.campaign_id, d.expected_post_date), d.expected_post_date, C.deal.postDueWord);
+      if (t) warns.push(issue('expected_post_date', t, 'post_due_outside'));
+    }
     /* CR-06 §4.3 — products come from the Campaign's list · none picked once the deal reached Brief = info */
     const prods = Array.isArray(d.products) ? d.products : R.dealProductList(state, d.deal_id), kept = d.deal_id ? R.dealProductList(state, d.deal_id).map(x => x.tr_code) : [];
     R.validateDealProducts(state, d.campaign_id, prods, kept).forEach(both);

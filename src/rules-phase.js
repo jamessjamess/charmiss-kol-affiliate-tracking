@@ -5,7 +5,8 @@
    resolvePostPhase(post, phasesOfCampaign) — date = post_date, else the post's expected_post_date:
      auto     the date is in exactly one Phase            → that Phase (phase_override is not used)
      none     no date                                     → phase_override, else Unscheduled
-     outside  a date that is in no Phase                  → phase_override, else Needs phase
+     outside  a date that is in no Phase                  → phase_override, else (CR-23 §3.5) the first Phase when it is before the Campaign
+                                                            starts · the last when after it ends · Needs phase when between Phases
      overlap  a date in more than one Phase               → phase_override if it is one of them, else Needs phase
    postShare = deal total ÷ the deal's posts · Phase committed = shares of posts in the Phase (deal not Cancel)
    Campaign committed = totals of its deals (not Cancel) = every Phase + Unscheduled + Needs phase
@@ -68,7 +69,13 @@ Object.assign(KT.rules, (function (R, C) {
     else {
       const hit = phases.filter(p => inRange(p, d)).map(p => p.phase_id);
       if (hit.length === 1) r = { kind: 'auto', candidates: hit, phase: hit[0] };
-      else if (!hit.length) r = { kind: 'outside', candidates: [], phase: valid(ov) ? ov : null };
+      else if (!hit.length) {
+        /* CR-23 §3.5 — before the first Phase → the first · after the last → the last (and a warning, R.postDateCheck) · between Phases: pick one */
+        const ds = phases.filter(p => p.start_date && p.end_date).slice().sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+        const first = ds[0], last = ds.slice().sort((a, b) => String(a.end_date).localeCompare(String(b.end_date))).pop();
+        const fb = first && d < first.start_date ? first.phase_id : last && d > last.end_date ? last.phase_id : null;
+        r = { kind: 'outside', candidates: [], phase: valid(ov) ? ov : fb, fallback: !valid(ov) && fb ? (fb === (first || {}).phase_id && d < first.start_date ? 'first' : 'last') : null };
+      }
       else r = { kind: 'overlap', candidates: hit, phase: ov && hit.includes(ov) ? ov : null };
     }
     r.slot = r.phase ? 'phase' : r.kind === 'none' ? 'unscheduled' : 'needs';
@@ -367,6 +374,26 @@ Object.assign(KT.rules, (function (R, C) {
     return { state: diff > 0 ? 'unallocated' : diff < 0 ? 'over' : 'even', allocated, budget: s.budget, diff };
   }
   /* a post date far from every Phase of the Campaign is usually a mistyped year (CR-03 §4.4) */
+  /* CR-23 §3.5 — a Post due / Post date against the Campaign's Phases → { kind: 'in' | 'before' | 'after' | 'between' | 'none', start, end (the
+     Campaign: first start · last end), phase (in one Phase: it · before: the first · after: the last · else null) } · none = no date / no dated Phase */
+  function postDateCheck(state, campaignId, iso) {
+    if (!R.isISODate(iso)) return { kind: 'none' };
+    const ps = phasesOfCampaign(state, campaignId).filter(p => p.start_date && p.end_date).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    if (!ps.length) return { kind: 'none' };
+    const start = ps[0].start_date, lastP = ps.slice().sort((a, b) => String(a.end_date).localeCompare(String(b.end_date))).pop(), end = lastP.end_date;
+    const hit = ps.filter(p => inRange(p, iso));
+    if (hit.length) return { kind: 'in', start, end, phase: hit.length === 1 ? hit[0].phase_id : null };
+    if (iso < start) return { kind: 'before', start, end, phase: ps[0].phase_id };
+    if (iso > end) return { kind: 'after', start, end, phase: lastP.phase_id };
+    return { kind: 'between', start, end, phase: null };
+  }
+  /* "25/10 is before this campaign starts (01/11)" · "…after this campaign ends (31/12)" · "…falls between phases" · '' when in a Phase / no date
+     (prefix: "Post due" / "Post date" for the Deal modal's bar) */
+  function postDateText(chk, iso, prefix) {
+    if (!chk || !['before', 'after', 'between'].includes(chk.kind)) return '';
+    const dm = x => R.dmy(x).slice(0, 5), M = C.msg, t = chk.kind === 'before' ? M.dateBeforeCampaign(dm(iso), dm(chk.start)) : chk.kind === 'after' ? M.dateAfterCampaign(dm(iso), dm(chk.end)) : M.dateBetweenPhases(dm(iso));
+    return prefix ? `${prefix} ${t}` : t;
+  }
   function postFarOutside(post, phases, days = 60) {
     const d = postDateOf(post); if (!d) return false;
     const starts = phases.map(p => p.start_date).filter(Boolean).sort(), ends = phases.map(p => p.end_date).filter(Boolean).sort();
@@ -378,7 +405,7 @@ Object.assign(KT.rules, (function (R, C) {
     UNSCHEDULED, NEEDS, postDateOf, phaseTitle, planSeqs, phaseSeq, phaseTitleOf, labelFromName, phaseName, phaseLabel, campaignName, isShortlist, phasesOfCampaign, campaignOf, resolvePostPhase, canPickPhase, pickablePhases, postShare, byPostDate,
     phaseIndex, primaryPhase, toScope, scopeDeals, scopePosts, scopeMoney, scopeBudget,
     phaseSummary, phaseCommitted, campaignSummary, campaignRange, canDeletePhase, phaseDealCount, phaseOverlaps, validatePhase,
-    budgetFromPct, pctOfBudget, allocation, postFarOutside, planTotals, splitEvenly, fillRemaining, validatePhasePlan, planImpact,
+    budgetFromPct, pctOfBudget, allocation, postDateCheck, postDateText, postFarOutside, planTotals, splitEvenly, fillRemaining, validatePhasePlan, planImpact,
     MAX_PHASES, checkPhaseCount, splitDates, evenAmounts, PRESETS, presetSplit, resizePlan,
   };
 })(KT.rules, KT.content));

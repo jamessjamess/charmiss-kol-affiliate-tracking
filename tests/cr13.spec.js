@@ -99,13 +99,13 @@
     test('TC-15: chips in All — Overdue 3 (pangxnstory · sanggannualpong · tuckpx) · no Unpaid after posting · the chip filters · Clear all takes it off', () => {
       const s = fresh(), rows = scoped(s, 'Charming'), t = R.dealTabs(s, rows, TD, null, { tab: 'all' });
       assert.deepEqual(R.ATTENTION, ['overdue', 'needsPhase', 'shipOverdue', 'metricsDue', 'docs']);
-      /* CR-15: pangxnstory (Brief) waits on Script, which has no due date yet → Overdue 2 */
-      assert.equal(t.chips.overdue, 2);
+      /* CR-15: pangxnstory (Brief) waits on Script, which has no due date yet → Overdue 2 · CR-23 §3.2: tuckpx (last Draft) waits on Approve → 1 */
+      assert.equal(t.chips.overdue, 1);
       assert.ok(!('unpaid' in t.chips) && !('payOverdue' in t.chips));
-      assert.deepEqual(rows.filter(d => R.hasReason(d, 'overdue', t.why)).map(d => nameOf(s, d)).sort(), ['sanggannualpong', 'tuckpx']);
+      assert.deepEqual(rows.filter(d => R.hasReason(d, 'overdue', t.why)).map(d => nameOf(s, d)).sort(), ['sanggannualpong']);
       /* the chip is a filter: the tabs count with it */
       const on = R.dealTabs(s, rows, TD, null, { tab: 'all', reason: 'overdue' });
-      assert.deepEqual(R.DEAL_TABS.map(k => on.counts[k]), [2, 0, 2, 0, 0]);
+      assert.deepEqual(R.DEAL_TABS.map(k => on.counts[k]), [1, 0, 1, 0, 0]);
       assert.ok(R.activeFilters({ reason: 'overdue' }).includes('reason'));
       assert.equal(R.clearFilters({ campaign: 'CH', reason: 'overdue' }).reason, '');
       assert.ok(!Object.values(C.deal.attn).includes('Unpaid after posting') && !Object.values(C.deal.tabs).includes('Needs action') && !Object.values(C.deal.tabs).includes('Open'));
@@ -136,7 +136,7 @@
       assert.equal(t.chips.docs, rows.filter(d => missing.has(d.deal_id)).length);
       const late = new Set((s.sample_shipments || []).filter(sh => R.sampleStatus(sh, TD) === 'overdue').map(sh => sh.deal_id));
       assert.equal(t.chips.shipOverdue, rows.filter(d => late.has(d.deal_id)).length);
-      assert.equal(t.chips.shipOverdue, 2);
+      assert.equal(t.chips.shipOverdue, 0, 'CR-23 §3.4: the 2 came from the old Ship by sum — not a due any more');
     });
     test('TC-17: old links — ?tab=needs_action → All + Overdue · ?tab=open → All, no chip · a tab of today → that tab', () => {
       assert.deepEqual(R.dealTabFromLink('needs_action'), { tab: 'all', reason: 'overdue' });

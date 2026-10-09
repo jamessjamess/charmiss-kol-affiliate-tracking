@@ -44,7 +44,7 @@
     assert.equal(x.committed + x.shortlist, 1881579, 'the old Committed is now Committed + Shortlist');
     assert.equal(x.budget, 2748400);
     assert.equal(x.paid, 774579);
-    assert.equal(x.overdue, 5);   // CR-15: 11 before — the 6 deals at Brief wait on Script (no due date yet)
+    assert.equal(x.overdue, 1);   // CR-15: 11 → 5 (the 6 deals at Brief wait on Script) · CR-23 §3.2: → 1 (the last Draft waits on Approve, no due)
     assert.equal(x.unpaid, 130);
     const idx = R.phaseIndex(s);
     for (const [id, v] of Object.entries({ CH: 863700, KS: 340400, AC: 7800, PH: 571679 })) assert.equal(R.campaignSummary(s, id, idx).committed, v, 'committed ' + id);
@@ -118,7 +118,7 @@
       assert.deepEqual([at('PH', '2026-09-03').kind, at('PH', '2026-09-03').candidates], ['overlap', ['PH-P1', 'PH-P2']]);
       assert.equal(at('PH', '2026-09-03').slot, 'needs');
       assert.equal(at('KS', '2026-08-10').kind, 'outside');
-      assert.equal(at('KS', '2026-08-10').slot, 'needs');
+      assert.deepEqual([at('KS', '2026-08-10').slot, at('KS', '2026-08-10').phase, at('KS', '2026-08-10').fallback], ['phase', 'KS-P1', 'first'], 'CR-23 §3.5: before the Campaign → its first Phase');
       assert.deepEqual([at('CH', null).kind, at('CH', null).slot], ['none', 'unscheduled']);
     });
     test('the post date falls back to its expected date', () => {
@@ -132,7 +132,7 @@
       assert.equal(r('2026-09-03', 'PH-P2').phase, 'PH-P2');
       assert.deepEqual([r('2026-09-03', 'PH-OCT').phase, r('2026-09-03', 'PH-OCT').slot, r('2026-09-03', 'PH-OCT').overrideUnused], [null, 'needs', true]);
       assert.deepEqual([r('2026-10-10', 'PH-P1').phase, r('2026-10-10', 'PH-P1').overrideUnused], ['PH-OCT', true]);
-      assert.equal(r('2026-07-01', 'CH-P1').slot, 'needs', 'an override from another Campaign is ignored');
+      assert.deepEqual([r('2026-07-01', 'CH-P1').phase, r('2026-07-01', 'CH-P1').fallback], ['PH-P1', 'first'], 'an override from another Campaign is ignored (CR-23 §3.5: before the Campaign → the first Phase)');
       assert.equal(R.canPickPhase(r('2026-10-10', null)), false);
       assert.deepEqual(R.pickablePhases(r('2026-09-03', null), ph).map(p => p.phase_id), ['PH-P1', 'PH-P2']);
     });
@@ -155,10 +155,15 @@
     });
     test('a Needs-phase post is a warning; a date far from the Campaign is an info (TC-08 / TC-09 basis)', () => {
       const s = fresh(), c = R.dealContext(s), d = s.deals.find(x => x.campaign_id === 'AC');
-      const posts = R.postsOf(s, d.deal_id).concat([{ post_id: null, deal_id: d.deal_id, account_id: R.postsOf(s, d.deal_id)[0].account_id, post_date: null, expected_post_date: '2026-03-10', phase_override: null }]);
+      /* CR-23 §3.5 — a post with its Post date outside the Campaign says so ("Post date 10/03 is before this campaign starts (29/09)") ·
+         one not posted yet says nothing of its own (the deal's Post due does, once) */
+      const acc = R.postsOf(s, d.deal_id)[0].account_id;
+      const posts = R.postsOf(s, d.deal_id).concat([{ post_id: null, deal_id: d.deal_id, account_id: acc, post_date: '2026-03-10', expected_post_date: null, phase_override: null }]);
       const r = R.validateDeal(s, d, posts, TODAY, c), n = posts.length;
-      assert.ok(r.warns.some(w => w.field === `post${n - 1}_phase_override`));
+      assert.ok(r.warns.some(w => w.field === `post${n - 1}_post_date` && w.kind === 'post_outside' && w.msg === 'Post date 10/03 is before this campaign starts (29/09)'));
       assert.ok(r.infos.some(i => i.field === `post${n - 1}_post_date`));
+      const due = R.postsOf(s, d.deal_id).concat([{ post_id: null, deal_id: d.deal_id, account_id: acc, post_date: null, expected_post_date: '2026-03-10', phase_override: null }]);
+      assert.ok(!R.validateDeal(s, d, due, TODAY, c).warns.some(w => w.field === `post${n - 1}_phase_override` || w.field === `post${n - 1}_post_date`));
       const p49 = R.postsOf(s, 'D000049')[0];
       assert.equal(p49.expected_post_date, '2024-09-11');
       assert.equal(R.postFarOutside(p49, phasesOf(s, 'CH')), true);
@@ -195,7 +200,7 @@
       s.deal_posts.push({ post_id: 'PNEW1', deal_id: d.deal_id, account_id: R.postsOf(s, d.deal_id)[0].account_id, post_date: '2026-03-10', expected_post_date: null, post_link: null, phase_override: null });
       const c2 = R.dealContext(s);
       assert.equal(R.rowWarnings(s, d, TODAY, c2).length, before + 1);
-      assert.equal(R.phaseAttention(s, {}).phaseToAssign, 1);
+      assert.equal(R.phaseAttention(s, {}).phaseToAssign, 0, 'CR-23 §3.5: before the Campaign → its first Phase (AC-P1) at once · the warning stays until a Phase is picked');
       s.deal_posts.find(p => p.post_id === 'PNEW1').phase_override = 'AC-P1';
       assert.equal(R.phaseAttention(s, {}).phaseToAssign, 0);
       assert.equal(R.rowWarnings(s, d, TODAY, R.dealContext(s)).length, before);
@@ -219,7 +224,7 @@
     test('Deals Phase = Needs phase / Unscheduled keeps deals with such a post (none in the seed)', () => {
       const s = fresh(), c = R.dealContext(s);
       assert.equal(R.filterDeals(s, { phases: [R.NEEDS] }, TODAY, c).length, 0);
-      s.deal_posts.find(p => p.deal_id === 'D000296').post_date = '2027-01-15';
+      Object.assign(s.deal_posts.find(p => p.deal_id === 'D000296'), { post_date: '2026-09-03', phase_override: null });   // CR-23 §3.5: after the Campaign → its last Phase · in 2 Phases still needs one
       assert.deepEqual(R.filterDeals(s, { phases: [R.NEEDS] }, TODAY, R.dealContext(s)).map(d => d.deal_id), ['D000296']);
     });
     test('TC-15: Pipeline per Campaign — PH has 90 deals over every Phase; PH-OCT keeps 10', () => {
@@ -246,7 +251,7 @@
       const s = fresh(), d = newDeal(s);
       const no = R.checkMove(s, d, 'Confirm QT', { date: TODAY });
       assert.ok(no.errs.some(e => e.code === 'pillar' && e.msg === C.msg.movePillarRequired));
-      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration', rateCard: '3000', cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } }).errs, []);   // CR-20 §4.7: the rate card too · CR-22: the CTA and the samples
+      assert.deepEqual(R.checkMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration', rateCard: '3000', cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }], ship_by: TODAY } }).errs, []);   // CR-20 §4.7: the rate card too · CR-22: the CTA and the samples · CR-23: Ship by
       const r = R.applyMove(s, d, 'Confirm QT', { date: TODAY, pillar: 'Consideration' }, { logId: 900, eventId: 3 });
       assert.equal(r.deal.pillar, 'Consideration');
       assert.deepEqual(r.events.map(e => [e.event_id, e.type, e.from, e.to]), [[3, 'pillar', null, 'Consideration']]);
@@ -410,12 +415,10 @@
       assert.ok(r.bins.some(b => b.key === '2026-08-10' && b.total > 0));
       assert.equal(r.outside, 0);
     });
-    test('TC-31: Allocation of KS — actual over committed incl. Not set (CR-19 §4.7: Pillar allocation, no target)', () => {
-      const x = R.pillarAllocation(fresh(), 'KS');
-      assert.equal(x.target, undefined);
-      assert.deepEqual(['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', R.NOT_SET].map(k => x.actual.pct[k].toFixed(1)), ['16.3', '0.0', '26.3', '21.5', '35.9']);
-      assert.equal(Math.round(x.actual.total), 340400);
-      assert.deepEqual(x.phases.map(p => p.phase.phase_id), ['KS-P1', 'KS-P2']);
+    test('TC-31: (CR-24 §3) Pillar allocation is gone — the KS mix of its committed money still rides on the portfolio row', () => {
+      assert.equal(R.pillarAllocation, undefined);
+      const row = R.portfolio(fresh(), '2026-01-01', '2026-12-31', TODAY, null).rows.find(r => r.campaign.campaign_id === 'KS');
+      assert.deepEqual(['Awareness', 'Awareness & Consideration', 'Consideration', 'Conversion', R.NOT_SET].map(k => row.pillarMix[k].toFixed(1)), ['16.3', '0.0', '26.3', '21.5', '35.9']);
     });
     test('TC-32: targets must be whole numbers that add up to 100', () => {
       assert.deepEqual(R.validatePillarTarget({ awareness: 10, consideration: 20, conversion: 60 }).errs.map(e => e.msg), [C.msg.pillarTargetSum(90)]);

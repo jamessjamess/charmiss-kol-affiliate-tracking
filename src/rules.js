@@ -239,7 +239,8 @@ KT.rules = (function (C) {
     return { step, optional };
   }
   /* CR-15 §4.3 — the date a deal is due by and the step it belongs to: the next step's expected date (Script · Draft k · Approve) · Post = the
-     earliest expected date of a post not posted yet · Approve with no date of its own → the Post's (§9 #5) · Script with none → no due */
+     earliest expected date of a post not posted yet · Script with none → no due · CR-23 §3.2: Approve is our own work — its expected date only
+     when someone set one (none → no due, never Overdue; was: the Post's) */
   function dueInfo(state, deal) {
     const L = state.lookups, { step } = nextStep(L, deal);
     if (!step) return { date: null, step: null };
@@ -249,8 +250,7 @@ KT.rules = (function (C) {
     /* CR-20 §4.15 — Script with no date of its own: the Expected Draft 1 date asked at Brief is the next due · deals made in this app only
        (an imported deal — legacy_job_ids — keeps CR-15's "no Script due → no due", so its old Draft 1 dates do not turn Overdue) */
     if (!own && isScriptStep(step) && deal.expected_draft1_date && !(Array.isArray(deal.legacy_job_ids) && deal.legacy_job_ids.length)) { const d1 = stepsOf(L).find(s => draftNo(s) === 1); if (d1) return { date: deal.expected_draft1_date, step: d1 }; }
-    if (own || !isApproveStep(step)) return { date: own, step };
-    return { date: postDue(), step: stepsOf(L).find(isPostStep) || step };
+    return { date: own, step };
   }
   const dueDate = (state, deal) => dueInfo(state, deal).date;
   const dueStep = (state, deal) => dueInfo(state, deal).step;

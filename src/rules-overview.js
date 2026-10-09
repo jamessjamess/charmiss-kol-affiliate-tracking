@@ -150,8 +150,8 @@ Object.assign(KT.rules, (function (R, C) {
       .concat(grey.filter(k => k !== NOT_SET).map(k => ({ key: k, grey: true })));
   }
 
-  /* ---------- Pillar allocation (Row 3) ---------- */
-  /* (CR-19 §4.7: no target on screen any more — the old target data and these two helpers are kept for old files / old tests) */
+  /* ---------- pillar targets (CR-19 §4.7: no target on screen any more — the old target data and these two helpers are kept for old files / old tests ·
+     CR-24 §3: the Pillar allocation card, its sheet and its sum are gone — Pillar mix in All campaigns stays) ---------- */
   const DEFAULT_TARGET = { awareness: 10, consideration: 20, conversion: 70 };
   /* the share of each pillar within the money that has a pillar (Not set left out) · money {Awareness, …} */
   function pillarShares(money) {
@@ -167,24 +167,6 @@ Object.assign(KT.rules, (function (R, C) {
     else if (vals.reduce((a, v) => a + Number(v), 0) !== 100) errs.push({ field: 'pillar_target', msg: M.pillarTargetSum(vals.reduce((a, v) => a + Number(v), 0)) });
     return { errs, warns: [], infos: [] };
   }
-  /* committed money by pillar: the whole Campaign and each Phase (post shares) · % of the row total (CR-19: what is, no target) */
-  function allocation(state, campaignId) {
-    const idx = R.phaseIndex(state);
-    const deals = state.deals.filter(d => d.campaign_id === campaignId && !isCancelled(d));
-    const blank = () => Object.assign(Object.fromEntries(PILLARS.map(p => [p, 0])), { [NOT_SET]: 0 });
-    const actual = blank(), byPhase = new Map(R.phasesOfCampaign(state, campaignId).map(p => [p.phase_id, blank()]));
-    deals.forEach(d => {
-      const info = idx.deal.get(d.deal_id); if (!info) return;
-      const k = d.pillar && PILLARS.includes(d.pillar) ? d.pillar : NOT_SET;
-      info.share.forEach((v, key) => { actual[k] += v; if (byPhase.has(key)) byPhase.get(key)[k] += v; });
-    });
-    const row = m => { const total = Object.values(m).reduce((a, b) => a + b, 0); return { money: m, total, pct: Object.fromEntries(Object.entries(m).map(([k, v]) => [k, total ? v / total * 100 : 0])) }; };
-    return {
-      actual: row(actual),
-      phases: R.sortPhases(R.phasesOfCampaign(state, campaignId)).map(p => Object.assign({ phase: p }, row(byPhase.get(p.phase_id)))),
-    };
-  }
-
   /* ===================== CR-05 §4.5 — money, said one way everywhere ===================== */
   /* Budget → Committed (deals from Confirm QT on, not cancelled) → Used % → Remaining → Pending (Shortlist / Contacted) · Paid (est.) */
   const moneyOf = (budget, committed, pending, paid) => ({ budget, committed, usedPct: budget ? committed / budget * 100 : null,
@@ -272,12 +254,20 @@ Object.assign(KT.rules, (function (R, C) {
     const ps = state.deal_posts.filter(p => live.has(p.deal_id) && p.post_date && p.post_date >= from && p.post_date <= to);
     return { posts: ps.length, views: ps.reduce((a, p) => a + (Number(p.views) || 0), 0) };
   }
+  /* the pillar mix of a Campaign's committed money (post shares) in % — the portfolio rows carry it (CR-24 §3: the Pillar allocation card is gone) */
+  function campaignPillarPct(state, campaignId, idx) {
+    const m = Object.assign(Object.fromEntries(PILLARS.map(p => [p, 0])), { [NOT_SET]: 0 });
+    state.deals.forEach(d => { if (d.campaign_id !== campaignId || isCancelled(d)) return; const info = idx.deal.get(d.deal_id); if (!info) return;
+      const k = d.pillar && PILLARS.includes(d.pillar) ? d.pillar : NOT_SET; info.share.forEach(v => { m[k] += v; }); });
+    const total = Object.values(m).reduce((a, b) => a + b, 0);
+    return Object.fromEntries(Object.entries(m).map(([k, v]) => [k, total ? v / total * 100 : 0]));
+  }
   /* Row 2 — Campaign portfolio: money of the whole Campaign · posts / views inside the range · pillar mix of the committed money */
   function portfolio(state, from, to, today, statuses) {
     const idx = R.phaseIndex(state);
     const rows = campaignsInRange(state, from, to, today, statuses).map(c => {
       const [a, z] = scopeRange(state, { campaignId: c.campaign_id }), m = campaignMoney(state, c.campaign_id, idx), p = postsIn(state, c.campaign_id, from, to);
-      return Object.assign({ campaign: c, status: campaignStatusOf(state, c, today), from: a, to: z, posts: p.posts, views: p.views, pillarMix: allocation(state, c.campaign_id).actual.pct }, m);
+      return Object.assign({ campaign: c, status: campaignStatusOf(state, c, today), from: a, to: z, posts: p.posts, views: p.views, pillarMix: campaignPillarPct(state, c.campaign_id, idx) }, m);
     });
     /* the Total = the rows on screen (CR-14: the picked statuses decide, Cancelled too when it is picked) */
     return { rows, total: Object.assign(moneyTotal(rows), { posts: rows.reduce((s, r) => s + r.posts, 0), views: rows.reduce((s, r) => s + r.views, 0) }) };
@@ -389,8 +379,195 @@ Object.assign(KT.rules, (function (R, C) {
     return [...by.values()].filter(w => w.open || w.overdue || w.docs).sort((a, b) => b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
   }
 
-  return { PILLARS, PILLAR_KEY, NOT_SET, AWARE_CONSIDER, pillarShort, campaignDates, migrateV18, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
-    activityRange, autoGran, activityBins, activitySeries, DEFAULT_TARGET, pillarTargetOf, validatePillarTarget, pillarAllocation: allocation,
+  /* ===================== CR-23 §3.1 — Products given (Dashboard › By campaign · its Export sheet) ===================== */
+  /* the pieces sent per product, by method · only shipments of deals not cancelled (Not required = nothing was given) · a shipment with no
+     products is one "Product not recorded" row (its pieces are not known: 0 in the totals) · o = { campaignId, phaseId, phaseIndex (to keep the
+     deals of that Phase — R.phaseIndex) } → { total, kols, byMethod {npd, warehouse, self_purchase}, reimbursed, rows [{tr_code, total, npd,
+     warehouse, self_purchase, delivered, toShip, kols}], notRecorded {shipments, kols, delivered, toShip} | null, shipments (counted) } */
+  const GIVEN_DONE = ['delivered', 'purchased'], GIVEN_OPEN = ['to_ship', 'shipped', 'kol_purchase', 'problem'];
+  function productsGiven(deals, shipments, o) {
+    o = o || {};
+    const keep = new Map((deals || []).filter(d => d.status !== 'Cancel' && (!o.campaignId || d.campaign_id === o.campaignId) &&
+      (!o.phaseId || !o.phaseIndex || ((o.phaseIndex.deal.get(d.deal_id) || {}).keys || new Set()).has(o.phaseId))).map(d => [d.deal_id, d]));
+    const list = (shipments || []).filter(sh => sh.deal_id && keep.has(sh.deal_id) && sh.status !== 'not_required');
+    const rows = new Map(), allKols = new Set(), byMethod = { npd: 0, warehouse: 0, self_purchase: 0 };
+    let none = null, reimbursed = 0;
+    const methodOf = sh => (byMethod[sh.method] !== undefined ? sh.method : 'warehouse');
+    list.forEach(sh => {
+      const kol = sh.kol_id || keep.get(sh.deal_id).kol_id, m = methodOf(sh), done = GIVEN_DONE.includes(sh.status), open = GIVEN_OPEN.includes(sh.status);
+      if (m === 'self_purchase' && !isBlank(sh.purchase_amount)) reimbursed += Number(sh.purchase_amount) || 0;
+      const items = (sh.items || []).filter(x => x && x.tr_code);
+      if (!items.length) {
+        none = none || { shipments: 0, kolSet: new Set(), delivered: 0, toShip: 0 };
+        none.shipments++; none.kolSet.add(kol); if (done) none.delivered++; else if (open) none.toShip++;
+        return;
+      }
+      items.forEach(x => {
+        const q = Math.max(0, Math.round(Number(x.qty) || 0)); if (!q) return;
+        const r = rows.get(x.tr_code) || { tr_code: x.tr_code, total: 0, npd: 0, warehouse: 0, self_purchase: 0, delivered: 0, toShip: 0, kolSet: new Set() };
+        r.total += q; r[m] += q; if (done) r.delivered += q; else if (open) r.toShip += q; r.kolSet.add(kol); rows.set(x.tr_code, r);
+        byMethod[m] += q; allKols.add(kol);
+      });
+    });
+    const out = [...rows.values()].sort((a, b) => b.total - a.total || String(a.tr_code).localeCompare(String(b.tr_code))).map(r => { const { kolSet, ...x } = r; return Object.assign(x, { kols: kolSet.size }); });
+    return { total: byMethod.npd + byMethod.warehouse + byMethod.self_purchase, kols: allKols.size, byMethod, reimbursed: Math.round(reimbursed * 100) / 100, rows: out,
+      notRecorded: none ? { shipments: none.shipments, kols: none.kolSet.size, delivered: none.delivered, toShip: none.toShip } : null, shipments: list.length };
+  }
+  const productsGivenFor = (state, scope) => { const sc = R.toScope(scope);
+    return productsGiven(state.deals, state.sample_shipments, { campaignId: sc.campaignId, phaseId: sc.phaseIds && sc.phaseIds.length === 1 ? sc.phaseIds[0] : null, phaseIndex: sc.phaseIds ? R.phaseIndex(state) : null }); };
+
+  /* ===================== CR-23 §3.7 — Cancelled deals (Dashboard › By campaign · its Export sheet) ===================== */
+  /* o = { campaignId, phaseId, phaseIndex, lookups } → { n, released, reasons [{key, label, n}] (most first), rows [{deal, stage (when it was cancelled ·
+     from the log), date, key, label, detail, value (Total cost — only past Confirm QT, else null), pic}] (newest first) } */
+  function cancelledReport(deals, log, o) {
+    o = o || {};
+    const L = o.lookups || {}, qt = R.stepOf(L, 'Confirm QT'), byDeal = new Map();
+    (log || []).forEach(l => { if (!byDeal.has(l.deal_id)) byDeal.set(l.deal_id, []); byDeal.get(l.deal_id).push(l); });
+    const rows = (deals || []).filter(d => d.status === 'Cancel' && (!o.campaignId || d.campaign_id === o.campaignId) &&
+      (!o.phaseId || !o.phaseIndex || ((o.phaseIndex.deal.get(d.deal_id) || {}).keys || new Set()).has(o.phaseId))).map(d => {
+      const ls = (byDeal.get(d.deal_id) || []).slice().sort((a, b) => (Number(a.log_id) || 0) - (Number(b.log_id) || 0));
+      let at = null, i = ls.length - 1;
+      for (; i >= 0; i--) if (ls[i].sub_status === 'Cancel') { at = ls[i]; break; }
+      const stage = at ? at.from_sub_status && at.from_sub_status !== 'Cancel' ? at.from_sub_status : (ls.slice(0, i).reverse().find(l => l.sub_status !== 'Cancel') || {}).sub_status || null : null;
+      const st = stage ? R.stepOf(L, stage) : null, past = !!(st && qt && st.sort_order >= qt.sort_order);
+      const date = at ? at.effective_date || String(at.changed_at || '').slice(0, 10) || null : null;
+      const key = d.cancel_reason_key || R.CANCEL_OTHER;
+      return { deal: d, stage, date, key, label: R.cancelReasonLabel(L, key), detail: d.cancel_reason || null, value: past ? totalCost(d) : null, pic: d.pic || null };
+    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.deal.deal_id).localeCompare(String(a.deal.deal_id)));
+    const reasons = [...new Map(rows.map(r => [r.key, { key: r.key, label: r.label, n: rows.filter(x => x.key === r.key).length }])).values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+    return { n: rows.length, released: Math.round(rows.reduce((a, r) => a + (r.value || 0), 0) * 100) / 100, reasons, rows };
+  }
+  const cancelledReportFor = (state, scope) => { const sc = R.toScope(scope);
+    return cancelledReport(state.deals, state.deal_status_log, { campaignId: sc.campaignId, phaseId: sc.phaseIds && sc.phaseIds.length === 1 ? sc.phaseIds[0] : null, phaseIndex: sc.phaseIds ? R.phaseIndex(state) : null, lookups: state.lookups }); };
+
+  /* ===================== CR-24 — Operations = Work queue ===================== */
+  /* every piece of work still open is one row (§4.1) · the due is R.dueDate's (deals) · Shortlist is a list, not work · a deal Cancelled / Posted has
+     no deal work (its payment / metrics still do) · Stuck = in the same stage longer than lookups.ops_stuck_days (default 7) and not Overdue */
+  const STUCK_DAYS = 7;
+  const stuckDaysOf = lookups => { const n = Number((lookups || {}).ops_stuck_days); return Number.isInteger(n) && n >= 1 && n <= 365 ? n : STUCK_DAYS; };
+  const WORK_BUCKETS = ['overdue', 'today', 'week', 'later', 'none'];
+  const workBucket = (due, today) => (!due ? 'none' : due < today ? 'overdue' : due === today ? 'today' : due <= addDays(today, 7) ? 'week' : 'later');
+  const WORK_KINDS = ['deal', 'shipment', 'payment', 'metrics', 'approval'];
+  /* the day a deal came into its stage: its last log into that stage (with a date) · else the stage's own date (Brief · Draft k …) · null when not known
+     (deals from the old files have neither) */
+  function stageSince(state, deal) {
+    const logs = R.logsOf(state, deal.deal_id);
+    for (let i = logs.length - 1; i >= 0; i--) if (logs[i].sub_status === deal.sub_status) { const t = logs[i].effective_date || String(logs[i].changed_at || '').slice(0, 10); if (R.isISODate(t)) return t; break; }
+    const st = R.stepOf(state.lookups, deal.sub_status);
+    return st && st.date_field && R.isISODate(deal[st.date_field]) ? deal[st.date_field] : null;
+  }
+  const daysSince = (iso, today) => (R.isISODate(iso) && iso <= today ? dayDiff(today, iso) : null);
+  /* the deal's own next piece of work: what (from its next step) · who · due (R.dueDate) · the field "Set date" fills */
+  function dealWork(state, d) {
+    const L = state.lookups, cur = R.stepOf(L, d.sub_status), ct = R.stepOf(L, 'Contacted');
+    if (!cur || !R.isOpenDeal(d) || (ct && cur.sort_order < ct.sort_order)) return null;   // Shortlist is not work (§6 #3)
+    const nx = R.nextStep(L, d).step; if (!nx) return null;
+    const k = R.draftNo(nx);
+    const a = nx.sub_status === 'Confirm QT' ? { action: 'confirm_qt', waiting: 'us' } : nx.date_field === 'brief_date' ? { action: 'send_brief', waiting: 'us' }
+      : R.isScriptStep(nx) ? { action: 'script', waiting: 'kol' } : k ? { action: 'draft', n: k, waiting: 'kol' } : R.isApproveStep(nx) ? { action: 'approve', waiting: 'us' }
+      : R.isPostStep(nx) ? { action: 'post', waiting: 'kol' } : { action: 'next', waiting: 'us', step: nx.sub_status };
+    const field = R.isPostStep(nx) ? 'expected_post_date' : R.expectedField(nx);
+    return Object.assign(a, { next: nx.sub_status, due: R.dueDate(state, d), field: field || null });
+  }
+  /* o = { person ('' everyone · '__none' · a PIC), campaignIds (null = all), waitingOn ('' · 'us' · 'kol'), today, viewer (the user: Approvals only for
+     those who approve) } → rows [{ kind, key, deal, kol_id, campaign_id, stage, action, n, waiting, due, bucket, field, since, inStage, stuck, pic, ref }]
+     (Overdue → Today → This week → Later → No due date · inside: the due, then the longest in stage) */
+  function workQueue(state, o) {
+    o = o || {};
+    const today = o.today || R.todayISO(), stuckN = stuckDaysOf(state.lookups), rows = [];
+    const deals = new Map(state.deals.map(d => [d.deal_id, d]));
+    const push = r => { r.bucket = workBucket(r.due, today); r.stuck = r.kind === 'deal' && r.inStage != null && r.inStage > stuckN && r.bucket !== 'overdue'; rows.push(r); };
+    state.deals.forEach(d => { const w = dealWork(state, d); if (!w) return; const since = stageSince(state, d);
+      push(Object.assign({ kind: 'deal', key: 'deal:' + d.deal_id, deal: d, kol_id: d.kol_id, campaign_id: d.campaign_id, stage: d.sub_status, pic: d.pic || null, since, inStage: daysSince(since, today), ref: d }, w)); });
+    /* the samples: To ship (by its Ship by) · Shipped (Confirm delivery — no due) */
+    (state.sample_shipments || []).forEach(sh => {
+      const st = sh.status; if (!['to_ship', 'problem', 'shipped'].includes(st) || R.isLegacyDelivered(sh)) return;
+      const d = sh.deal_id ? deals.get(sh.deal_id) || null : null; if (d && R.isCancelled(d)) return;
+      const ship = st !== 'shipped', since = ship ? String(sh.created_at || '').slice(0, 10) || null : sh.shipped_date || null;
+      push({ kind: 'shipment', key: (ship ? 'ship:' : 'dlv:') + sh.shipment_id, deal: d, kol_id: sh.kol_id || (d && d.kol_id) || null, campaign_id: sh.campaign_id || (d && d.campaign_id) || null, stage: d ? d.sub_status : null,
+        action: ship ? 'ship' : 'deliver', waiting: 'us', due: ship ? R.shipByDate(sh) : null, field: ship ? 'ship_by_date' : null, pic: R.shipPic(state, sh, d) || null, since, inStage: daysSince(since, today), ref: sh });
+    });
+    /* the money owed now (To pay · Ready / Missing docs) */
+    R.payQueue(state, today).items.filter(x => x.status === 'ready' || x.status === 'missing_docs').forEach(x => {
+      push({ kind: 'payment', key: 'pay:' + x.key, deal: x.deal || null, kol_id: x.kol_id, campaign_id: x.campaign_id || null, stage: x.deal ? x.deal.sub_status : null, action: 'pay', waiting: 'us',
+        due: x.due_date || null, field: null, pic: x.pic || null, since: x.due_date || null, inStage: daysSince(x.due_date, today), ref: x });
+    });
+    /* the numbers of a post past its checkpoint (CR-11) */
+    if (R.metricsDue) R.metricsDue(state, {}, today).forEach(m => {
+      push({ kind: 'metrics', key: 'met:' + m.post.post_id, deal: m.deal, kol_id: m.deal.kol_id, campaign_id: m.deal.campaign_id, stage: m.deal.sub_status, action: 'metrics', waiting: 'us',
+        due: m.info.checkpointDate || null, field: null, pic: m.deal.pic || null, since: m.info.checkpointDate || null, inStage: daysSince(m.info.checkpointDate, today), ref: m.post });
+    });
+    /* requests waiting for approval — only for those who approve (due: sent + 2 days) */
+    if (o.viewer && R.canApprove && R.canApprove(o.viewer)) R.approvalRequests(state).forEach(q => {
+      const at = String(q.at || '').slice(0, 10) || null;
+      push({ kind: 'approval', key: 'apr:' + q.id, deal: null, kol_id: null, campaign_id: q.campaign_id || null, stage: null, action: 'review', waiting: 'us', due: at ? addDays(at, 2) : null, field: null,
+        pic: null, approver: true, since: at, inStage: daysSince(at, today), ref: q });
+    });
+    const camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '', mine = o.viewer ? R.picName(o.viewer) : null;
+    return rows.filter(r => (!camps || !r.campaign_id || camps.has(r.campaign_id)) && (!o.waitingOn || r.waiting === o.waitingOn) &&
+      (!person || (r.approver ? person === mine : person === '__none' ? isBlank(r.pic) : r.pic === person)))
+      .sort((a, b) => WORK_BUCKETS.indexOf(a.bucket) - WORK_BUCKETS.indexOf(b.bucket) || String(a.due || '').localeCompare(String(b.due || '')) || (b.inStage || 0) - (a.inStage || 0) || a.key.localeCompare(b.key));
+  }
+  /* "Draft 2 from KOL" · "Pay KOL" … (the table and its sheet say it the same way) */
+  const workActionText = r => { const f = C.overview.wq.action[r.action]; return typeof f === 'function' ? f(r.action === 'draft' ? r.n : r.next) : f || r.action; };
+  /* §4.2 — the 5 numbers over the rows given (the filters already on) */
+  function workSummary(rows) {
+    const n = f => rows.filter(f).length, us = rows.filter(r => r.waiting === 'us');
+    return { overdue: n(r => r.bucket === 'overdue'), week: n(r => r.bucket === 'today' || r.bucket === 'week'), none: n(r => r.bucket === 'none'), noneKol: n(r => r.bucket === 'none' && r.waiting === 'kol'),
+      stuck: n(r => r.stuck), us: us.length, usBy: Object.fromEntries(WORK_KINDS.map(k => [k, us.filter(r => r.kind === k).length])), total: rows.length };
+  }
+  /* the rows a tile / a stage keeps */
+  const WORK_TILES = ['overdue', 'week', 'none', 'stuck', 'us'];
+  const workTileHas = (tile, r) => (tile === 'overdue' ? r.bucket === 'overdue' : tile === 'week' ? r.bucket === 'today' || r.bucket === 'week' : tile === 'none' ? r.bucket === 'none' : tile === 'stuck' ? r.stuck : tile === 'us' ? r.waiting === 'us' : true);
+  /* §4.5 — a row a person: open deals · Overdue · Due this week · No due date · Stuck · Waiting on us (most overdue first) */
+  function teamLoad(state, rows) {
+    const by = new Map(), at = k => by.get(k) || (by.set(k, { pic: k || null, open: new Set(), overdue: 0, week: 0, none: 0, stuck: 0, us: 0 }), by.get(k));
+    rows.filter(r => !r.approver).forEach(r => { const w = at(r.pic || '');
+      if (r.deal && R.isOpenDeal(r.deal)) w.open.add(r.deal.deal_id);
+      if (r.bucket === 'overdue') w.overdue++; else if (r.bucket === 'today' || r.bucket === 'week') w.week++; else if (r.bucket === 'none') w.none++;
+      if (r.stuck) w.stuck++; if (r.waiting === 'us') w.us++; });
+    return [...by.values()].map(w => Object.assign(w, { open: w.open.size }))
+      .sort((a, b) => b.overdue - a.overdue || b.open - a.open || String(a.pic || '~').localeCompare(String(b.pic || '~'), 'th'));
+  }
+  /* §4.4 — Stage flow: Shortlist … Approve · deals in it · their average days in it · Stuck · + Posted / Cancelled (o = {person, campaignIds, today}) */
+  function stageFlow(state, o) {
+    o = o || {};
+    const today = o.today || R.todayISO(), stuckN = stuckDaysOf(state.lookups), camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '';
+    const deals = state.deals.filter(d => (!camps || camps.has(d.campaign_id)) && (!person || (person === '__none' ? isBlank(d.pic) : d.pic === person)));
+    const steps = R.stepsOf(state.lookups).filter(s => s.active !== false && (s.status === 'List' || s.status === 'Inprocess'));
+    return { steps: steps.map(st => { const ds = deals.filter(d => d.sub_status === st.sub_status && R.isOpenDeal(d)), days = ds.map(d => daysSince(stageSince(state, d), today)).filter(x => x != null);
+        return { step: st, n: ds.length, avg: days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : null,
+          stuck: ds.filter(d => { const n = daysSince(stageSince(state, d), today); return n != null && n > stuckN && !R.isOverdue(state, d, today); }).length }; }),
+      posted: deals.filter(d => d.status === 'Complete').length, cancelled: deals.filter(d => d.status === 'Cancel').length };
+  }
+  /* §4.6 — Data to fix: a row a thing to fix (the Missing words of CR-22 · a shipment with no Ship by · a post outside its Campaign (CR-23) · Data health) */
+  function dataToFix(state, o) {
+    o = o || {};
+    const today = o.today || R.todayISO(), camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '';
+    const mine = d => (!camps || camps.has(d.campaign_id)) && (!person || (person === '__none' ? isBlank(d.pic) : d.pic === person));
+    const deals = state.deals.filter(d => mine(d) && !R.isImportedClosed(d)), rows = [];
+    deals.forEach(d => { const miss = R.dealMissing(state, d); if (miss.length) rows.push({ kind: 'missing', deal: d, keys: miss }); });
+    const dealOf = new Map(state.deals.map(d => [d.deal_id, d]));
+    (state.sample_shipments || []).forEach(sh => { if (sh.status !== 'to_ship' || R.shipByDate(sh) || R.isLegacyDelivered(sh)) return; const d = sh.deal_id ? dealOf.get(sh.deal_id) : null;
+      if (d ? !mine(d) || R.isCancelled(d) : (camps && sh.campaign_id && !camps.has(sh.campaign_id))) return; rows.push({ kind: 'noShipBy', deal: d, shipment: sh }); });
+    deals.filter(d => !R.isCancelled(d)).forEach(d => { const ph = R.phasesOfCampaign(state, d.campaign_id); if (!ph.length) return;
+      R.postsOf(state, d.deal_id).forEach((p, i) => { if (!R.isISODate(p.post_date)) return; const r = R.resolvePostPhase(p, ph);
+        if (r.override && ph.some(x => x.phase_id === r.override) && !r.overrideUnused) return;
+        const t = R.postDateText(R.postDateCheck(state, d.campaign_id, p.post_date), p.post_date, C.deal.postDateWord); if (t) rows.push({ kind: 'postOutside', deal: d, post: p, index: i, text: t }); }); });
+    const H = R.dataHealth(state, { pic: person, campaign: '' }, today);
+    H.items.filter(x => !['termNotSet', 'pillarNotSet'].includes(x.key)).forEach(x => {
+      if (x.deals) x.deals.filter(d => d && (!camps || camps.has(d.campaign_id))).forEach(d => rows.push({ kind: x.key, deal: d }));
+      else if (x.campaigns) x.campaigns.filter(c => !camps || camps.has(c.campaign_id)).forEach(c => rows.push({ kind: x.key, campaign: c }));
+      else if (x.phases) x.phases.filter(ph => !camps || camps.has(ph.campaign_id)).forEach(ph => rows.push({ kind: x.key, phase: ph }));
+    });
+    return rows;
+  }
+  /* the Campaigns of the Campaign filter: approved · the default = the ones not Complete (nor cancelled) */
+  const opsCampaigns = state => state.campaigns.filter(c => R.isApproved(c));
+  const opsCampaignsDefault = (state, today) => opsCampaigns(state).filter(c => !['complete', 'cancelled'].includes(R.campaignEffectiveStatus(c, R.phasesOfCampaign(state, c.campaign_id), today))).map(c => c.campaign_id);
+
+  return { PILLARS, PILLAR_KEY, NOT_SET, AWARE_CONSIDER, STUCK_DAYS, stuckDaysOf, WORK_BUCKETS, workBucket, WORK_KINDS, WORK_TILES, workTileHas, stageSince, dealWork, workQueue, workActionText, workSummary, teamLoad, stageFlow, dataToFix, opsCampaigns, opsCampaignsDefault, productsGiven, productsGivenFor, cancelledReport, cancelledReportFor, pillarShort, campaignDates, migrateV18, phaseSlot, campaignSlot, scopeRange, rangeStatus, summaryCards, phaseBudgetRows,
+    activityRange, autoGran, activityBins, activitySeries, DEFAULT_TARGET, pillarTargetOf, validatePillarTarget,
     portfolioScope: campaignsInRange, DASH_STATUS_KEY, DASH_STATUS_DEFAULT, normDashStatuses, dashStatusText, isDefaultStatuses, statusCounts, filterCampaignTree, highlightParts,
     phaseSteps, phaseStep, pillarShares,
     moneyOf, campaignMoney, moneyTotal, PRESETS, dateRangePreset, presetRange, workloadByPic, campaignsInRange, portfolio, allKpis, swimlanes, QUEUES, opsDeals, opsQueues, queueRows, upcomingDues, workload };

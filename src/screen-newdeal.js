@@ -22,7 +22,7 @@ KT.newDeal = (function () {
     const s = state(), myPic = R.picName(U.me()) || '';
     const tab = o.tab === 'newkol' ? 'newkol' : 'master';
     const me = { tab, after: o.after || null, h: { campaign: o.campaignId || KT.screens.deals.currentCampaign() || R.defaultCampaignId(s, today()) || '', phase: '', assign: myPic, pillar: '', pillarFromPhase: false,
-      startAt: (R.shortlistStep(s.lookups) || {}).sub_status || 'Shortlist', products: [], onlyProduct: false, cta: '', method: '', dirty: false, submitted: false }, nk: null };
+      startAt: (R.shortlistStep(s.lookups) || {}).sub_status || 'Shortlist', products: [], onlyProduct: false, cta: '', method: '', shipBy: '', dirty: false, submitted: false }, nk: null };   // CR-23 §3.4: + Ship by
     if (!picList().includes(me.h.assign)) me.h.assign = '';   // CR-22 §3.5: Me only when I am a PIC (an Admin picks)
     nd = me;
     if (!R.isApproved(s.campaigns.find(c => c.campaign_id === me.h.campaign) || {})) me.h.campaign = R.defaultCampaignId(s, today()) || '';
@@ -73,13 +73,16 @@ KT.newDeal = (function () {
     /* CR-22 §3.2 · §3.3 — CTA (Contacted or later) · Sample method (Confirm QT) — for every deal of the batch */
     const ctaF = atLeast('Contacted') ? `<div class="field"><label for="nd_cta">${esc(B.ctaAll)} <span class="req">*</span></label><select id="nd_cta" data-ndh="cta" class="${bad('cta')}">${optionsHTML(activeList('cta_list', h.cta || null), h.cta, MV.chooseCta)}</select></div>` : '';
     const methodF = atLeast('Confirm QT') ? `<div class="field"><label for="nd_method">${esc(B.methodAll)} <span class="req">*</span></label><select id="nd_method" data-ndh="method" class="${bad('ship_method')}">${optionsHTML(R.SHIP_METHODS.map(k => ({ value: k, label: R.shipMethodLabel(s.lookups, k) })), h.method, MV.chooseMethod)}</select></div>` : '';
+    /* CR-23 §3.4 — Ship by * (NPD / Warehouse) · Buy by (KOL buys own) for every deal of the batch · empty until typed */
+    const own = h.method === 'self_purchase', sbL = own ? MV.buyBy : MV.shipBy;
+    const shipByF = atLeast('Confirm QT') ? `<div class="field"><label>${esc(sbL)}${own ? '' : ' <span class="req">*</span>'}</label><span class="${bad('ship_by').trim()}">${U.dateHTML('id="nd_shipby" data-ndh="shipBy" data-key="ship_by"', h.shipBy || '', { label: sbL })}</span></div>` : '';
     return `<div class="nd-head" id="nd_head"><div class="fields nd-hf">
         <div class="field nd-camp"><label for="nd_camp">${esc(B.campaign)} <span class="req">*</span></label><div class="nd-cw"><select id="nd_camp" data-ndh="campaign" data-combo="campaign" class="${bad('campaign_id')}">${U.campaignOptionsHTML(h.campaign, B.chooseCampaign, { forDeal: true })}</select><span class="nd-cinfo">${campaignInfo(c)}</span></div></div>
         <div class="field"><label for="nd_phase">${esc(B.phase)}</label><select id="nd_phase" data-ndh="phase">${optionsHTML(phases, h.phase, B.autoPhase)}</select></div>
         <div class="field"><label for="nd_assign">${esc(B.assignTo)} <span class="req">*</span></label><select id="nd_assign" data-ndh="assign" class="${bad('pic')}">${optionsHTML(people, h.assign, D.choosePic)}</select><div class="hint">${esc(B.assignHint)}</div></div>
         <div class="field"><label for="nd_pillar">${esc(B.pillar)}${h.pillarFromPhase && h.pillar ? ` <span class="chip sh-from">${esc(C.fill.fromPhase)}</span>` : ''}</label><select id="nd_pillar" data-ndh="pillar" class="${bad('pillar')}">${optionsHTML(activeList('pillar_list', h.pillar), h.pillar, D.none)}</select></div>
         <div class="field"><label for="nd_start">${esc(B.startAt)}</label><select id="nd_start" data-ndh="startAt">${optionsHTML(starts, h.startAt)}</select></div>
-        ${ctaF}${methodF}
+        ${ctaF}${methodF}${shipByF}
         <div class="field nd-prods${bad('ship_items')}"><label>${esc(F.products)}${atLeast('Confirm QT') ? ' <span class="req">*</span>' : ''}${h.onlyProduct ? ` <span class="chip sh-from">${esc(C.fill.onlyProduct)}</span>` : ''}</label><div class="nd-pl">${prods.length ? prods.map(p => `<label class="tick small"><input type="checkbox" data-ndprod="${esc(p.tr_code)}"${h.products.includes(p.tr_code) ? ' checked' : ''}> ${esc(R.productShort(p))}</label>`).join('') : `<span class="muted small">${esc(D.noProductsYet)}</span>`}</div></div>
       </div><div class="checks" id="nd_hchecks">${errs.length ? checksHTML({ errs, warns: [], infos: [] }, '') : ''}</div></div>`;
   }
@@ -94,6 +97,10 @@ KT.newDeal = (function () {
     if (atLeast('Confirm QT')) {
       if (!R.SHIP_METHODS.includes(h.method)) errs.push({ field: 'ship_method', msg: C.msg.shipMethodRequired });
       if (!h.products.length) errs.push({ field: 'ship_items', msg: C.msg.shipItemsRequired });
+      const sbL = h.method === 'self_purchase' ? MV.buyBy : MV.shipBy;   // CR-23 §3.4
+      if (!h.shipBy) { if (h.method !== 'self_purchase') errs.push({ field: 'ship_by', msg: C.msg.shipByRequired }); }
+      else if (!R.isISODate(h.shipBy)) errs.push({ field: 'ship_by', msg: C.msg.dateInvalid(sbL) });
+      else if (h.shipBy < today()) errs.push({ field: 'ship_by', msg: C.msg.shipByBeforeMove(sbL) });
     }
     return errs;
   }
@@ -103,7 +110,7 @@ KT.newDeal = (function () {
   function newDealShipment(s, deal) {
     const h = nd.h; if (!atLeast('Confirm QT') || !R.SHIP_METHODS.includes(h.method)) return null;
     const own = h.method === 'self_purchase';
-    return Object.assign(R.newShipment({ id: store.newId('shipment'), deal, items: h.products.map(c => ({ tr_code: c, qty: 1 })), shipBy: own ? null : R.shipBy(deal, s.lookups.sample_settings),
+    return Object.assign(R.newShipment({ id: store.newId('shipment'), deal, items: h.products.map(c => ({ tr_code: c, qty: 1 })), shipByDate: R.isISODate(h.shipBy) ? h.shipBy : null,   // CR-23 §3.4: the header's date
       status: own ? 'kol_purchase' : 'to_ship', source: 'new_deal', user: userId(), now: new Date().toISOString(), method: h.method }), { purpose: 'review', campaign_id: deal.campaign_id, pick_list_id: null });
   }
   /* CR-22 §3.4 — a search with no KOL: the New KOL tab with that name (the header stays) */
@@ -228,7 +235,7 @@ KT.newDeal = (function () {
     /* the stage rule (Payment term · Rate · Package · Gencode days) — a new package is made with the deal, so it is checked here */
     const r = R.checkMove(s, mdl.deal, nd.h.startAt, { date: today(), today: today(), paymentTerm: mdl.deal.payment_term || '', rateCard: mdl.deal.rate_card == null ? '' : String(mdl.deal.rate_card),
       costs: { gencode_expense: mdl.deal.gencode_expense == null ? '' : String(mdl.deal.gencode_expense), gencode_period: mdl.deal.gencode_period == null ? '' : String(mdl.deal.gencode_period), gencode_start_date: mdl.deal.gencode_start_date || '', asset_fee: mdl.deal.asset_fee == null ? '' : String(mdl.deal.asset_fee), expediting_fee: mdl.deal.expediting_fee == null ? '' : String(mdl.deal.expediting_fee) } });
-    errs.push(...r.errs.filter(e => !['to', 'pillar', 'package_id', 'package_units', 'cta', 'ship_method', 'ship_items'].includes(e.field) && !(mdl.pkg && e.field === 'rate_card')));   // (CTA · method · products: the header's)
+    errs.push(...r.errs.filter(e => !['to', 'pillar', 'package_id', 'package_units', 'cta', 'ship_method', 'ship_items', 'ship_by'].includes(e.field) && !(mdl.pkg && e.field === 'rate_card')));   // (CTA · method · products: the header's)
     if (mdl.pkg) {
       if (R.isBlank(x.deal.pkg_units) || !Number.isInteger(Number(x.deal.pkg_units)) || Number(x.deal.pkg_units) < 1) errs.push({ field: 'pkg_units', msg: C.msg.pkgUnits });
       if (R.isBlank(x.deal.pkg_price) || !(Number(x.deal.pkg_price) > 0)) errs.push({ field: 'pkg_price', msg: C.msg.pkgPrice });
@@ -253,7 +260,7 @@ KT.newDeal = (function () {
     if ($('nk_total')) $('nk_total').textContent = R.baht(total);
     if ($('nk_unit')) $('nk_unit').textContent = r.mdl.unit != null ? `${C.pkg.fUnit} ${R.baht(r.mdl.unit)}` : '';
     if ($('f_nk_rate_card') && r.mdl.pkg) $('f_nk_rate_card').value = v.rate_card == null ? '' : R.fmtNum(v.rate_card);
-    if ($('nk_phase')) $('nk_phase').textContent = KT.move.phaseHint(nd.h.campaign, x.deal.expected_post_date);
+    if ($('nk_phase')) $('nk_phase').innerHTML = KT.move.dateHintHTML(nd.h.campaign, x.deal.expected_post_date);   // CR-23 §3.5
     const c = s.campaigns.find(y => y.campaign_id === nd.h.campaign);
     if ($('nk_budget')) {
       const committed = c ? (R.dealContext(s).committedByCampaign.get(c.campaign_id) || 0) : 0, remain = c && !R.isBlank(c.budget_kol) ? Number(c.budget_kol) - committed : null, after = remain == null ? null : remain - total;

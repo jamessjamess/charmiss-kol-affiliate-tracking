@@ -111,13 +111,12 @@
       assert.equal(R.isPillarValue(s.lookups, AC), true, 'a value a deal may have (form · inline · bulk · Move to Post)');
     });
     test('TC-15 / TC-16: Pillar mix and Pillar allocation say what is — no Target, no Δ', () => {
-      const s = fresh(), m = R.pillarMix(s, ...year(), TD, false), a = R.pillarAllocation(s, 'KS');
+      const s = fresh(), m = R.pillarMix(s, ...year(), TD, false);
       assert.deepEqual(m.rows.map(x => x.spend), [55500, 0, 89600, 73200, 1565279]);
       assert.ok(m.rows.every(x => x.target === undefined && x.gap === undefined));
-      assert.deepEqual([a.target, a.actual.gap], [undefined, undefined]);
-      const al = E.rowsFor('allocation', { state: s, campaignId: 'KS', today: TD });
-      assert.equal(al.name, 'Pillar allocation'); assert.ok(!al.rows.some(r => r[0] === 'Target'));
-      assert.equal(C.overview.allocTitle, 'Pillar allocation');
+      /* CR-24 §3 — Pillar allocation is gone (card · sheet · sum) · Pillar mix stays */
+      assert.equal(R.pillarAllocation, undefined);
+      assert.ok(!E.TABS.campaign.includes('allocation') && E.TABS.all.includes('pillarmix'));
     });
   });
 

@@ -5,7 +5,7 @@ KT.screens.settings = (function () {
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['cancel_reasons', C.cancel.nav], ['kol_types', K.navKolTypes], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
   const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive' && x[0] !== 'opsmode');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
@@ -45,7 +45,7 @@ KT.screens.settings = (function () {
       `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'opsmode')) + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7 · CR-17
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : listHTML(st.section);
     if (st.section === 'perf') perfCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
@@ -70,7 +70,9 @@ KT.screens.settings = (function () {
         `<div class="seg" role="group" aria-label="${esc(O.kind[kind])}">${R.OPS_MODES.map(m => `<button type="button" data-opsm="${kind}:${m}" class="${now === m ? 'on' : ''}" aria-pressed="${now === m}">${esc(O.mode[m])}</button>`).join('')}</div></div>`; };
     return `<div class="card"><div class="card-head"><h3>${esc(K.navOpsMode)}</h3></div><p class="hint" style="margin-top:0">${esc(O.lead)}</p>` +
       `<dl class="ops-def"><dt>${esc(O.mode.simple)}</dt><dd>${esc(O.simple)}</dd><dt>${esc(O.mode.full)}</dt><dd>${esc(O.full)}</dd></dl>` +
-      row('payments') + row('shipments') + `<p class="hint">${esc(O.safe)}</p></div>`;
+      row('payments') + row('shipments') + `<p class="hint">${esc(O.safe)}</p>` +
+      /* CR-24 §4.1 — Operations › Stuck: a deal in the same stage longer than this */
+      `<div class="field ops-stuck"><label for="ops_stuck">${esc(C.overview.wq.stuckDays)}</label><input type="number" min="1" max="365" step="1" inputmode="numeric" id="ops_stuck" data-opsstuck value="${esc(String(R.stuckDaysOf(s.lookups)))}"><div class="hint">${esc(C.overview.wq.stuckHint)}</div></div></div>`;
   }
 
   /* ===================== Data ===================== */
@@ -122,6 +124,37 @@ KT.screens.settings = (function () {
           <label class="tick"><input type="checkbox" data-l="active"${off ? '' : ' checked'}> ${esc(LS.active)}</label>
           <button type="button" class="link" data-l="delete"${used ? ` disabled title="${esc(LS.inUse(used))}"` : ''}>${esc(LS.del)}</button></div>`; }).join('') || `<div class="hint">${esc(key === 'cta_list' ? LS.ctaEmpty : C.common.none)}</div>`}
       <div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+  }
+  /* CR-23 §3.6 — Cancel reasons (lookups.cancel_reasons): the words can change · a reason can be switched off or added · one no deal uses can go ·
+     Other always stays on (it asks for a detail) */
+  const crList = () => { const L = state().lookups; if (!Array.isArray(L.cancel_reasons) || !L.cancel_reasons.length) L.cancel_reasons = R.cancelReasonsDefault(); return L.cancel_reasons; };
+  const crUse = key => state().deals.filter(d => d.status === 'Cancel' && (d.cancel_reason_key || R.CANCEL_OTHER) === key).length;
+  function cancelReasonsHTML() {
+    const K2 = C.cancel, list = R.cancelReasonsOf(state().lookups);
+    return `<div class="card"><div class="card-head"><h3>${esc(K2.nav)}</h3>${can(editAction()) ? `<div class="btns"><button type="button" class="btn small" data-act="craddopen">${esc(K2.add)}</button></div>` : ''}</div>
+      <p class="hint" style="margin-top:0">${esc(K2.hint)}</p>` +
+      list.map(r => { const other = r.key === R.CANCEL_OTHER, used = crUse(r.key), own = !R.CANCEL_REASON_KEYS.includes(r.key);
+        return `<div class="lrow" data-cr="${esc(r.key)}"><input class="grow" data-crl value="${esc(r.label)}" aria-label="${esc(K2.label)}"><span class="muted small">${esc(used ? K2.used(used) : LS.unused)}</span>
+          <label class="tick"><input type="checkbox" data-cra${r.active !== false ? ' checked' : ''}${other ? ` disabled title="${esc(K2.otherFixed)}"` : ''}> ${esc(LS.active)}</label>
+          ${own ? `<button type="button" class="link" data-crdel${used ? ` disabled title="${esc(LS.inUse(used))}"` : ''}>${esc(LS.del)}</button>` : ''}</div>`; }).join('') +
+      `<div class="checks" id="ls_checks" style="margin-top:8px"></div></div>`;
+  }
+  function openAddCancelReason(opener) {
+    if (!U.guard(editAction())) return;
+    const K2 = C.cancel;
+    U.createModal({ size: 'S', title: K2.add.replace(/^\+\s*/, ''), opener, foot: [`<div class="checks" id="la_checks"></div>`, U.cmButtons(LS.addOk, 'la_ok')],
+      body: `<div class="field"><label for="la_v">${esc(K2.label)} <span class="req">*</span></label><input id="la_v" placeholder="${esc(K2.addPh)}" autocomplete="off"></div>` });
+    const go2 = () => {
+      const v = R.trim($('la_v').value), list = crList(), err = !v ? K2.empty : list.some(r => R.trim(r.label).toLowerCase() === v.toLowerCase()) ? K2.dup : R.looksSensitive(v) ? C.msg.sensitive : '';
+      $('la_checks').innerHTML = err ? checksHTML({ errs: [{ field: 'v', msg: err }], warns: [], infos: [] }, '') : ''; $('la_v').classList.toggle('invalid', !!err);
+      if (err || !U.guard(editAction())) return;
+      let n = 1; while (list.some(r => r.key === 'r' + n)) n++;
+      const at = list.findIndex(r => r.key === R.CANCEL_OTHER), rec = { key: 'r' + n, label: v, active: true };
+      if (at < 0) list.push(rec); else list.splice(at, 0, rec);
+      U.closeModal(); commit(K2.saved); render(); flashRow(`[data-cr="${CSS.escape(rec.key)}"]`);
+    };
+    $('la_ok').addEventListener('click', go2);
+    $('la_v').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go2(); } });
   }
   function tiersHTML() {
     if (!st.tiers) st.tiers = (state().lookups.tier_rules || []).map(t => ({ tier: t.tier, min_followers: String(t.min_followers) }));
@@ -380,10 +413,16 @@ KT.screens.settings = (function () {
     if (t.dataset.ktf && t.closest('[data-kt]')) { kolTypeChange(t); return; }
     if (t.dataset.ps) { st.pay[t.dataset.ps] = t.value; payCheck(); return; }
     if (t.dataset.pf2) { st.perf[t.dataset.pf2] = t.value; perfCheck(); return; }
+    if (t.dataset.opsstuck != null) { const n = Number(t.value), W = C.overview.wq; if (!Number.isInteger(n) || n < 1 || n > 365) { toast(W.stuckInvalid); t.value = String(R.stuckDaysOf(L)); return; }   // CR-24
+      if (L.ops_stuck_days !== n) { L.ops_stuck_days = n; commit(W.stuckSaved); } return; }
     if (t.dataset.ss === 'carriers' && st.smp) { st.smp.carriers = t.value; samplesCheck(); render(); return; }   // the tracking fields follow the list
     /* CR-22 §3.3 — the words of a shipment method (blank = the default word) */
     if (t.dataset.smm) { const list = Array.isArray(L.shipment_methods) ? L.shipment_methods : (L.shipment_methods = R.shipMethodsDefault()), x = list.find(m => m.key === t.dataset.smm);
       const v = R.trim(t.value) || C.samples.method[t.dataset.smm]; if (x && x.label !== v) { x.label = v; commit(C.samples.methodsSaved); } return; }
+    const cr = t.closest('[data-cr]');
+    if (cr) { const r = crList().find(x => x.key === cr.dataset.cr); if (!r) return;
+      if (t.matches('[data-crl]')) { const v = R.trim(t.value) || C.cancel.reasons[r.key] || r.label; if (R.looksSensitive(v)) { t.value = r.label; toast(C.msg.sensitive); return; } if (v !== r.label) { r.label = v; t.value = v; commit(C.cancel.saved); } return; }
+      if (t.matches('[data-cra]') && r.key !== R.CANCEL_OTHER) { r.active = t.checked; commit(C.cancel.saved); } return; }
     const row = t.closest('[data-step]');
     if (row && t.dataset.s) {
       const step = L.journey_steps.find(j => j.sub_status === row.dataset.step);
@@ -425,6 +464,9 @@ KT.screens.settings = (function () {
     if (act === 'pnew') { U.openNewProduct('', null, { created: code => { render(); flashRow(`[data-pc="${CSS.escape(code)}"]`); U.toast(P.added(code)); } }); return; }
     if (act === 'ktaddopen') { openAddKolType(b); return; }
     if (act === 'laddopen') { openAddListValue(b); return; }
+    if (act === 'craddopen') { openAddCancelReason(b); return; }   // CR-23 §3.6
+    if (b.dataset.crdel != null) { const key = b.closest('[data-cr]').dataset.cr, L0 = state().lookups; if (R.CANCEL_REASON_KEYS.includes(key) || crUse(key)) return;
+      L0.cancel_reasons = crList().filter(x => x.key !== key); commit(C.cancel.saved); render(); return; }
     if (b.dataset.ktmove) { const key = b.closest('[data-kt]').dataset.kt, list = R.kolTypeList(state().lookups); moveKolType(key, list.findIndex(t => t.key === key) + Number(b.dataset.ktmove)); return; }
     if (b.dataset.ktdel != null) {
       const key = b.closest('[data-kt]').dataset.kt, s = state(), t = ktList().find(x => x.key === key); if (!t || R.kolTypeUse(s, key)) return;

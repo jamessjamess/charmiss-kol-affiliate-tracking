@@ -2,6 +2,21 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-24 v1.0 · 08/10/2026 — Operations = Work queue · ตัด Pillar allocation
+schema **คงที่ 21** (+ `lookups.ops_stuck_days`) · tests **645**
+- **Operations** ใหม่ทั้งหน้า: ตัวกรอง Assigned to · Campaigns (multi · default ไม่ Complete) · Waiting on (All / Us / KOL) · Summary 5 ช่องกดกรอง (Overdue · Due this week · No due date · Stuck · Waiting on us)
+- **Work queue:** งานค้างทุกชิ้น 1 แถว (deal ตามขั้นถัดไป · shipment · payment · metrics · approval) แบ่ง Overdue / Today / This week / Later / No due date · ปุ่มบนแถว (Move stage · Mark shipped / delivered + Undo · Mark paid · Enter metrics · Review) · Set date · Stuck (Settings › Operations mode)
+- **Stage flow** (จำนวน · avg วัน · Stuck · กดกรอง) · **Team load** (Everyone) · **Data to fix** (Missing · Ship by not set · Post date นอกช่วง · Fix ไปที่ช่อง) · Export = Summary + Work queue
+- **By campaign:** ตัด Pillar allocation (การ์ด · sheet · ฟังก์ชัน)
+
+## CR-23 v1.3 · 08/10/2026 — Products given · Cancelled report · Next due บังคับ · ลากไป Post / Cancel · Ship by · Post date นอกช่วง Campaign · Deal modal
+schema **คงที่ 21** (+ `ship_by_date` · `cancel_reason_key` · `lookups.cancel_reasons`) · tests **637**
+- **Dashboard › By campaign:** การ์ด **Products given** (4 tiles + ตารางต่อสินค้า · คลิกไป Shipments) · **Cancelled deals** (n cancelled · ฿x released · chip เหตุผล · คลิกเปิด deal) · Export + 2 sheets
+- **Move stage:** Next expected = งานถัดไปของ KOL บังคับเสมอ (Draft k+1 · Script · Post due ตอน Approve) · ไม่ถาม Expected approve (Approve ไม่มีวันคาด = ไม่มี due) · **Ship by \*** ใต้ Method (ว่าง · +3d/+5d/+7d · Suggested) · ค่าคำนวณ CR-10 ไม่เป็น due แล้ว ("Ship by not set" · แถบ Set dates ในหน้า Shipments)
+- **Pipeline:** ลากการ์ด → drop zone ล่างจอ "Drop to mark as posted" (dialog แบบย่อ · Enter = Move) · "Drop to cancel" → **Cancel dialog** (Reason * จากรายการ · Detail · ผลกระทบ: งบ · shipment · package · เงินที่จ่ายแล้ว) · Settings › Lists › Cancel reasons
+- **Post due / Post date นอกช่วง Campaign:** เตือนส้มใต้ช่อง + แถบใน Deal modal (Change date · Pick phase) · Phase ใช้แรก / สุดท้าย
+- **Deal modal:** เปิดที่บนสุดเสมอ · tabs ติดบน · Use shipment products · No due date · View costs / View timeline · บรรทัดสรุป shipment เดียวกันทุกที่ · ข้อความเตือนเป็นอังกฤษ
+
 ## CR-22 v1.0 · 08/10/2026 — Rate ไม่เติมให้เอง · CTA ตอน Contacted · Sample shipment ตอน Confirm QT · ค้นไม่เจอ → New KOL · Deal modal tabs · Assign to บังคับ
 schema **20 → 21** · tests **627**
 - **Rate card** ว่างเสมอ (เว้น deal มีของตัวเอง) + hint **Last rate card ฿x · Campaign · วันที่** คลิกเพื่อใส่ · ไม่มี Avg · ตัด Use latest rates / Clear rates

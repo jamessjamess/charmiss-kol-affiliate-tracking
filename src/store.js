@@ -117,7 +117,11 @@
                          campaign_events approval + draft_saved · resubmitted · withdrawn · returned · draft_deleted · round
    schema_version 21 (CR-22) — rules-samples.js migrateV21: sample_shipments + method npd / warehouse / self_purchase (every one there is: warehouse) ·
                          items = the deal's products (qty 1) when it had none · purchase_amount null · purchased_date null · status + kol_purchase / purchased ·
-                         deals + product_purchase_fee null (in Total cost) · lookups.shipment_methods [{ key, label }] — the money does not change */
+                         deals + product_purchase_fee null (in Total cost) · lookups.shipment_methods [{ key, label }] — the money does not change
+   (CR-23, schema stays 21 · nothing migrated) sample_shipments + ship_by_date (null = Ship by not set — the date a person set; ship_by is the old
+                         sum and only a hint now) · deals + cancel_reason_key (null = Other · cancel_reason = its Detail) · lookups.cancel_reasons
+                         [{ key, label, active }] — the default list is put in at load when there is none
+   (CR-24, schema stays 21) lookups.ops_stuck_days (7 at load when there is none — Settings › Operations mode) */
 
 KT.store = (function (R) {
   'use strict';
@@ -341,6 +345,8 @@ KT.store = (function (R) {
     if (obj.schema_version === 18) toV19(obj);
     if (obj.schema_version === 19) toV20(obj);
     if (obj.schema_version === 20) toV21(obj);
+    if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
+    if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     obj.local = Object.assign(blankLocal(), obj.local || {});
     return obj;
   }

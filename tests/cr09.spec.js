@@ -109,9 +109,9 @@
     });
     test('TC-14: Export By campaign (Charming) — 5 sheets · Phase budget total ฿863,700 · Workload by PIC Open 14', () => {
       const tables = E.tabTables('campaign', campX(fresh()));
-      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Activity by date', 'Phase budget', 'Pillar allocation', 'Workload by PIC']);
+      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Activity by date', 'Phase budget', 'Products given', 'Cancelled', 'Workload by PIC'], 'CR-23 §3.1 · §3.7: + Products given · Cancelled · CR-24 §3: no Pillar allocation');
       assert.equal(tables[2].total[4], 863700);
-      assert.equal(tables[4].total[1], 14);
+      assert.equal(tables[5].total[1], 14);
       assert.deepEqual(tables[1].header.slice(0, 2), ['Date', 'Mega'], 'Daily · by KOL tier');
       assert.equal(E.rowsFor('activity_camp', campX(fresh(), { gran: 'week' })).header[0], 'Week starting');
       assert.ok(!/Payee|account_no|full_name/.test(JSON.stringify(tables)));
@@ -124,14 +124,13 @@
       const all = R.opsQueues(s, { pic: '', campaign: '', tier: '' }, TD), amp = R.opsQueues(s, { pic: 'Amp', campaign: '', tier: '' }, TD);
       assert.ok(all.overdue.length > amp.overdue.length && amp.overdue.every(d => all.overdue.includes(d)));
     });
-    test('TC-47: Export Operations (Amp) — Summary · Queue · Active pipeline · Due in next 7 days · the numbers on screen', () => {
-      const s = fresh(), x = { state: s, f: { pic: 'Amp', campaign: '', tier: '' }, picLabel: 'Amp', today: TD, queue: 'overdue' };
-      const tables = E.tabTables('ops', x), Q = R.opsQueues(s, x.f, TD);
-      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Queue', 'Active pipeline', 'Due in next 7 days']);
-      assert.equal(tables[1].rows.length, Q.overdue.length);
-      /* CR-11 §4.8: To do / Data health replace the old cards — Unpaid after posting → Docs to collect (KOLs) */
-      assert.ok(!tables[0].rows.some(r => r[1] === O.queues.unpaid));
-      assert.deepEqual(tables[0].rows.find(r => r[1] === O.docsToCollect), [O.todo, O.docsToCollect, 18]);
+    test('TC-47 (CR-24 §4.7): Export Operations (Amp) — Summary · Work queue · the numbers on screen', () => {
+      const s = fresh(), opts = { person: 'Amp', campaignIds: null, waitingOn: '', today: TD }, x = { state: s, opts, picLabel: 'Amp', campLabel: 'All', waitLabel: 'All', today: TD };
+      const tables = E.tabTables('ops', x), rows = R.workQueue(s, opts), sum = R.workSummary(rows);
+      assert.deepEqual(tables.map(t => t.name), ['Summary', 'Work queue']);
+      assert.equal(tables[1].rows.length, rows.length);
+      assert.deepEqual(tables[0].rows.find(r => r[1] === O.wq.tiles.overdue), [O.wq.summaryCard, O.wq.tiles.overdue, sum.overdue]);
+      assert.ok(!/Payee|account_no|full_name/.test(JSON.stringify(tables)));
     });
   });
 

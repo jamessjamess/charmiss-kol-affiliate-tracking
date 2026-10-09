@@ -133,59 +133,44 @@ KT.export = (function (R, C) {
       header: [O.colPhase, O.colFrom, O.colTo, MN.budget.h, MN.committed.h, MN.used.h, MN.remaining.h, MN.pending.h, O.colPosts],
       rows, total: [O.campaignTotal, '', '', t.budget, r2(t.committed), dec(mt.usedPct), r2(mt.remaining), r2(t.shortlist), t.posts] };
   }
-  function allocation(x) {
-    const a = R.pillarAllocation(x.state, x.campaignId), keys = R.PILLARS.concat([R.NOT_SET]), lab = k => (k === R.NOT_SET ? O.pillarNotSet : k);
-    const row = (label, pct, money, total) => [label].concat(keys.map(k => dec(pct[k] || 0)), keys.map(k => (money ? r2(money[k] || 0) : null)), [total == null ? null : r2(total)]);
-    const camp = R.campaignOf(x.state, x.campaignId) || {};
-    /* CR-19 §4.7 — Pillar allocation: the Campaign and each Phase, what is (no Target row) */
-    return { key: 'allocation', name: O.sheet.allocation,
-      header: [O.colRow].concat(keys.map(k => `${lab(k)} %`), keys.map(k => lab(k)), [O.colTotal]),
-      rows: [row(camp.campaign_name || '', a.actual.pct, a.actual.money, a.actual.total)]
-        .concat(a.phases.map(p => row(R.phaseName(x.state, p.phase.phase_id), p.pct, p.money, p.total))), total: null };
-  }
   function workload(x) {
     const rows = R.workloadByPic(x.state, campScope(x), x.today), sum = k => rows.reduce((a, r) => a + r[k], 0);
     return { key: 'workload', name: O.sheet.workload, header: [O.picLabel, O.colOpen, O.queues.overdue, O.docsToCollect, O.colCommittedOpen],
       rows: rows.map(r => [r.pic || O.noPic, r.open, r.overdue, r.docs, r2(r.committed)]), total: [O.colTotal, sum('open'), sum('overdue'), sum('docs'), r2(sum('committed'))] };
   }
 
+  /* CR-23 §3.1 — Products given (the same numbers as the card: R.productsGiven) · no personal data */
+  function productsGiven(x) {
+    const s = x.state, g = R.productsGivenFor(s, campScope(x)), ml = k => R.shipMethodLabel(s.lookups, k), name = c => { const p = R.productByCode(s, c); return p ? R.productShort(p) : ''; };
+    const sum = k => g.rows.reduce((a, r) => a + r[k], 0), nr = g.notRecorded;
+    return { key: 'products', name: O.sheet.products, header: [O.colTrCode, O.colProduct, O.colTotal, ml('npd'), ml('warehouse'), ml('self_purchase'), O.colDelivered, O.colToShip, O.colKols],
+      rows: g.rows.map(r => [r.tr_code, name(r.tr_code), r.total, r.npd, r.warehouse, r.self_purchase, r.delivered, r.toShip, r.kols])
+        .concat(nr ? [['', `${O.notRecorded} (${O.notRecordedN(nr.shipments)})`, null, null, null, null, null, null, nr.kols]] : []),
+      total: [O.colTotal, '', g.total, g.byMethod.npd, g.byMethod.warehouse, g.byMethod.self_purchase, sum('delivered'), sum('toShip'), g.kols] };
+  }
+  /* CR-23 §3.7 — Cancelled (the columns of the card: R.cancelledReport) · no personal data */
+  function cancelled(x) {
+    const s = x.state, c = R.cancelledReportFor(s, campScope(x));
+    return { key: 'cancelled', name: O.sheet.cancelled, header: [O.colKol, O.colDealId, O.colCancelledAt, O.colCancelledOn, O.colReason, O.colDetail, O.colValue, O.colAssigned],
+      rows: c.rows.map(r => [(R.kolById(s, r.deal.kol_id) || {}).display_name || r.deal.kol_id, r.deal.deal_id, r.stage || '', dmy(r.date), r.label, r.detail || '', r.value == null ? null : r2(r.value), r.pic || '']),
+      total: [O.colTotal, c.n, '', '', '', '', r2(c.released), ''] };
+  }
+
   /* ===================== Operations (§4.6) ===================== */
-  const whereOf = (s, ctx, d) => { const p = ctx.phases.get(R.primaryPhase(ctx.phaseIdx, d.deal_id)), c = ctx.campaigns.get(d.campaign_id) || {}; return `${c.campaign_name || ''}${p ? ` › ${R.phaseName(s, p.phase_id)}` : ''}`; };
-  /* CR-11 §4.8 — To do · Data health: the numbers of the tab (R.dataHealth, the same function) */
+  /* CR-24 — Summary: the filters · the 5 numbers of the Work queue · Data to fix (R.workQueue / R.workSummary / R.dataToFix, the same as the screen) */
   function summaryOps(x) {
-    const s = x.state, ctx = R.dealContext(s), Q = R.opsQueues(s, x.f, x.today, ctx), H = R.dataHealth(s, x.f, x.today), rows = [[O.picLabel, O.picLabel, x.picLabel]];
-    const hk = x.queue && x.queue.startsWith('h:') ? x.queue.slice(2) : null;
-    if (x.queue) rows.push([O.sheet.queue, O.queueShown, hk ? O.healthItems[hk] : O.queues[x.queue]]);
-    rows.push([O.todo, O.queues.overdue, Q.overdue.length], [O.todo, O.toShip, R.shipmentsToShip(s, x.f, x.today).length], [O.todo, O.docsToCollect, R.docsToCollect(s, x.f, x.today).length]);
-    if (R.metricsDue) rows.push([O.todo, O.metricsDue, R.metricsDue(s, x.f, x.today).length]);
-    H.items.forEach(i => rows.push([O.health, O.healthItems[i.key], i.n]));
-    if (!H.total) rows.push([O.health, O.allGood, 0]);
+    const s = x.state, W = O.wq, sum = R.workSummary(R.workQueue(s, x.opts)), fix = R.dataToFix(s, x.opts);
+    const rows = [[W.assigned, W.assigned, x.picLabel], [W.campaigns, W.campaigns, x.campLabel], [W.waiting, W.waiting, x.waitLabel]];
+    R.WORK_TILES.forEach(k => rows.push([W.summaryCard, W.tiles[k], sum[k]]));
+    rows.push([W.summaryCard, W.title, sum.total], [W.fixCard, W.fixCard, fix.length]);
     return { key: 'summary_ops', name: O.sheet.summary, header: [O.colCard, O.colMetric, O.colValue], rows, total: null };
   }
-  function queue(x) {
-    const s = x.state, ctx = R.dealContext(s), Q = R.opsQueues(s, x.f, x.today, ctx), name = O.sheet.queue;
-    const hk = x.queue && x.queue.startsWith('h:') ? x.queue.slice(2) : null, it = hk ? R.dataHealth(s, x.f, x.today).items.find(i => i.key === hk) : null;
-    const camps = it && it.campaigns, phases = it && it.phases;
-    if (camps) return { key: 'queue', name, header: [O.colCampaign, O.colStatus, O.colFrom, O.colTo, O.deals],
-      rows: R.sortCampaigns(camps, s.phases, x.today).map(c => { const [a, z] = R.scopeRange(s, { campaignId: c.campaign_id }); return [c.campaign_name, statusLabel(R.campaignEffectiveStatus(c, R.phasesOfCampaign(s, c.campaign_id), x.today)), dmy(a), dmy(z), s.deals.filter(d => d.campaign_id === c.campaign_id && !R.isCancelled(d)).length]; }), total: null };
-    if (phases) return { key: 'queue', name, header: [O.colCampaign, O.colPhase, O.colFrom, O.colTo, O.colIssue],
-      rows: phases.map(p => [R.campaignName(s, p.campaign_id), R.phaseName(s, p.phase_id), dmy(p.start_date), dmy(p.end_date), O.issueNoBudget]), total: null };
-    const deals = it ? it.deals : Q.overdue;
-    const rows = it ? deals.map(d => ({ deal: d, issue: O.healthItems[hk] })) : R.queueRows(s, 'overdue', deals, x.today, ctx);
-    return { key: 'queue', name, header: [O.colKol, O.colCampaignPhase, O.colStage, O.picLabel, O.colIssue, O.colTotal],
-      rows: rows.map(r => [(ctx.kols.get(r.deal.kol_id) || {}).display_name || r.deal.kol_id, whereOf(s, ctx, r.deal), r.deal.sub_status, r.deal.pic || '', r.issue, r2(R.totalCost(r.deal))]),
-      total: [O.colTotal, '', '', '', rows.length, r2(rows.reduce((a, r) => a + R.totalCost(r.deal), 0))] };
-  }
-  function pipeline(x) {
-    const s = x.state, ctx = R.dealContext(s), deals = R.opsDeals(s, x.f, ctx);
-    const rows = R.stepsOf(s.lookups).filter(st => st.status === 'List' || st.status === 'Inprocess').map(st => [st.sub_status, deals.filter(d => d.sub_status === st.sub_status).length]).filter(r => r[1]);
-    return { key: 'pipeline', name: O.sheet.pipeline, header: [O.colStage, O.deals],
-      rows: rows.concat([[C.status.Complete, deals.filter(d => d.status === 'Complete').length], [C.status.Cancel || 'Cancelled', deals.filter(d => d.status === 'Cancel').length]]), total: null };
-  }
-  function due(x) {
-    const s = x.state, ctx = R.dealContext(s), rows = R.upcomingDues(s, x.f, x.today, 7, ctx);
-    return { key: 'due', name: O.sheet.due, header: [O.colDue, O.colKol, O.colCampaignPhase, O.colStep, O.picLabel],
-      rows: rows.map(r => [dmy(r.due), (ctx.kols.get(r.deal.kol_id) || {}).display_name || r.deal.kol_id, whereOf(s, ctx, r.deal), R.stepShort(r.step ? r.step.sub_status : ''), r.deal.pic || '']), total: null };
+  /* CR-24 §4.7 — Work queue: the columns of the table (no personal data) */
+  function workQueue(x) {
+    const s = x.state, W = O.wq, rows = R.workQueue(s, x.opts);
+    return { key: 'workqueue', name: O.sheet.workqueue, header: [W.col.bucket, W.col.due, W.col.kol, W.col.campaign, W.col.stage, W.col.action, W.col.waiting, W.col.inStage, W.col.stuck, W.col.pic],
+      rows: rows.map(r => [W.sec[r.bucket], dmy(r.due), r.kind === 'approval' ? W.approval : (R.kolById(s, r.kol_id) || {}).display_name || r.kol_id || '', r.campaign_id ? R.campaignName(s, r.campaign_id) : '',
+        r.stage || '', R.workActionText(r), W.w[r.waiting], r.inStage, r.stuck ? W.tiles.stuck : '', r.pic || '']), total: null };
   }
 
   /* ===================== Deals › Performance (CR-10 §4.7) ===================== */
@@ -225,14 +210,14 @@ KT.export = (function (R, C) {
     return { key: 'draftnotes', name: NT.sheet, header: NT.exportCols, rows, total: null };
   }
 
-  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, allocation, workload,
-    summary_ops: summaryOps, queue, pipeline, due };
+  const WIDGETS = { packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload,
+    summary_ops: summaryOps, workqueue: workQueue };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
   /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
   /* CR-19 §4.5: Campaign timeline in place of Activity */
   /* CR-20: + Packages · Draft notes (counts) at the end */
-  const TABS = { all: ['summary', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'allocation', 'workload'], ops: ['summary_ops', 'queue', 'pipeline', 'due'] };
+  const TABS = { all: ['summary', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-24: no Pillar allocation · Operations = Work queue
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */

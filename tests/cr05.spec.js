@@ -186,17 +186,17 @@
     });
     test('TC-34: Operations (PIC All) — queue sizes · Overdue most late first', () => {
       const s = fresh(), Q = R.opsQueues(s, { campaign: '', pic: '', tier: '' }, TD);
-      assert.deepEqual(R.QUEUES.map(k => [k, Q[k].length]), [['overdue', 5], ['unpaid', 130], ['beforeBrief', 0], ['termNotSet', 70], ['pillarNotSet', 252], ['noDate', 48], ['needsPhase', 0], ['outside', 24], ['noProducts', 4]], 'CR-06 adds the Campaign queue noProducts');
+      assert.deepEqual(R.QUEUES.map(k => [k, Q[k].length]), [['overdue', 1], ['unpaid', 130], ['beforeBrief', 0], ['termNotSet', 70], ['pillarNotSet', 252], ['noDate', 48], ['needsPhase', 0], ['outside', 24], ['noProducts', 4]], 'CR-06 adds the Campaign queue noProducts');
       const rows = R.queueRows(s, 'overdue', Q.overdue, TD);
       /* CR-15: D000098 (Brief) waits on Script, which has no due date — the most late is now D000051's Draft 2 */
       assert.equal(rows[0].deal.deal_id, 'D000051');
       assert.equal(rows[0].issue, C.ops.issueOverdue('Draft 2', '20/09/2026', 15));
-      assert.ok(R.queueRows(s, 'overdue', Q.overdue, TD).some(r => r.issue === C.ops.issueOverdue('Post', '24/09/2026', 11)), 'Draft 1 (1 round) → Approve with no date → the Post due');
+      assert.ok(!R.queueRows(s, 'overdue', Q.overdue, TD).some(r => r.issue === C.ops.issueOverdue('Post', '24/09/2026', 11)), 'CR-23 §3.2: Draft 1 (1 round) → Approve with no date → no due (was the Post due)');
       assert.ok(rows.every((r, i) => !i || rows[i - 1].rank >= r.rank));
     });
     test('TC-35 / TC-36: Pang only sees Pang · Workload open deals add up to 70', () => {
       const s = fresh(), Q = R.opsQueues(s, { campaign: '', pic: 'Pang', tier: '' }, TD);
-      assert.deepEqual([Q.overdue.length, Q.unpaid.length, Q.pillarNotSet.length], [1, 13, 39]);
+      assert.deepEqual([Q.overdue.length, Q.unpaid.length, Q.pillarNotSet.length], [0, 13, 39]);   // CR-23 §3.2: Pang's overdue was a last Draft waiting on Approve
       assert.ok(R.QUEUES.filter(k => k !== 'noProducts').every(k => Q[k].every(d => d.pic === 'Pang')), 'deal queues (noProducts lists Campaigns)');
       const w = R.workload(s, { campaign: '', pic: '', tier: '' }, TD);
       assert.equal(w.reduce((a, r) => a + r.open, 0), 70);

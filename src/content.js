@@ -1450,5 +1450,77 @@ KT.content = (function () {
     cardDeal: 'Deal', cardMoney: 'Money', cardNext: 'Next', nextStep: 'Next step', nextDue: 'Due', postDueL: 'Post due', shipmentL: 'Shipment', payStatus: 'Payment status',
     colStep: 'Step', colExpected: 'Expected', colDone: 'Done', colLinks: 'Links / notes', noNext: 'Nothing next',
   });
+  /* ===================== CR-23 — Products given · Cancelled report · Next due · Drag to Post / Cancel · Ship by · Post date outside the Campaign · Deal modal ===================== */
+  C.cancel = {
+    reasons: { kol_declined: 'KOL declined', price: 'Price not agreed', no_response: 'No response from KOL', schedule: "Schedule doesn't fit", content: 'Content not approved', brand_change: 'Brand / campaign change', other: 'Other' },
+    title: (id, kol) => `Cancel deal · ${id} · ${kol}`, reason: 'Reason', chooseReason: 'Choose a reason', detail: 'Detail', detailHint: 'Needed when the reason is Other', date: 'Date',
+    impact: 'What this does', releases: x => `Releases ${x} from the campaign budget`, alsoShip: 'Also cancel the sample shipment', stays: x => `Stays as it is: ${x}`,
+    pkgReturns: n => `Returns ${n} use${n === 1 ? '' : 's'} to the package`, paidWarn: w => `Payment already ${w} — follow up with accounting`, sent: 'sent', paid: 'paid', nothing: 'Nothing else changes',
+    ok: 'Cancel deal', keep: 'Keep deal', errBox: n => `${n} thing${n === 1 ? '' : 's'} to fix before cancelling`,
+    /* Settings › Lists */
+    nav: 'Cancel reasons', hint: 'The reasons people pick when they cancel a deal · Other always stays (it asks for a detail)', label: 'Reason', add: '+ Add reason', addPh: 'e.g. KOL went with a competitor',
+    saved: 'Cancel reasons saved', used: n => `${n} deal${n === 1 ? '' : 's'}`, otherFixed: 'Other is always there', dup: 'This reason is already in the list', empty: 'Enter a reason',
+  };
+  Object.assign(C.msg, {
+    cancelReasonRequired: 'Choose a reason', cancelDetailRequired: 'Add a detail — the reason is Other',
+    shipByRequired: 'Enter the ship-by date', shipByBeforeMove: l => `${l} can't be before the move date`, shipByAfterDraft1: 'After the Draft 1 due — the KOL may not have the product in time',
+    movePostDueRequired: 'Enter the post due', moveExpectedScript: 'Enter the expected script date', moveExpectedDraft: k => `Enter the expected Draft ${k} date`,
+    dateBeforeCampaign: (d, s) => `${d} is before this campaign starts (${s})`, dateAfterCampaign: (d, e) => `${d} is after this campaign ends (${e})`, dateBetweenPhases: d => `${d} falls between phases`,
+    postInTwoPhases: (n, d) => `${n}: ${d} is in more than one phase — pick the phase of this post`,
+    /* §3.8 #7 — the Deal modal's bars in English */
+    payNoDocs: "Marked as paid, but documents aren't checked yet", payCancelPaid: 'Fully paid, but the deal is cancelled', completeUnpaid: 'Complete, but not fully paid yet',
+    completeNeedsPosts: 'Complete needs at least 1 post', completePostsIncomplete: n => `Complete, but ${n} post${n === 1 ? ' is' : 's are'} not done yet (each needs a post date and a link)`,
+    dealKolLocked: n => `The KOL can't change — this deal already has ${n} post${n === 1 ? '' : 's'}`, draftOutsidePlan: (n, m) => `Has a Draft ${n} date, but the plan has ${m} round${m === 1 ? '' : 's'}`,
+    freeWithCost: a => `Free, but it has costs of ${a}`, metricsNoDate: n => `${n}: has numbers but no "as of" date — today is used when saved`,
+    postDupLegacy: (n, id, kol) => `${n}: the same link as ${id} (${kol}) in the old data — James decides which row stays`, postLinkHandle: (n, h, handle) => `${n}: the link is @${h}'s, not @${handle}`,
+    postLinkPlatform: (n, p, pl) => `${n}: the link is ${p}, but the account is ${pl}`, postNoViews: n => `${n}: posted but no Views yet (they can be added later)`,
+    postTiktokDate: (n, td, pd) => `${n}: the clip ID says it was posted on ${td}, but ${pd} is entered`,
+  });
+  Object.assign(C.move, {
+    shipBy: 'Ship by', buyBy: 'Buy by', suggested: (d, n, from) => `Suggested: ${d} (${n} day${n === 1 ? '' : 's'} before the ${from === 'draft1' ? 'Draft 1 due' : 'post due'})`, suggestTip: 'Put this date in the box',
+    doneCosts: x => `✓ Costs ${x}`, doneQt: '✓ Confirm QT details', doneShip: m => `✓ Shipment ${m}`, doneSteps: '✓ Steps', expandTip: 'Open to change', enterHint: 'Enter = Move',
+  });
+  Object.assign(C.samples, {
+    shipByNotSet: 'Ship by not set', setShort: 'Set', noShipByBar: n => `${n} shipment${n === 1 ? ' has' : 's have'} no ship-by date`, setDates: 'Set dates',
+    shipByOn: d => `Ship by ${d}`, buyByOn: d => `Buy by ${d}`, shippedLine: d => `Shipped ${d}`, deliveredLine: d => `Delivered ${d}`, purchasedOn2: d => `Purchased ${d}`, clearShipBy: 'Clear',
+  });
+  Object.assign(C.deal, {
+    postDateWord: 'Post date', postDueWord: 'Post due', changeDate: 'Change date', pickPhase: 'Pick phase', noDueDate: 'No due date', viewCosts: 'View costs ›', viewTimeline: 'View timeline ›',
+    useShipProducts: 'Use shipment products', shipProductsSet: id => `${id}: products set from its shipment`, dropPost: 'Drop to mark as posted', dropCancel: 'Drop to cancel',
+  });
+  Object.assign(C.overview, {
+    productsTitle: 'Products given', productsTip: 'The pieces sent (or bought by the KOL) per product — deals not cancelled · from the sample shipments',
+    totalPieces: 'Total pieces', toKols: n => `to ${n} KOL${n === 1 ? '' : 's'}`, pctOfTotal: p => `${p}% of total`, reimbursed: x => `${x} reimbursed`,
+    colProduct: 'Product', colTrCode: 'TR code', colDelivered: 'Delivered', colToShip: 'To ship', colKols: 'KOLs', notRecorded: 'Product not recorded', notRecordedN: n => `${n} shipment${n === 1 ? '' : 's'}`,
+    noProductsSent: "No products sent yet — they're recorded when a deal moves to Confirm QT", productRowTip: 'Open these shipments',
+    cancelledTitle: 'Cancelled deals', cancelledLine: (n, x) => `${n} cancelled · ${x} released`, colDealId: 'Deal ID', colCancelledAt: 'Cancelled at', colCancelledOn: 'Cancelled on',
+    colReason: 'Reason', colDetail: 'Detail', colValue: 'Value', colAssigned: 'Assigned to', noCancelled: 'No cancelled deals in this campaign', allReasons: 'All',
+  });
+  Object.assign(C.overview.sheet, { products: 'Products given', cancelled: 'Cancelled' });
+  Object.assign(C.overview.file, { products: 'Products_given', cancelled: 'Cancelled_deals' });
+  /* ===================== CR-24 — Operations = Work queue · no Pillar allocation ===================== */
+  const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  C.overview.wq = {
+    assigned: 'Assigned to', everyone: 'Everyone', unassigned: 'Unassigned', campaigns: 'Campaigns', campDefault: 'Not complete', campAll: n => `All (${n})`, campN: n => pl(n, 'campaign'),
+    campDefaultBtn: 'Not complete', campAllBtn: 'All', waiting: 'Waiting on', w: { all: 'All', us: 'Us', kol: 'KOL' },
+    tiles: { overdue: 'Overdue', week: 'Due this week', none: 'No due date', stuck: 'Stuck', us: 'Waiting on us' }, noneKol: n => `${n} waiting on KOL`,
+    usPart: { shipment: n => pl(n, 'shipment'), payment: n => pl(n, 'payment'), metrics: n => `${n} metrics`, approval: n => pl(n, 'approval') },
+    title: 'Work queue', sec: { overdue: 'Overdue', today: 'Today', week: 'This week', later: 'Later', none: 'No due date' },
+    col: { due: 'Due', kol: 'KOL', campaign: 'Campaign', stage: 'Stage', action: 'Next action', waiting: 'Waiting on', inStage: 'In stage', pic: 'Assigned to', bucket: 'Section', stuck: 'Stuck' },
+    dueLate: n => `${n} d overdue`, dueToday: 'Today', dueIn: n => `in ${n} d`, days: n => `${n} d`, stuck: n => `Stuck ${n} d`,
+    action: { confirm_qt: 'Confirm quotation', send_brief: 'Send brief', script: 'Script from KOL', draft: n => `Draft ${n} from KOL`, approve: 'Approve content', post: 'Post from KOL',
+      next: st => st, ship: 'Ship samples', deliver: 'Confirm delivery', pay: 'Pay KOL', metrics: 'Enter metrics', review: 'Review request' },
+    btn: { move: 'Move stage', shipped: 'Mark shipped', delivered: 'Mark delivered', paid: 'Mark paid', metrics: 'Enter metrics', review: 'Review', setDate: 'Set date' },
+    setTitle: l => `Set ${l}`, dateSet: (l, d) => `${l} set to ${d}`, approval: 'Approval',
+    empty: 'Nothing waiting — every piece of work is done', emptyFilter: 'Nothing here with this filter', clearFilter: 'Show all',
+    flowTitle: 'Stage flow', avg: n => `avg ${n} d`, stuckN: n => `${n} stuck`, flowFoot: (p, c) => `Posted ${p} · Cancelled ${c}`, flowTip: 'Keep this stage in the Work queue',
+    teamTitle: 'Team load', teamTip: 'Show this person’s work', teamCol: { pic: 'Assigned to', open: 'Open deals', overdue: 'Overdue', week: 'Due this week', none: 'No due date', stuck: 'Stuck', us: 'Waiting on us' },
+    fixTitle: n => `Data to fix (${n})`, fix: 'Fix', fixNone: 'Nothing to fix',
+    fixKind: { missing: k => `Missing: ${k}`, noShipBy: 'Ship by not set', postedNoDate: 'Posted without date', noProducts: 'Campaign without products', noBudget: 'Phase without budget', dupLinks: 'Duplicate post link' },
+    stuckDays: 'Stuck after (days)', stuckHint: 'A deal in the same stage longer than this (and not Overdue) shows "Stuck" in Operations', stuckInvalid: 'Enter whole days from 1 to 365', stuckSaved: 'Stuck days saved',
+    summaryCard: 'Summary', fixCard: 'Data to fix',
+  };
+  Object.assign(C.overview.sheet, { workqueue: 'Work queue' });
+  Object.assign(C.overview.file, { workqueue: 'Work_queue' });
   return C;
 })();

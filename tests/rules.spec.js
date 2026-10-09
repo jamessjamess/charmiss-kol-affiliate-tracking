@@ -162,8 +162,9 @@
       const s = fresh(), d = Object.assign(deal(s, 'D000044'), { pillar: 'Awareness' });   // CR-03: a pillar is needed from Confirm QT on
       s.deal_posts.push({ post_id: 'PX1', deal_id: 'D000044', expected_post_date: '2026-09-20', post_date: null });
       s.deal_posts.push({ post_id: 'PX2', deal_id: 'D000044', expected_post_date: '2026-09-10', post_date: null });
-      const d2 = { ...d, sub_status: 'Draft 1', status: 'Inprocess' };
+      const d2 = { ...d, sub_status: 'Approve', status: 'Inprocess' };   // CR-23 §3.2: from Approve the next is Post
       assert.equal(R.dueDate(s, d2), '2026-09-10');
+      assert.equal(R.dueDate(s, { ...d, sub_status: 'Draft 1', status: 'Inprocess' }), null, 'CR-23 §3.2: at the last Draft the next is Approve — our own work, no due unless one is set');
     });
     test('completed / cancelled deals are never overdue', () => {
       const s = fresh();
@@ -234,7 +235,7 @@
     test('skipping a required step is a warning, not an error', () => {
       const s = fresh();
       s.deals.push({ deal_id: 'D999997', campaign_id: 'KS', kol_id: 'K0120', status: 'List', sub_status: 'Shortlist', pillar: 'Awareness', payment_term: 'postpaid', rate_card: 3000, cta: 'TikTok' });   // CR-10 §4.12: a term is needed into Confirm QT · CR-20 §4.7: a rate card too · CR-22: a CTA
-      const r = R.checkMove(s, deal(s, 'D999997'), 'Draft 1', { date: TODAY, ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } });   // (CR-22 §3.3: past Confirm QT with no shipment → how the samples go)
+      const r = R.checkMove(s, deal(s, 'D999997'), 'Draft 1', { date: TODAY, ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }], ship_by: TODAY } });   // (CR-23 §3.4: + Ship by)   // (CR-22 §3.3: past Confirm QT with no shipment → how the samples go)
       assert.deepEqual(r.errs, []);
       assert.ok(r.warns.some(w => w.msg === C.msg.moveAutoDone(R.dmy(TODAY).slice(0, 5), 'Confirm QT, Brief, Script')), 'CR-15: marked done on the day of the move');
     });

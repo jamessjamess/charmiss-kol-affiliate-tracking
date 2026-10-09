@@ -19,7 +19,7 @@
   }
   /* a move the way the dialog does it (state changed, like screen-move.js apply) */
   /* CR-22: from Contacted a CTA is asked · at Confirm QT how the samples go (the seed deals have neither) — a move here gives both unless the test says otherwise */
-  const C22 = { cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }] } };
+  const C22 = { cta: 'TikTok', ship: { method: 'warehouse', items: [{ tr_code: 'X1', qty: 1 }], ship_by: '2026-10-10' } };   // CR-23 §3.4: + Ship by
   function move(s, d, to, f) {
     let pn = 900000, sn = 900;
     const r = R.applyMove(s, d, to, Object.assign({ date: TD, today: TD }, C22, f || {}), { logId: nextLog(s), quoteId: 'Q99999', eventId: nextEv(s), now: new Date(NOW), user: 'U000', postId: () => 'P' + pn++, shipmentId: () => 'SH' + String(++sn).padStart(6, '0') });
@@ -135,8 +135,8 @@
     });
     test('TC-18: → Confirm QT with nothing → Pillar · Payment term · Rate card (English) · Move is never blocked by the rule itself (errors after Move = the screen)', () => {
       const s = fresh(), d = shortlistDeal(s), r = R.checkMove(s, d, 'Confirm QT', { date: TD });
-      assert.deepEqual(r.errs.map(e => e.field), ['cta', 'ship_method', 'ship_items', 'pillar', 'payment_term', 'rate_card'], 'CR-22: + CTA · Method · Products');
-      assert.deepEqual(r.errs.map(e => e.msg).slice(3), ['Choose a pillar to move to Confirm QT or later', 'Choose a payment term to move to Confirm QT or later', 'Enter the rate card to move to Confirm QT or later']);
+      assert.deepEqual(r.errs.map(e => e.field), ['cta', 'ship_method', 'ship_items', 'ship_by', 'pillar', 'payment_term', 'rate_card'], 'CR-22: + CTA · Method · Products · CR-23: Ship by');
+      assert.deepEqual(r.errs.map(e => e.msg).slice(4), ['Choose a pillar to move to Confirm QT or later', 'Choose a payment term to move to Confirm QT or later', 'Enter the rate card to move to Confirm QT or later']);
       assert.equal(R.dropPlan(s, d, 'Confirm QT', TD).kind, 'dialog');
     });
     test('TC-19: → Confirm QT · Awareness · Prepaid · Rate card 3,000 · Post due 20/10 → Total ฿3,000 · remaining −฿13,700 → −฿16,700 · Undo = the deal as before', () => {
@@ -262,7 +262,7 @@
     });
     test('TC-27: a Confirm QT date after the Brief date → order error · fixed → both logged on their dates', () => {
       const s = fresh(), d = shortlistDeal(s);
-      const f = Object.assign({ date: '2026-10-07', pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', steps: { 'Confirm QT': '2026-10-08' }, expected: { expected_draft1_date: '2026-10-15' } }, C22);
+      const f = Object.assign({ date: '2026-10-07', pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', steps: { 'Confirm QT': '2026-10-08' }, expected: { expected_draft1_date: '2026-10-15', expected_script_date: '2026-10-12' } }, C22);   // CR-23 §3.2: + Script
       assert.ok(R.checkMove(s, d, 'Brief', f).errs.some(e => e.field === 'date' && e.msg === C.msg.moveDateBeforeSteps));
       f.steps['Confirm QT'] = '2026-10-06';
       assert.deepEqual(R.checkMove(s, d, 'Brief', f).errs, []);
@@ -276,6 +276,8 @@
       move(s, d, 'Confirm QT', { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000' });
       assert.equal(R.dropPlan(s, deal(s, d.deal_id), 'Brief', TD).kind, 'dialog', 'TC-43: no Expected Draft 1');
       deal(s, d.deal_id).expected_draft1_date = '2026-10-15';
+      assert.equal(R.dropPlan(s, deal(s, d.deal_id), 'Brief', TD).kind, 'dialog', 'CR-23 §3.2: the Expected script date too');
+      deal(s, d.deal_id).expected_script_date = '2026-10-12';
       assert.equal(R.dropPlan(s, deal(s, d.deal_id), 'Brief', TD).kind, 'instant', 'TC-28');
     });
     test('TC-29: Shortlist → Post: the same dialog with Post (link · date) + the Confirm QT details + the steps passed', () => {
@@ -346,7 +348,7 @@
     const atQt = s => { const d = shortlistDeal(s); move(s, d, 'Confirm QT', { pillar: 'Awareness', paymentTerm: 'prepaid', rateCard: '3000', postDue: '2026-10-20' }); return deal(s, d.deal_id); };
     test('TC-41: → Brief without Expected Draft 1 → "Enter the expected Draft 1 date" · +7d = 15/10 → moves · Due 15/10', () => {
       const s = fresh(), d = atQt(s);
-      assert.deepEqual(R.stageRequirements(s, d, 'Brief', {}).next, [{ field: 'expected_draft1_date', req: true }, { field: 'expected_script_date', req: false }]);
+      assert.deepEqual(R.stageRequirements(s, d, 'Brief', {}).next, [{ field: 'expected_draft1_date', req: true }, { field: 'expected_script_date', req: true }], 'CR-23 §3.2: Script in the plan → required');
       assert.ok(R.checkMove(s, d, 'Brief', { date: TD }).errs.some(e => e.msg === 'Enter the expected Draft 1 date'));
       move(s, d, 'Brief', { expected: { expected_draft1_date: R.addDays(TD, 7) } });
       const nd = deal(s, d.deal_id);
@@ -364,11 +366,13 @@
       move(s, d, 'Brief', { expected: { expected_draft1_date: '2026-10-15' } }); move(s, deal(s, d.deal_id), 'Script', {});
       const cur = deal(s, d.deal_id);
       let q = R.stageRequirements(s, cur, 'Draft 1', {});
-      assert.deepEqual(q.next, [{ field: 'expected_approve_date', req: false }]); assert.deepEqual(q.nextRound, { k: 2, on: false });
+      /* CR-23 §3.2 — the last Draft: the Post due (not required, no Expected approve) · + Add Draft 2 round → Expected Draft 2 date required */
+      assert.deepEqual(q.next, [{ field: 'expected_post_date', req: false }]); assert.deepEqual(q.nextRound, { k: 2, on: false });
       q = R.stageRequirements(s, cur, 'Draft 1', { nextRound: true });
-      assert.deepEqual(q.next, [{ field: 'expected_draft2_date', req: false }]);
-      assert.deepEqual(R.checkMove(s, cur, 'Draft 1', { date: TD, nextRound: true }).errs, []);
-      move(s, cur, 'Draft 1', { nextRound: true });
+      assert.deepEqual(q.next, [{ field: 'expected_draft2_date', req: true }]);
+      assert.deepEqual(R.checkMove(s, cur, 'Draft 1', { date: TD, nextRound: true }).errs.map(e => e.msg), ['Enter the expected Draft 2 date']);
+      assert.deepEqual(R.checkMove(s, cur, 'Draft 1', { date: TD, nextRound: true, expected: { expected_draft2_date: '2026-10-18' } }).errs, []);
+      move(s, cur, 'Draft 1', { nextRound: true, expected: { expected_draft2_date: '2026-10-18' } });
       assert.equal(deal(s, d.deal_id).draft_rounds, 2);
       assert.equal(C.move.addRound(2), '+ Add Draft 2 round');
     });
@@ -383,7 +387,7 @@
       const s = fresh(), d = atQt(s);
       const before = R.checkMove(s, d, 'Brief', { date: TD, expected: { expected_draft1_date: '2026-10-05' } });
       assert.ok(before.errs.some(e => e.msg === "Expected date can't be before the move date"));
-      const after = R.checkMove(s, d, 'Brief', { date: TD, expected: { expected_draft1_date: '2026-10-25' } });
+      const after = R.checkMove(s, d, 'Brief', { date: TD, expected: { expected_draft1_date: '2026-10-25', expected_script_date: '2026-10-12' } });
       assert.deepEqual(after.errs, []); assert.ok(after.warns.some(w => w.msg === 'After the post due (20/10)'));
     });
     test('an old date the deal already had (shown unchanged in the dialog) never blocks · the same field changed to a past date does', () => {
@@ -395,7 +399,7 @@
     });
     test('TC-48: Shortlist → Draft 1 asks only the Next expected of Draft 1 (approve), not Expected Draft 1 of the steps passed', () => {
       const s = fresh(), d = shortlistDeal(s), q = R.stageRequirements(s, d, 'Draft 1', {});
-      assert.deepEqual(q.next.map(x => x.field), ['expected_approve_date']);
+      assert.deepEqual(q.next.map(x => x.field), ['expected_post_date'], 'CR-23 §3.2: the last Draft asks the Post due (not Expected approve)');
       assert.ok(!('expected_draft1_date' in q.fields));
       assert.deepEqual(q.skipped.map(x => x.sub_status), ['Confirm QT', 'Brief', 'Script']);
     });

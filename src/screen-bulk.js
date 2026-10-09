@@ -109,7 +109,7 @@ KT.bulk = (function () {
   }
   function rowChecks(id, x) {
     const p = pseudo(id, x), r = R.checkMove(state(), p.deal, startAt(), p.form);
-    return r.errs.filter(e => !['to', 'pillar', 'cta', 'ship_method', 'ship_items'].includes(e.field));   // the pillar · CTA · sample method / products are the header's (one message there)
+    return r.errs.filter(e => !['to', 'pillar', 'cta', 'ship_method', 'ship_items', 'ship_by'].includes(e.field));   // the pillar · CTA · sample method / products are the header's (one message there)
   }
   function plan() { const h = api.header(); return R.bulkShortlistPlan(state(), [...bk.sel.keys()], h.campaign, { pic: h.assign || 'me', me: R.picName(U.me()) || '' }); }
   function drawSide() {
@@ -128,7 +128,7 @@ KT.bulk = (function () {
           `<button type="button" class="x" data-bkrm="${esc(id)}" aria-label="${esc(B.removeRow(k.display_name))}">×</button></div>` +
         `<div class="bk-sf"><label class="bk-f"><span>${esc(B.rate)}</span><input type="text" inputmode="decimal" class="mv-money${bad('rate_card') ? ' invalid' : ''}" data-srate="${esc(id)}" value="${esc(rateVal)}"${rateAuto ? ' disabled' : ''} autocomplete="off">` +
           `<span class="muted small">${rateAuto ? esc(MV.fromPackage) : KT.move.lastRateHTML(s, x.last, `data-slast="${esc(id)}"`)}</span></label>` +
-        `<label class="bk-f"><span>${esc(B.postDue)}</span>${dateHTML(`data-sdue="${esc(id)}"`, x.postDue, { label: B.postDue })}<span class="muted small" data-sphase="${esc(id)}">${esc(KT.move.phaseHint(h.campaign, x.postDue)) || '&nbsp;'}</span></label>` +
+        `<label class="bk-f"><span>${esc(B.postDue)}</span>${dateHTML(`data-sdue="${esc(id)}"`, x.postDue, { label: B.postDue })}<span class="muted small" data-sphase="${esc(id)}">${KT.move.dateHintHTML(h.campaign, x.postDue) || '&nbsp;'}</span></label>` +   // CR-23 §3.5
         (showTerm ? `<label class="bk-f"><span>${esc(B.term)}${termReq ? ' <span class="req">*</span>' : ''}</span><select data-sterm="${esc(id)}"${bad('payment_term') ? ' class="invalid"' : ''}>${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), x.term, MV.chooseTerm)}</select><span>&nbsp;</span></label>` : '') +
         (showTerm && x.term === 'package' ? `<label class="bk-f"><span>${esc(MV.package)} <span class="req">*</span></span><select data-spkg="${esc(id)}"${bad('package_id') ? ' class="invalid"' : ''}>${optionsHTML(pk, x.packageId, MV.choosePackage)}</select><span>&nbsp;</span></label>` +
           `<label class="bk-f bk-uses"><span>${esc(B.uses)}</span><input type="number" min="1" step="1" data-suses="${esc(id)}" value="${esc(x.units)}"><span>&nbsp;</span></label>` : '') +
@@ -182,7 +182,7 @@ KT.bulk = (function () {
     if (!bk) return;
     const r = e.target.closest('[data-srate]'); if (r) { bk.sel.get(r.dataset.srate).rate = r.value; bk.dirty = true; return; }
     const u = e.target.closest('[data-suses]'); if (u) { bk.sel.get(u.dataset.suses).units = u.value; bk.dirty = true; return; }
-    const du = e.target.closest('[data-sdue]'); if (du && R.isISODate(du.value)) { bk.sel.get(du.dataset.sdue).postDue = du.value; const ph = document.querySelector(`[data-sphase="${CSS.escape(du.dataset.sdue)}"]`); if (ph) ph.textContent = KT.move.phaseHint(api.header().campaign, du.value); }
+    const du = e.target.closest('[data-sdue]'); if (du && R.isISODate(du.value)) { bk.sel.get(du.dataset.sdue).postDue = du.value; const ph = document.querySelector(`[data-sphase="${CSS.escape(du.dataset.sdue)}"]`); if (ph) ph.innerHTML = KT.move.dateHintHTML(api.header().campaign, du.value) || '&nbsp;'; }
   }
   function onChange(e) {
     const t = e.target, map = { bk_fplatform: 'platform', bk_ftier: 'tier', bk_ftype: 'type', bk_fcat: 'category', bk_fowner: 'owner', bk_fstatus: 'status', bk_flast: 'lastWorked', bk_fperf: 'perf' };

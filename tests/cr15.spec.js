@@ -122,8 +122,8 @@
     test('TC-10: the last Draft without an Approve due → the due is the Post\'s · with one → the Approve\'s · Draft k → its own', () => {
       const s = fresh(), d = deal(s, 'D000287');   // Draft 1 of 1
       assert.deepEqual([d.sub_status, R.planOf(d).drafts], ['Draft 1', 1]);
-      const postDue = R.postsOf(s, d.deal_id).filter(p => !p.post_date).map(p => p.expected_post_date).filter(Boolean).sort()[0] || null;
-      assert.deepEqual([R.dueDate(s, d), R.dueStep(s, d).sub_status], [postDue, 'Post']);
+      /* CR-23 §3.2 — Approve is our own work: no date of its own → no due (was: the Post's) */
+      assert.deepEqual([R.dueDate(s, d), R.dueStep(s, d).sub_status, R.isOverdue(s, d, TD)], [null, 'Approve', false]);
       d.expected_approve_date = '2026-10-20';
       assert.deepEqual([R.dueDate(s, d), R.dueStep(s, d).sub_status], ['2026-10-20', 'Approve']);
       const two = Object.assign({}, d, { draft_rounds: 2, expected_draft2_date: '2026-10-15' });

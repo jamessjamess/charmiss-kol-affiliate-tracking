@@ -10,7 +10,8 @@ KT.screens.shipments = (function () {
   const U = KT.ui;
   const { C, R, $, esc, today, store, state, pref, commit, toast, userId, can, ICON, optionsHTML, checksHTML, go, setHash, takeParams, openDrawer, fillDrawer } = U;
   const SM = C.samples, SH = C.ship;
-  const sv = { tab: 'to-ship', f: { campaign: '', pic: 'all', purpose: '', method: '', q: '', status: '' }, showImported: false, sel: new Set(), rows: [], scope: [], pl: null, sh: null };
+  const blankF = () => ({ campaign: '', pic: 'all', purpose: '', method: '', q: '', status: '', product: '', phase: '' });   // CR-23 §3.1: + product · phase (from Dashboard › Products given)
+  const sv = { tab: 'to-ship', f: blankF(), showImported: false, sel: new Set(), rows: [], scope: [], pl: null, sh: null };
   const settings = () => R.sampleSettings(state().lookups);
   const actor = () => U.actor();
   const myPic = () => R.picName(actor()) || '';
@@ -49,6 +50,10 @@ KT.screens.shipments = (function () {
       if (p.q !== undefined) sv.f.q = p.q || '';
       if (p.status !== undefined) sv.f.status = p.status || '';
       if (p.purpose !== undefined) sv.f.purpose = p.purpose || '';
+      if (p.method !== undefined) sv.f.method = p.method || '';
+      if (p.product !== undefined) sv.f.product = p.product || '';   // CR-23 §3.1
+      if (p.phase !== undefined) sv.f.phase = p.phase || '';
+      if (p.imported) sv.showImported = true;
       sv.sel.clear(); $('sh_tools').dataset.built = '';
     }
     if (id && R.SHIP_TABS.includes(id)) { if (sv.tab !== id) { sv.tab = id; sv.sel.clear(); sv.f.status = ''; } }
@@ -71,7 +76,7 @@ KT.screens.shipments = (function () {
       const k = b.dataset.unset; if (k === 'pic') sv.f.pic = 'all'; else if (k === 'q') sv.f.q = ''; else sv.f[k] = '';
       $('sh_tools').dataset.built = ''; sv.sel.clear(); draw();
     });
-    $('sh_cards').addEventListener('click', e => { const c = e.target.closest('[data-shq]'); if (!c) return; const k = c.dataset.shq;
+    $('sh_cards').addEventListener('click', e => { if (e.target.closest('[data-shsetdates]')) { setDates(); return; } const c = e.target.closest('[data-shq]'); if (!c) return; const k = c.dataset.shq;
       if (k === 'in_transit') { sv.tab = 'in-transit'; sv.f.status = ''; } else sv.f.status = sv.f.status === k ? '' : k === 'noShipBy' ? 'noShipBy' : k;
       sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); });
     $('sh_bulk').addEventListener('click', bulkClick);
@@ -132,6 +137,8 @@ KT.screens.shipments = (function () {
     if (sv.f.purpose) chips.push(['purpose', `${SH.purpose}: ${SH.purposes[sv.f.purpose]}`]);
     if (sv.f.method) chips.push(['method', `${C.samples.colMethod}: ${R.shipMethodLabel(state().lookups, sv.f.method)}`]);
     if (sv.f.status) chips.push(['status', `${SH.status}: ${sv.f.status === 'noShipBy' ? SH.cards.noShipBy : SM.status[sv.f.status]}`]);
+    if (sv.f.phase) chips.push(['phase', `${C.deal.phase}: ${R.phaseName(s, sv.f.phase)}`]);
+    if (sv.f.product) { const pr = R.productByCode(s, sv.f.product); chips.push(['product', `${C.overview.colProduct}: ${sv.f.product === '__none' ? C.overview.notRecorded : pr ? `${pr.tr_code} · ${R.productShort(pr)}` : sv.f.product}`]); }
     const q = R.trim(sv.f.q);
     sv.used = chips.map(c => c[1]).concat(q ? [C.common.searchChip(q)] : []);
     U.filterChips($('sh_chips'), chips, chips.length + (q ? 1 : 0));
@@ -151,14 +158,22 @@ KT.screens.shipments = (function () {
     const d = e.target.closest('[data-shdl]'); if (d) { const m = d.closest('details'); if (m) m.open = false; exportList(d.dataset.shdl, sv.rows.map(r => r.sh), null); return; }
     const pl = e.target.closest('[data-shpl]'); if (pl) { const m = pl.closest('details'); if (m) m.open = false; openPickList(pl.dataset.shpl); }
   }
-  function clearAll() { sv.f = { campaign: '', pic: 'all', purpose: '', method: '', q: '', status: '' }; sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); }
+  function clearAll() { sv.f = blankF(); sv.sel.clear(); $('sh_tools').dataset.built = ''; draw(); }
 
   /* ---------- queue cards (To ship) ---------- */
   function drawCards(scope) {
     if (sv.tab !== 'to-ship') { $('sh_cards').innerHTML = ''; return; }
     const c = R.shipCards(scope);
     $('sh_cards').innerHTML = `<div class="qcards sh-cards">` + ['overdue', 'this_week', 'in_transit', 'noShipBy', 'problem'].map(k =>
-      `<button type="button" class="qcard${sv.f.status === k ? ' on' : ''}${k === 'overdue' && c[k] ? ' warn' : ''}" data-shq="${k}" aria-pressed="${sv.f.status === k}"><span class="n">${R.fmtNum(c[k])}</span><span class="t">${esc(SH.cards[k])}${k === 'in_transit' ? ' →' : ''}</span></button>`).join('') + `</div>`;
+      `<button type="button" class="qcard${sv.f.status === k ? ' on' : ''}${k === 'overdue' && c[k] ? ' warn' : ''}" data-shq="${k}" aria-pressed="${sv.f.status === k}"><span class="n">${R.fmtNum(c[k])}</span><span class="t">${esc(SH.cards[k])}${k === 'in_transit' ? ' →' : ''}</span></button>`).join('') + `</div>` +
+      /* CR-23 §3.4 — no Ship by is set for you any more: the ones without one, in grey, with the way to set them */
+      (c.noShipBy ? `<div class="sh-noshipby"><span>${esc(SM.noShipByBar(c.noShipBy))}</span> · <button type="button" class="link" data-shsetdates>${esc(SM.setDates)}</button></div>` : '');
+  }
+  /* "Set dates": the shipments without a Ship by, picked, and the Set ship-by dialog (the ones this person may change) */
+  function setDates() {
+    sv.f.status = 'noShipBy'; sv.sel.clear(); $('sh_tools').dataset.built = ''; draw();
+    sv.rows.filter(r => canEditSh(r.sh)).forEach(r => sv.sel.add(r.sh.shipment_id)); draw();
+    if (sv.sel.size) KT.samples.action('ship_by', [...sv.sel], () => { sv.sel.clear(); sv.f.status = ''; $('sh_tools').dataset.built = ''; draw(); });
   }
   /* ---------- bulk bar ---------- */
   function drawBulk() {
@@ -234,7 +249,11 @@ KT.screens.shipments = (function () {
     if (sv.tab === 'to-ship') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipBy)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.address)}</th><th>${esc(T.pic)}</th><th>${esc(T.status)}</th>${plCol ? `<th>${esc(T.pickList)}</th>` : ''}<th></th>`;
       span = (pick ? 11 : 10) - (plCol ? 0 : 1);
-      row = r => `<tr class="click${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(d(r.sh.ship_by))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
+      /* CR-23 §3.4 — Ship by: the date set (red when past) · "Ship by not set" (grey, never Overdue) + Set */
+      const sbCell = r => { const due = R.shipByDate(r.sh); return due ? `<span class="${r.status === 'overdue' ? 'late' : ''}">${esc(R.dmy(due))}</span>`
+        : r.sh.method === 'self_purchase' ? dash   // (KOL buys own: Buy by is optional)
+        : `<span class="muted">${esc(SM.shipByNotSet)}</span>${canEditSh(r.sh) ? ` <button type="button" class="link small" data-shact="ship_by" data-sh="${esc(r.sh.shipment_id)}">${esc(SM.setShort)}</button>` : ''}`; };
+      row = r => `<tr class="click${r.sh.method === 'self_purchase' ? ' sh-own' : ''}" data-shrow="${esc(r.sh.shipment_id)}">${cb(r)}${tdv(sbCell(r))}${kolCell(r)}<td>${campPhase(r)}</td><td>${purposeChip(r.purpose)} ${methodChip(r.sh)}</td><td class="sh-items">${itemsCell(r.sh)}</td>${addr(r)}<td>${r.pic ? esc(r.pic) : dash}</td>` +
         `<td>${chip(r.status)}${r.status === 'problem' && r.sh.problem_reason ? ` <span class="muted small">${esc(r.sh.problem_reason)}</span>` : ''}</td>${pl(r)}<td class="sh-act">${KT.samples.isSimple() ? KT.samples.quickBtnHTML(r.sh, r.status) : ''}${rowMenu(r)}</td></tr>`;
     } else if (sv.tab === 'in-transit') {
       head = `${pick ? `<th class="cb"><input type="checkbox" id="sh_all" aria-label="${esc(C.deal.selectAll)}"${rows.every(r => sv.sel.has(r.sh.shipment_id)) ? ' checked' : ''}></th>` : ''}<th>${esc(T.shipped)}</th><th class="stk${pick ? '' : ' at0'}">${esc(T.kol)}</th><th>${esc(T.campaignPhase)}</th><th>${esc(T.purpose)}</th><th>${esc(T.items)}</th><th>${esc(T.carrier)}</th><th>${esc(T.tracking)}</th><th class="num">${esc(T.days)}</th><th>${esc(T.pic)}</th><th></th>`;
@@ -307,7 +326,7 @@ KT.screens.shipments = (function () {
       `<div class="btns sh-plbtns"><button type="button" class="btn" data-plprint>${esc(SH.print)}</button><button type="button" class="btn" data-plexport>${esc(SH.exportList)}</button>` +
       (canWork() && left.length ? `<button type="button" class="btn primary" data-plship>${esc(SH.markAll)}</button>` : '') + `</div>` + (left.length ? '' : `<div class="hint">${esc(SH.allShipped)}</div>`) +
       `<section class="sec"><div class="sec-h"><span>${esc(SH.parcels(list.length))}</span></div><div class="tablewrap"><table class="tbl compact-sm"><thead><tr><th>${esc(SH.col.kol)}</th><th>${esc(SH.col.items)}</th><th>${esc(SH.col.shipBy)}</th><th>${esc(SH.col.status)}</th><th>${esc(SH.col.tracking)}</th><th></th></tr></thead><tbody>` +
-      list.map(sh => { const st = R.sampleStatus(sh, td); return `<tr><td><b class="nm">${esc(kolName(sh))}</b></td><td>${itemsCell(sh)}</td><td class="nowrap">${sh.ship_by ? esc(R.dmy(sh.ship_by)) : dash}</td><td>${chip(st)}</td><td>${trackCell(sh) || dash}</td>` +
+      list.map(sh => { const st = R.sampleStatus(sh, td); return `<tr><td><b class="nm">${esc(kolName(sh))}</b></td><td>${itemsCell(sh)}</td><td class="nowrap">${R.shipByDate(sh) ? esc(R.dmy(R.shipByDate(sh))) : dash}</td><td>${chip(st)}</td><td>${trackCell(sh) || dash}</td>` +
         `<td>${canWork() && R.canUnpick(sh) ? `<button type="button" class="icon-btn" data-plrm="${esc(sh.shipment_id)}" title="${esc(SH.removePick)}" aria-label="${esc(SH.removePick)}">${ICON.close}</button>` : ''}</td></tr>`; }).join('') +
       `</tbody></table></div></section></div>`;
     if (U.drawerOwner() === plOwner) fillDrawer(html); else openDrawer(plOwner, html);
@@ -377,7 +396,7 @@ KT.screens.shipments = (function () {
     const header = [C2.kol, C2.phase, SH.col.purpose, C2.items, C2.qty, C2.shipBy, C2.pic, C2.carrier, C2.tracking, C2.status].concat(open ? [SM.recipient, SM.phone, SM.address] : []);
     const rows = list.map(sh => { const deal = dealOf(sh.deal_id), rec = recs.get(sh.shipment_id) || {}, ph = deal ? R.primaryPhase(idx, deal.deal_id) : null, camp = sh.campaign_id || (deal && deal.campaign_id);
       return [kolName(sh), [camp ? R.campaignName(s, camp) : '', ph && ph !== R.UNSCHEDULED && ph !== R.NEEDS ? R.phaseName(s, ph) : ''].filter(Boolean).join(' › '), SH.purposes[sh.purpose || 'review'], R.itemsText(sh.items),
-        (sh.items || []).reduce((a, x) => a + (Number(x.qty) || 0), 0), sh.ship_by ? R.dmy(sh.ship_by) : '', R.shipPic(s, sh, deal), sh.carrier || '', sh.tracking_no || '', SM.status[R.sampleStatus(sh, today())]]
+        (sh.items || []).reduce((a, x) => a + (Number(x.qty) || 0), 0), R.shipByDate(sh) ? R.dmy(R.shipByDate(sh)) : '', R.shipPic(s, sh, deal), sh.carrier || '', sh.tracking_no || '', SM.status[R.sampleStatus(sh, today())]]
         .concat(open ? [rec.recipient || '', rec.phone || '', rec.address || ''] : []); });
     recs.clear();
     const name = KT.export.fileName(SM.file, KT.export.safeName(pl ? pl.name : sv.f.campaign ? R.campaignName(s, sv.f.campaign) : SH.allCampaigns), today(), fmt);
@@ -399,7 +418,7 @@ KT.screens.shipments = (function () {
       kv(SH.recipient, esc(kolName(sh))) +
       kv(SM.shipTo, (a => (a ? `${esc(a.label)} ` : '') + (a && a.secure ? `<span class="chip ok-chip">${esc(SH.addressOnFile)}</span>` : `<span class="chip">${esc(SH.noAddress)}</span>`))(shipAddr(sh))) +
       kv(SH.purpose, esc(SH.purposes[r.purpose])) + kv(SH.campaign, r.campaign_id ? esc(R.campaignName(s, r.campaign_id)) : dash) + kv(SH.col.items, itemsCell(sh)) +
-      kv(SH.col.shipBy, sh.ship_by ? esc(R.dmy(sh.ship_by)) : dash) + kv(SH.col.status, chip(st)) + kv(SH.col.carrier, sh.carrier ? esc(sh.carrier) : dash) + kv(SH.col.tracking, trackCell(sh) || dash) +
+      kv(SH.col.shipBy, R.shipByDate(sh) ? esc(R.dmy(R.shipByDate(sh))) : `<span class="muted">${esc(SM.shipByNotSet)}</span>`) + kv(SH.col.status, chip(st)) + kv(SH.col.carrier, sh.carrier ? esc(sh.carrier) : dash) + kv(SH.col.tracking, trackCell(sh) || dash) +
       kv(SH.col.shipped, sh.shipped_date ? esc(R.dmy(sh.shipped_date)) : dash) + kv(SH.col.delivered, sh.delivered_date ? esc(R.dmy(sh.delivered_date)) : dash) +
       kv(SH.note, sh.note ? esc(sh.note) : dash) + kv(SH.madeBy, esc(R.changedByName(s, sh.created_by) || '—')) + `</section></div>`;
     if (U.drawerOwner() === shOwner) fillDrawer(html); else openDrawer(shOwner, html);
@@ -434,7 +453,9 @@ KT.screens.shipments = (function () {
       U.field('ns_camp', SH.campaign, deal ? `<div><b>${esc(R.campaignName(s, deal.campaign_id))}</b></div>` : `<select id="ns_camp" data-ns="campaign_id" data-key="campaign_id" data-combo="campaign">${U.campaignOptionsHTML(d.campaign_id, C.common.none)}</select>`, { hint: esc(SH.campaignHint) }) +
       /* CR-16 §4.3 — Ship to ▾ (blank = the KOL's default when it is marked shipped) */
       (d.kol_id ? U.field('ns_shipto', SM.shipTo, `<select id="ns_shipto" data-ns="address_id" data-key="address_id"><option value="">${esc(SM.shipToDefault)}</option>${R.shipToOptions(s, d.kol_id).map(x => `<option value="${esc(x.value)}"${x.value === d.address_id ? ' selected' : ''}>${esc(x.secure ? x.label : SM.noDetails(x.label))}</option>`).join('')}</select>`, { hint: esc(SM.shipToHint) }) : '') +
-      U.field('ns_shipby', SH.col.shipBy, U.dateHTML('id="ns_shipby" data-ns="ship_by" data-key="ship_by"', d.ship_by || (deal ? R.shipBy(deal, s.lookups.sample_settings) || '' : ''), { label: SH.col.shipBy })) +
+      /* CR-23 §3.4 — empty unless typed · the CR-10 sum is a suggestion to click */
+      ((sg => U.field('ns_shipby', SH.col.shipBy, U.dateHTML('id="ns_shipby" data-ns="ship_by" data-key="ship_by"', d.ship_by || '', { label: SH.col.shipBy }),
+        sg ? { hint: `<button type="button" class="link" data-nssuggest="${esc(sg.date)}" title="${esc(C.move.suggestTip)}">${esc(C.move.suggested(R.dmy(sg.date).slice(0, 5), sg.days, sg.from))}</button>` } : {}))(deal ? R.shipBySuggest(deal, s.lookups.sample_settings) : null)) +
       `<div class="field wide"><label for="ns_items_q">${esc(SH.items)}${ns.onlyProduct ? ` <span class="chip sh-from">${esc(SH.onlyProduct)}</span>` : ''}</label>${U.productPickerHTML('ns_items', codes)}` +
       (d.items.length ? `<div class="ns-qty">${d.items.map((x, i) => `<label class="ns-qrow"><span>${esc(x.tr_code)}</span><input type="number" min="1" step="1" data-nsqty="${i}" value="${esc(x.qty)}" aria-label="${esc(SH.qty)} ${esc(x.tr_code)}"></label>`).join('')}</div>` : '') +
       `<div class="hint">${esc(SH.itemsHint)}</div></div>` +
@@ -472,6 +493,7 @@ KT.screens.shipments = (function () {
   }
   function nsClick(e, o) {
     const ns = sv.ns; if (!ns) return;
+    const sg = e.target.closest('[data-nssuggest]'); if (sg) { ns.d.ship_by = sg.dataset.nssuggest; ns.dirty = true; U.setDate($('ns_shipby'), sg.dataset.nssuggest); return; }   // CR-23 §3.4
     if (e.target.closest('[data-nsck]')) { ns.createKol = { draft: R.createKolDraft('', U.me()), touched: new Set(), submitted: false, anyway: false }; drawNew(o); return; }
     if (e.target.closest('[data-nsckback]')) { ns.createKol = null; drawNew(o); return; }
     const use = e.target.closest('[data-act="ckUse"]'); if (use && ns.createKol) { ns.createKol = null; ns.d.kol_id = use.dataset.kolid; ns.d.deal_id = ''; drawNew(o); return; }

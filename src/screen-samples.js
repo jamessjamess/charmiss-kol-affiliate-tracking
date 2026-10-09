@@ -34,19 +34,21 @@ KT.samples = (function () {
   const canEditSh = sh => R.canEditShip(U.actor(), dealOf(sh.deal_id), sh);
   const allowed = (kind, sh) => (EDIT_KINDS.includes(kind) ? canEditSh(sh) : R.canShipWork(U.actor()));
   const trackCell = sh => { const url = R.trackingLink(settings(), sh.carrier, sh.tracking_no); return !sh.tracking_no ? '' : url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(sh.tracking_no)} ↗</a>` : esc(sh.tracking_no); };
+  /* "Test 1 ×1, Test 2 ×2" — the product names (CR-23 §3.8 #4: not the TR codes) */
+  const itemNames = list => (list || []).map(x => { const p = R.productByCode(state(), x.tr_code); return `${p ? R.productShort(p) : x.tr_code} ×${x.qty}`; }).join(', ');
   /* no products: a warning only while the sample is still to ship (a delivered legacy row just shows —) */
-  const items = sh => (sh.items && sh.items.length ? esc(R.itemsText(sh.items)) : sh.status === 'to_ship' ? `<span class="chip warn-chip">${esc(SM.noProducts)}</span>` : '<span class="muted">—</span>');
+  const items = sh => (sh.items && sh.items.length ? esc(itemNames(sh.items)) : sh.status === 'to_ship' ? `<span class="chip warn-chip">${esc(SM.noProducts)}</span>` : '<span class="muted">—</span>');
+  /* CR-23 §3.4 — the Ship by cell: the date set · "Ship by not set" (grey) + Set while it is still to ship / to buy */
+  const shipByCell = (sh, st) => { const due = R.shipByDate(sh);
+    if (due) return `<span class="${st === 'overdue' ? 'late' : ''}">${esc(R.dmy(due))}</span>`;
+    if (sh.status !== 'to_ship') return '—';   // (KOL buys own: Buy by is optional)
+    return `<span class="muted">${esc(SM.shipByNotSet)}</span>${allowed('ship_by', sh) ? ` <button type="button" class="link small" data-smact="ship_by" data-sm="${esc(sh.shipment_id)}">${esc(SM.setShort)}</button>` : ''}`; };
 
-  /* ---------- the Journey's sample track (under the payment track) ---------- */
+  /* ---------- the Journey's sample track (under the payment track) — CR-23 §3.8 #4: the same one line as everywhere (summaryText) ---------- */
   function trackHTML(d) {
-    const t = R.sampleTrack(R.shipmentsOf(state(), d.deal_id), today()); if (!t) return '';
-    const dmy = x => R.dmy(x).slice(0, 5), T = SM.track;
-    const steps = t.kind === 'not_required' ? `<span class="chip">${esc(T.not_required)}</span>`
-      : t.kind === 'overdue' ? `<span class="smt late">${esc(T.overdue(dmy(t.shipBy), t.late))}</span>`
-      : [`<span class="smt ${['shipped', 'delivered'].includes(t.kind) ? 'done' : t.kind === 'this_week' ? 'warn' : ''}">${esc(['shipped', 'delivered'].includes(t.kind) ? T.to_ship(t.shipBy ? dmy(t.shipBy) : '') : T[t.kind === 'problem' ? 'problem' : t.kind](t.shipBy ? dmy(t.shipBy) : ''))}</span>`,
-        t.shipped || t.kind === 'shipped' || t.kind === 'delivered' ? `<span class="smt done">${esc(T.shipped(t.shipped ? dmy(t.shipped) : '', t.carrier))}</span>` : '',
-        t.kind === 'delivered' ? `<span class="smt done">${esc(T.delivered(t.delivered ? dmy(t.delivered) : ''))}</span>` : ''].filter(Boolean).join('<span class="smt-arrow">→</span>');
-    return `<div class="smtrack"><span class="smt-l">${esc(SM.trackL)}</span>${steps}</div>`;
+    const list = R.shipmentsOf(state(), d.deal_id), sh = list.filter(x => x.status !== 'not_required').pop() || list[list.length - 1]; if (!sh) return '';
+    const st = R.sampleStatus(sh, today()), cls = st === 'overdue' ? 'late' : st === 'this_week' ? 'warn' : ['shipped', 'delivered', 'purchased'].includes(st) ? 'done' : '';
+    return `<div class="smtrack"><span class="smt-l">${esc(SM.trackL)}</span><span class="smt ${cls}">${esc(summaryText(sh))}</span></div>`;
   }
   /* ---------- the Deal drawer's Samples section ---------- */
   function sectionHTML(d) {
@@ -67,7 +69,7 @@ KT.samples = (function () {
         sh.status === 'to_ship' ? mi('ship_by', SM.setShipBy) : '', sh.status === 'to_ship' ? mi('items', SM.editItems) : '',
         sh.status === 'to_ship' ? mi('not_required', SM.notRequired) : '',
         sh.source !== 'auto' && sh.source !== 'legacy' && sh.status === 'to_ship' ? mi('delete', SM.del, 'danger') : ''].join('');
-      const shipBy = sh.ship_by ? `${esc(R.dmy(sh.ship_by))}${sh.ship_by_overridden ? ` <span class="muted small">✎</span>` : ''}` : sh.status === 'to_ship' ? `<span class="chip warn-chip">${esc(SM.setShipBy)}</span>` : '—';
+      const shipBy = shipByCell(sh, st);
       const to = addrLabel(sh);
       return `<tr data-smrow="${esc(sh.shipment_id)}"><td>${items(sh)}${to ? `<div class="muted small" title="${esc(SM.shipTo)}">📍 ${esc(to)}</div>` : ''}</td><td class="nowrap">${shipBy}</td><td>${chip(st)}${sh.problem_reason && st === 'problem' ? ` <span class="muted small">${esc(sh.problem_reason)}</span>` : ''}${st === 'not_required' && sh.not_required_reason ? ` <span class="muted small">${esc(sh.not_required_reason)}</span>` : ''}</td>` +
         `<td>${esc(sh.carrier || '')}</td><td>${trackCell(sh)}</td><td class="nowrap">${sh.shipped_date ? esc(R.dmy(sh.shipped_date)) : '—'}</td><td class="nowrap">${sh.delivered_date ? esc(R.dmy(sh.delivered_date)) : sh.status === 'delivered' ? `<span class="muted small">${esc(SM.dateNotRecorded)}</span>` : '—'}</td>` +
@@ -81,7 +83,7 @@ KT.samples = (function () {
   /* CR-11 §4.6 — a Delivered shipment from the old files: text only (no ⋯ / inputs) · empty = "—" (not "Date not recorded") */
   const dash = v => (v ? esc(v) : `<span class="muted" title="${esc(C.golive.imported)}">${esc(C.common.none)}</span>`);
   function legacyRow(sh, st) {
-    return `<tr data-smrow="${esc(sh.shipment_id)}" class="sm-legacy" title="${esc(C.golive.imported)}"><td>${items(sh)}</td><td class="nowrap">${sh.ship_by ? esc(R.dmy(sh.ship_by)) : dash('')}</td><td>${chip(st)}</td>` +
+    return `<tr data-smrow="${esc(sh.shipment_id)}" class="sm-legacy" title="${esc(C.golive.imported)}"><td>${items(sh)}</td><td class="nowrap">${R.shipByDate(sh) ? esc(R.dmy(R.shipByDate(sh))) : dash('')}</td><td>${chip(st)}</td>` +
       `<td>${dash(sh.carrier)}</td><td>${sh.tracking_no ? trackCell(sh) : dash('')}</td><td class="nowrap">${dash(sh.shipped_date && R.dmy(sh.shipped_date))}</td><td class="nowrap">${dash(sh.delivered_date && R.dmy(sh.delivered_date))}</td><td></td></tr>`;
   }
   /* after the drawer / profile is drawn: the shipping addresses, decrypted in memory while the vault is open ·
@@ -124,11 +126,14 @@ KT.samples = (function () {
     s.deal_events.push(R.updateShipment(sh, back ? { kind: 'unpurchased' } : { kind: 'purchased', date: today() }, { eventId: store.newEventId(), now: new Date().toISOString(), user: userId() }));
     commit(back ? SM.quick.undone : SM.purchasedDone(shKol(sh))); if (after) after();
   }
-  /* "Warehouse · Test 1 ×2 · To ship" — a shipment in one line (Move stage · the Deal modal) */
+  /* "NPD · Test 1 ×1 · Ship by 12/10" — a shipment in one line, the same everywhere (CR-23 §3.8 #4: Move stage · Deal modal › Next · the Journey's
+     track): To ship → Ship by dd/mm (or Ship by not set) · KOL purchase → Buy by dd/mm · Shipped / Delivered / Purchased dd/mm · else the status */
   function summaryText(sh) {
     if (!sh) return '';
-    const s = state(), items = (sh.items || []).map(x => { const p = R.productByCode(s, x.tr_code); return `${p ? R.productShort(p) : x.tr_code} ×${x.qty}`; }).join(', ');
-    return SM.summary(R.shipMethodLabel(s.lookups, sh.method || 'warehouse'), items, SM.status[R.sampleStatus(sh, today())] || sh.status);
+    const s = state(), st = R.sampleStatus(sh, today()), due = R.shipByDate(sh), dm = x => R.dmy(x).slice(0, 5);
+    const when = ['overdue', 'this_week', 'to_ship'].includes(st) ? (due ? SM.shipByOn(dm(due)) : SM.shipByNotSet) : st === 'kol_purchase' ? (due ? SM.buyByOn(dm(due)) : SM.status.kol_purchase)
+      : st === 'shipped' && sh.shipped_date ? SM.shippedLine(dm(sh.shipped_date)) : st === 'delivered' && sh.delivered_date ? SM.deliveredLine(dm(sh.delivered_date)) : st === 'purchased' && sh.purchased_date ? SM.purchasedOn2(dm(sh.purchased_date)) : SM.status[st] || sh.status;
+    return SM.summary(R.shipMethodLabel(s.lookups, sh.method || 'warehouse'), itemNames(sh.items), when);
   }
   const quickCtx = () => { let e = 0; const base = store.newEventId(); return { eventId: () => base + e++, now: new Date().toISOString(), user: userId() }; };
   /* Shipped · Shipped & delivered · Delivered: a small form next to the button (today · the carrier last used by this person · tracking for one) */
@@ -148,10 +153,16 @@ KT.samples = (function () {
         const date = m.querySelector('#qs_date').value; if (!R.isISODate(date)) { U.popFormError(m, C.msg.dateInvalid(kind === 'delivered' ? SM.deliveredOn : SM.shippedOn)); return false; }
         const carrier = ship ? m.querySelector('#qs_carrier').value : '', tracking = ship && one ? R.trim(m.querySelector('#qs_trk').value) : '';
         if (ship && carrier) U.pref.set(carrierKey, carrier);
-        const s = state(), ctx = quickCtx(); let n = 0;
+        const s = state(), ctx = quickCtx(), before = [], evIds = new Set(); let n = 0;
         ids.forEach(id => { const sh = (s.sample_shipments || []).find(x => x.shipment_id === id); if (!sh || !allowed(kind === 'delivered' ? 'delivered' : 'shipped', sh)) return;
-          const evs = R.shipQuick(s, sh, kind, { date, carrier, tracking }, ctx); if (evs) { s.deal_events.push(...evs); n++; } });
-        if (n) commit(SM.quick.done(n, kind)); if (after) after();
+          const was = JSON.parse(JSON.stringify(sh)), evs = R.shipQuick(s, sh, kind, { date, carrier, tracking }, ctx); if (evs) { s.deal_events.push(...evs); evs.forEach(e => evIds.add(e.event_id)); before.push(was); n++; } });
+        if (n) {
+          commit(); if (after) after();
+          /* CR-24 §4.3 — Undo puts the shipments (and their events) back */
+          U.toastAction(SM.quick.done(n, kind), C.deal.undo, () => { const s2 = state();
+            before.forEach(o => { const i = (s2.sample_shipments || []).findIndex(x => x.shipment_id === o.shipment_id); if (i >= 0) s2.sample_shipments[i] = o; });
+            s2.deal_events = s2.deal_events.filter(e => !evIds.has(e.event_id)); commit(SM.quick.undone); if (after) after(); }, 10000);
+        } else if (after) after();
         return true;
       } });
   }
@@ -211,12 +222,14 @@ KT.samples = (function () {
       `<div class="field wide"><label>${esc(SM.col.tracking)}</label><div class="sm-trk">${list.map(sh => `<label class="sm-trkrow"><span>${esc(shKol(sh))}</span><input data-smtrk="${esc(sh.shipment_id)}" value="${esc(sh.tracking_no || '')}" autocomplete="off"></label>`).join('')}</div></div>` +
       (one ? `<div class="field wide"><label>${esc(SM.col.items)}</label><div class="sm-itemlist">${(list[0].items || []).map((x, i) => `<label class="sm-trkrow"><span>${esc(x.tr_code)}</span><input type="number" min="1" step="1" data-smqty="${i}" value="${esc(x.qty)}"></label>`).join('') || `<span class="muted small">${esc(SM.noProducts)}</span>`}</div></div>` : '');
     else if (kind === 'delivered') body = date('sm_date', td, SM.deliveredOn);
-    else if (kind === 'ship_by') body = date('sm_date', one ? list[0].ship_by || '' : '', SM.col.shipBy) + (one && list[0].ship_by_overridden ? `<div class="field"><label>&nbsp;</label><button type="button" class="btn small" id="sm_auto">${esc(SM.resetAuto)}</button></div>` : '');
+    else if (kind === 'ship_by') { const d1 = one && list[0].deal_id ? dealOf(list[0].deal_id) : null, sg = d1 ? R.shipBySuggest(d1, state().lookups.sample_settings) : null;
+      body = `<div class="field"><label for="sm_date">${esc(SM.col.shipBy)}</label>${U.dateHTML('id="sm_date"', one ? R.shipByDate(list[0]) || '' : '', { label: SM.col.shipBy })}` +
+        (sg ? `<div class="hint"><button type="button" class="link" id="sm_suggest" data-date="${esc(sg.date)}" title="${esc(C.move.suggestTip)}">${esc(C.move.suggested(R.dmy(sg.date).slice(0, 5), sg.days, sg.from))}</button></div>` : '') + `</div>`; }
     else body = `<div class="field wide"><label for="sm_reason">${esc(SM.reason)} <span class="req">*</span></label><input id="sm_reason" autocomplete="off" placeholder="${esc(kind === 'problem' ? SM.problemPh : '')}"></div>`;
     openDialog(`<div class="dlg-h">${esc(title)}</div><div class="dlg-b"><div class="fields">${body}</div><div class="checks" id="sm_checks"></div></div>` +
       `<div class="dlg-f"><button type="button" class="btn" id="sm_cancel">${esc(C.common.cancel)}</button><button type="button" class="btn primary" id="sm_ok">${esc(C.common.save)}</button></div>`, kind === 'shipped' && list.length > 1 ? 'mid' : false);
     $('sm_cancel').addEventListener('click', closeDialog);
-    if ($('sm_auto')) $('sm_auto').addEventListener('click', () => { closeDialog(); apply(ids, { kind: 'ship_by', date: null }, after); });
+    if ($('sm_suggest')) $('sm_suggest').addEventListener('click', () => U.setDate($('sm_date'), $('sm_suggest').dataset.date));   // CR-23 §3.4: the suggestion only when clicked
     $('sm_ok').addEventListener('click', () => {
       const change = { kind, date: $('sm_date') ? $('sm_date').value : null, reason: $('sm_reason') ? $('sm_reason').value : null, carrier: $('sm_carrier') ? $('sm_carrier').value : null };
       if (kind === 'shipped') { change.trackingOf = Object.fromEntries([...document.querySelectorAll('#dlg [data-smtrk]')].map(i => [i.dataset.smtrk, i.value])); if (one) change.items = (list[0].items || []).map((x, i) => ({ tr_code: x.tr_code, qty: Number(($(`dlg`).querySelector(`[data-smqty="${i}"]`) || {}).value) || x.qty }));
@@ -258,9 +271,9 @@ KT.samples = (function () {
   function iconHTML(d) {
     const list = R.shipmentsOf(state(), d.deal_id).filter(x => !['delivered', 'not_required'].includes(x.status)); if (!list.length) return '';
     const sh = list[0], st = R.sampleStatus(sh, today()), dm = x => R.dmy(x).slice(0, 5);
-    const tip = st === 'shipped' ? SM.track.shipped(sh.shipped_date ? dm(sh.shipped_date) : '', sh.carrier) : SM.icon(SM.status[st], sh.ship_by ? dm(sh.ship_by) : '');
+    const tip = st === 'shipped' ? SM.track.shipped(sh.shipped_date ? dm(sh.shipped_date) : '', sh.carrier) : SM.icon(SM.status[st], R.shipByDate(sh) ? dm(R.shipByDate(sh)) : '');
     return `<span class="smicon sm-${st}" title="${esc(tip)}" aria-label="${esc(tip)}">📦</span>`;
   }
 
-  return { summaryText, chip, trackHTML, sectionHTML, fillSecure, click, action, addDialog, shippingDialog, iconHTML, quick, undoDeliver, changeAddress, quickBtnHTML, simpleMenuItems, isSimple: simple };
+  return { summaryText, itemNames, chip, trackHTML, sectionHTML, fillSecure, click, action, addDialog, shippingDialog, iconHTML, quick, undoDeliver, changeAddress, quickBtnHTML, simpleMenuItems, isSimple: simple };
 })();

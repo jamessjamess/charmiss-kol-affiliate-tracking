@@ -618,8 +618,10 @@ KT.screens.campaign = (function () {
     if (to === 'cancelled') {
       const cancelStep = R.stepsOf(s.lookups).find(R.isCancelStep);
       s.deals.filter(d => d.campaign_id === c.campaign_id && R.isOpenDeal(d)).forEach(d => {
-        const r = R.applyMove(s, d, cancelStep.sub_status, { date: today(), note: K.cancelNote(c.campaign_name), cancelReason: reason }, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now, user: userId() });
+        /* CR-23 §3.6 — the reason Brand / campaign change (+ the Campaign's reason as its Detail) · the samples still to ship are cancelled with it */
+        const r = R.applyMove(s, d, cancelStep.sub_status, { date: today(), note: K.cancelNote(c.campaign_name), cancelReasonKey: 'brand_change', cancelReason: reason }, { logId: store.newLogId(), quoteId: store.newId('quote'), eventId: store.newEventId(), now, user: userId() });
         s.deals[s.deals.indexOf(d)] = r.deal; r.logs.forEach(l => s.deal_status_log.push(l)); r.events.forEach(e => s.deal_events.push(e));
+        if (r.shipments && r.shipments.length) { const by = new Map(r.shipments.map(x => [x.shipment_id, x])); s.sample_shipments = s.sample_shipments.map(x => by.get(x.shipment_id) || x); }
       });
     }
     Object.assign(c, { status_override: to, status_reason: to ? reason : null, status_changed_at: now.toISOString() });

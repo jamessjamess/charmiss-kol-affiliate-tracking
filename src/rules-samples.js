@@ -1,8 +1,10 @@
 /* rules-samples.js — CR-10 R6 §4.14 Samples: product samples sent to KOLs before they make content. A shipment per send (a deal can have
    several: a second send, a replacement) · Ship by = 7 days (Settings) before Draft 1, else before the expected post · the status on screen
    comes from the shipment and today (To ship · Ship this week · Overdue · Shipped · Delivered · Problem · Not required) · the reconcile at
-   every save (ui.commit): a deal reaching Confirm QT gets a To ship shipment, a cancelled deal's To ship become Not required, Ship by follows
-   the deal's dates unless set by hand, and deals.delivered / delivery_date follow the shipments. Shipping details (recipient, phone, address)
+   every save (ui.commit): a deal reaching Confirm QT gets a To ship shipment and deals.delivered / delivery_date follow the shipments.
+   CR-23 §3.4: the due of a shipment is ship_by_date — the date a person set (Move stage · Deal modal · Shipments) · the CR-10 sum (Draft 1 /
+   post due − lead days) is only a "Suggested" hint now and nothing turns Overdue from it · a cancelled deal's To ship become Not required when
+   the Cancel dialog says so (R.applyMove), not here. Shipping details (recipient, phone, address)
    are only in the Payee vault (payee_profiles.secure_ship, encrypted) — never here. Pure functions. Adds to KT.rules (load after rules-bulk.js). */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
@@ -19,11 +21,19 @@ Object.assign(KT.rules, (function (R, C) {
   const sampleSettings = lookups => { const s = Object.assign(sampleSettingsDefault(), (lookups || {}).sample_settings || {}); s.lead_days = Number(s.lead_days) >= 0 ? Math.round(Number(s.lead_days)) : 7; return s; };
   const shipmentsOf = (state, dealId) => (state.sample_shipments || []).filter(x => x.deal_id === dealId);
 
-  /* Ship by = (expected Draft 1, else the expected post date) − lead days · neither → null ("Set ship-by date") */
+  /* the suggested Ship by (CR-10) = (expected Draft 1, else the expected post date) − lead days · neither → null — CR-23 §3.4: a hint only */
   function shipBy(deal, settings) {
     const base = isISODate(deal.expected_draft1_date) ? deal.expected_draft1_date : isISODate(deal.expected_post_date) ? deal.expected_post_date : null;
     return base ? addDays(base, -sampleSettings({ sample_settings: settings }).lead_days) : null;
   }
+  /* → {date, days, from: 'draft1' | 'post'} | null — "Suggested: 18/10 (7 days before the post due)" */
+  function shipBySuggest(deal, settings) {
+    const date = shipBy(deal, settings); if (!date) return null;
+    return { date, days: sampleSettings({ sample_settings: settings }).lead_days, from: isISODate(deal.expected_draft1_date) ? 'draft1' : 'post' };
+  }
+  /* CR-23 §3.4 — the date a shipment is due by: ship_by_date (set by a person) · a date set by hand before this CR (ship_by with the ✎ flag, or
+     typed on a shipment with no deal) still counts · the old sum never does → null = "Ship by not set" (not Overdue) */
+  const shipByDate = sh => (!sh ? null : isISODate(sh.ship_by_date) ? sh.ship_by_date : isISODate(sh.ship_by) && (sh.ship_by_overridden || !sh.deal_id) ? sh.ship_by : null);
   /* stored status + today → the status on screen: a shipment not sent yet is Overdue (ship by < today) · Ship this week (≤ 7 days) · To ship */
   function sampleStatus(sh, today) {
     if (sh.status === 'not_required') return 'not_required';
@@ -31,16 +41,17 @@ Object.assign(KT.rules, (function (R, C) {
     if (sh.status === 'problem') return 'problem';
     if (sh.status === 'delivered' || isISODate(sh.delivered_date)) return 'delivered';
     if (sh.status === 'shipped' || isISODate(sh.shipped_date)) return 'shipped';
-    if (!isISODate(sh.ship_by)) return 'to_ship';
-    if (sh.ship_by < today) return 'overdue';
-    return sh.ship_by <= addDays(today, 7) ? 'this_week' : 'to_ship';
+    const due = shipByDate(sh);
+    if (!due) return 'to_ship';
+    if (due < today) return 'overdue';
+    return due <= addDays(today, 7) ? 'this_week' : 'to_ship';
   }
   const openShipment = sh => !['delivered', 'not_required', 'purchased'].includes(sh.status) && !isISODate(sh.delivered_date);
   /* a deal that should have a sample on the way: not cancelled · Confirm QT or later · not Complete */
   const needsSample = (lookups, d) => d.status !== 'Cancel' && d.status !== 'Complete' && R.pillarStepReached(lookups, d.sub_status);
   const itemsOf = (dealProducts, dealId) => (dealProducts || []).filter(x => x.deal_id === dealId).map(x => ({ tr_code: x.tr_code, qty: Number(x.qty) || 1 }));
   function newShipment(o) {
-    return { shipment_id: o.id, deal_id: o.deal.deal_id, kol_id: o.deal.kol_id, items: o.items || [], ship_by: o.shipBy || null, status: o.status || 'to_ship', ship_by_overridden: false,
+    return { shipment_id: o.id, deal_id: o.deal.deal_id, kol_id: o.deal.kol_id, items: o.items || [], ship_by: o.shipBy || null, ship_by_date: o.shipByDate || null, status: o.status || 'to_ship', ship_by_overridden: false,
       method: o.method || 'warehouse', purchase_amount: o.purchaseAmount == null ? null : o.purchaseAmount, purchased_date: null,   // CR-22 §4
       shipped_date: null, carrier: null, tracking_no: null, delivered_date: o.deliveredDate || null, problem_reason: null, not_required_reason: null, source: o.source || 'manual',
       note: null, address_id: null, created_by: o.user || null, created_at: o.now || null, updated_by: null, updated_at: null };   // CR-16: address_id null = the default at Mark shipped
@@ -66,20 +77,16 @@ Object.assign(KT.rules, (function (R, C) {
   /* the reconcile at every save → events [{type: 'sample'}] · ctx = {shipmentId(), eventId(), now, user} */
   function syncShipments(state, ctx) {
     if (!Array.isArray(state.sample_shipments)) return [];
-    const set = state.lookups.sample_settings, events = [], by = new Map();
+    const events = [], by = new Map();
     state.sample_shipments.forEach(x => { if (!by.has(x.deal_id)) by.set(x.deal_id, []); by.get(x.deal_id).push(x); });
     const ev = (sh, from, to, note) => events.push({ event_id: ctx.eventId(), deal_id: sh.deal_id, shipment_id: sh.shipment_id, type: 'sample', from, to, changed_at: ctx.now, changed_by: ctx.user || null, note: note || null });
     state.deals.forEach(d => {
       const list = by.get(d.deal_id) || [];
       /* reaching Confirm QT: a To ship with the deal's products (a deal with any shipment — even Not required — is left as it is) */
       if (!list.length && needsSample(state.lookups, d)) {
-        const sh = newShipment({ id: ctx.shipmentId(), deal: d, items: itemsOf(state.deal_products, d.deal_id), shipBy: shipBy(d, set), source: 'auto', user: ctx.user, now: ctx.now });
+        const sh = newShipment({ id: ctx.shipmentId(), deal: d, items: itemsOf(state.deal_products, d.deal_id), source: 'auto', user: ctx.user, now: ctx.now });   // CR-23: no Ship by set for you
         state.sample_shipments.push(sh); list.push(sh); ev(sh, null, 'to_ship', C.samples.autoNote);
       }
-      list.forEach(sh => {
-        if (d.status === 'Cancel' && (sh.status === 'to_ship' || sh.status === 'kol_purchase')) { const was = sh.status; Object.assign(sh, { status: 'not_required', not_required_reason: C.samples.dealCancelled, updated_at: ctx.now, updated_by: ctx.user || null }); ev(sh, was, 'not_required', C.samples.dealCancelled); }
-        else if (sh.status === 'to_ship' && !sh.ship_by_overridden) { const sb = shipBy(d, set); if ((sh.ship_by || null) !== sb) sh.ship_by = sb; }
-      });
       /* the deal's own fields follow its shipments (Template view / export unchanged) */
       if (list.length) {
         const dv = list.filter(x => x.status === 'delivered'), dates = dv.map(x => x.delivered_date).filter(isISODate).sort();
@@ -94,7 +101,7 @@ Object.assign(KT.rules, (function (R, C) {
   const canEditShipment = (user, deal) => !!user && !!deal && R.can(user, 'deal.edit') && (user.role !== 'staff' || (!!R.picName(user) && deal.pic === R.picName(user)));
   /* a tracking link from Settings › Samples ({tracking} in the template) */
   const trackingLink = (settings, carrier, no) => { const t = ((settings || {}).tracking_url || {})[carrier]; return t && trim(no) && /^https?:\/\//i.test(t) ? t.replace('{tracking}', encodeURIComponent(trim(no))) : null; };
-  /* Mark shipped / delivered / problem / not required · Set ship-by (null = back to auto) → the 'sample' event */
+  /* Mark shipped / delivered / problem / not required · Set ship-by (null = not set) → the 'sample' event */
   function updateShipment(sh, change, ctx) {
     const from = sh.status;
     if (change.kind === 'shipped') Object.assign(sh, { status: 'shipped', shipped_date: change.date, carrier: change.carrier || sh.carrier || null, tracking_no: trim(change.tracking) || sh.tracking_no || null, items: change.items || sh.items });
@@ -103,7 +110,7 @@ Object.assign(KT.rules, (function (R, C) {
     else if (change.kind === 'unpurchased') Object.assign(sh, { status: 'kol_purchase', purchased_date: null });
     else if (change.kind === 'problem') Object.assign(sh, { status: 'problem', problem_reason: trim(change.reason) });
     else if (change.kind === 'not_required') Object.assign(sh, { status: 'not_required', not_required_reason: trim(change.reason) });
-    else if (change.kind === 'ship_by') Object.assign(sh, change.date ? { ship_by: change.date, ship_by_overridden: true } : { ship_by_overridden: false });
+    else if (change.kind === 'ship_by') sh.ship_by_date = change.date || null;   // CR-23 §3.4 (empty = Ship by not set)
     else if (change.kind === 'edit') ['carrier', 'tracking_no', 'shipped_date', 'delivered_date', 'items', 'note'].forEach(k => { if (k in change) sh[k] = change[k]; });
     if ((change.kind === 'shipped' || change.kind === 'edit') && change.address_id !== undefined) sh.address_id = change.address_id || null;   // CR-16 §4.3: Ship to
     Object.assign(sh, { updated_at: ctx.now, updated_by: ctx.user || null });
@@ -123,7 +130,8 @@ Object.assign(KT.rules, (function (R, C) {
     const list = shipments.filter(x => x.status !== 'not_required'), last = list[list.length - 1];
     if (!last) return shipments.length ? { kind: 'not_required' } : null;
     const st = sampleStatus(last, today);
-    return { kind: st, shipBy: last.ship_by, shipped: last.shipped_date, carrier: last.carrier, delivered: last.delivered_date, late: st === 'overdue' ? dayDiff(today, last.ship_by) : 0 };
+    const due = shipByDate(last);
+    return { kind: st, shipBy: due, shipped: last.shipped_date, carrier: last.carrier, delivered: last.delivered_date, late: st === 'overdue' ? dayDiff(today, due) : 0 };
   }
   /* the rows of Deals › Samples: one a shipment of the deals given */
   function sampleRows(state, deals, today) {
@@ -131,11 +139,11 @@ Object.assign(KT.rules, (function (R, C) {
     /* the screen's and the shipping list's order: Overdue → … → Not required, then the earliest ship-by (none last) */
     const rank = r => SAMPLE_STATUSES.indexOf(r.status);
     return (state.sample_shipments || []).filter(x => ids.has(x.deal_id)).map(sh => ({ sh, deal: by.get(sh.deal_id), status: sampleStatus(sh, today) }))
-      .sort((a, b) => rank(a) - rank(b) || String(a.sh.ship_by || '9999').localeCompare(String(b.sh.ship_by || '9999')) || String(a.sh.shipment_id).localeCompare(String(b.sh.shipment_id)));
+      .sort((a, b) => rank(a) - rank(b) || String(shipByDate(a.sh) || '9999').localeCompare(String(shipByDate(b.sh) || '9999')) || String(a.sh.shipment_id).localeCompare(String(b.sh.shipment_id)));
   }
   const sampleCounts = rows => {
     const c = { overdue: 0, this_week: 0, shipped: 0, delivered: 0, noShipBy: 0 };
-    rows.forEach(r => { if (r.status in c) c[r.status]++; if (r.status === 'to_ship' && !isISODate(r.sh.ship_by)) c.noShipBy++; });
+    rows.forEach(r => { if (r.status in c) c[r.status]++; if (r.status === 'to_ship' && !shipByDate(r.sh)) c.noShipBy++; });
     return c;
   };
   const itemsText = items => (items || []).map(x => `${x.tr_code}×${x.qty}`).join(', ');
@@ -146,8 +154,8 @@ Object.assign(KT.rules, (function (R, C) {
   }
   function sampleDues(state, f, today, days) {
     const end = addDays(today, days == null ? 7 : days), deals = state.deals.filter(d => (!f.campaign || d.campaign_id === f.campaign) && (!f.pic || (f.pic === '__none' ? isBlank(d.pic) : d.pic === f.pic)));
-    return sampleRows(state, deals, today).filter(r => (r.status === 'this_week' || r.status === 'to_ship') && isISODate(r.sh.ship_by) && r.sh.ship_by >= today && r.sh.ship_by <= end)
-      .map(r => ({ deal: r.deal, due: r.sh.ship_by, sample: r.sh }));
+    return sampleRows(state, deals, today).filter(r => (r.status === 'this_week' || r.status === 'to_ship') && shipByDate(r.sh) && shipByDate(r.sh) >= today && shipByDate(r.sh) <= end)
+      .map(r => ({ deal: r.deal, due: shipByDate(r.sh), sample: r.sh }));
   }
   function validateSampleSettings(d) {
     const errs = [], n = Number(d.lead_days);
@@ -176,6 +184,6 @@ Object.assign(KT.rules, (function (R, C) {
     return obj;
   }
 
-  return { SHIP_METHODS, shipMethodsDefault, shipMethodLabel, migrateV21, CARRIERS, SAMPLE_STATUSES, sampleSettingsDefault, sampleSettings, shipmentsOf, shipBy, sampleStatus, openShipment, needsSample, newShipment, migrateSamples,
+  return { SHIP_METHODS, shipMethodsDefault, shipMethodLabel, migrateV21, CARRIERS, SAMPLE_STATUSES, sampleSettingsDefault, sampleSettings, shipmentsOf, shipBy, shipBySuggest, shipByDate, sampleStatus, openShipment, needsSample, newShipment, migrateSamples,
     syncShipments, canEditShipment, trackingLink, updateShipment, validateShipment, sampleTrack, sampleRows, sampleCounts, itemsText, samplesToShip, sampleDues, validateSampleSettings };
 })(KT.rules, KT.content));
