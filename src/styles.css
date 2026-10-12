@@ -2560,3 +2560,95 @@ button.pm-notready{cursor:pointer;font:inherit;font-size:12px}
 .kpi.kc .cap .cdw{white-space:nowrap}
 .pm-rhead>span:not(.pm-rbtns):not(.chip){white-space:normal;overflow-wrap:anywhere;min-width:0}
 .pm-rounds tr.pm-rh td{white-space:normal}
+/* ===================== CR-34 — Grade chips (A green · B blue · C yellow · D red · the letter always written) · review · Partners · benchmarks ===================== */
+.gchip{display:inline-flex;align-items:center;gap:6px;min-width:22px;height:22px;padding:0 7px;border-radius:999px;font-weight:700;font-size:12px;line-height:1;justify-content:center;border:1px solid transparent;white-space:nowrap;vertical-align:middle}
+.gchip .gname{font-weight:600}
+.gchip.big{height:30px;min-width:30px;font-size:15px;padding:0 10px}
+.gchip.g-a{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.gchip.g-b{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 35%,transparent)}
+.gchip.g-c{background:var(--warn-soft);color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.gchip.g-d{background:var(--err-soft);color:var(--err);border-color:color-mix(in srgb,var(--err) 35%,transparent)}
+.gchip.g-none{background:var(--surface-2);color:var(--muted);font-weight:600}
+.gsug{display:inline-block;margin-left:4px;font-size:11px;font-weight:700;padding:0 5px;border-radius:999px;border:1px dashed currentColor;line-height:16px}
+.gsug.g-a{color:var(--ok)} .gsug.g-b{color:var(--info)} .gsug.g-c{color:var(--warn)} .gsug.g-d{color:var(--err)}
+.kgrade{white-space:nowrap}
+/* the bar parts of a grade (KPI · Grade mix) */
+i.gs{display:block;height:100%}
+.gs-a{background:var(--ok)} .gs-b{background:var(--info)} .gs-c{background:var(--warn)} .gs-d{background:var(--err)} .gs-none{background:color-mix(in srgb,var(--muted) 35%,var(--surface))}
+.legend .lg i.gs{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+/* Grade review */
+.grv-list{display:flex;flex-direction:column;gap:12px}
+.grv-card{padding:12px 14px}
+.grv-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.grv-who{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.grv-g{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.grv-reason{margin:8px 0 4px;color:var(--text-2)}
+.grv-nums{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--text-2)}
+.grv-nums b{color:var(--text)}
+.grv-pd{margin-top:8px}
+.grv-pd summary{cursor:pointer;color:var(--text-2);font-size:13px}
+.grv-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.grv-form{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+.grv-seg{flex-wrap:wrap}
+.grv-seg button{display:inline-flex;align-items:center}
+.grv-seg button.on .gchip{box-shadow:0 0 0 2px var(--accent)}
+.grv-posts td,.grv-posts th{white-space:nowrap}
+.grv-posts td:nth-child(2){white-space:normal}
+b.ok{color:var(--ok)}
+/* KOL modal › Performance */
+.gp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.gp-sug{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.gp-head .btn{margin-left:auto}
+.gp-reason{margin-top:6px}
+/* Incidents */
+.inc-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.inc-row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.inc-row.serious b{color:var(--err)}
+.inc-row .dt{color:var(--muted);min-width:76px}
+/* a post's numbers */
+.pmetrics{flex-wrap:wrap}
+.msrc{display:inline-block;font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;border:1px solid var(--border);color:var(--text-2);line-height:18px}
+.msrc.ms-import{color:var(--info);border-color:color-mix(in srgb,var(--info) 40%,transparent)}
+.msrc.ms-auto{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.pratio{font-size:12px;font-weight:600}
+.pratio.ok{color:var(--ok)} .pratio.late{color:var(--err)}
+/* Dashboard › Partners */
+.pp-r{margin-top:16px}
+.gmix-row{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:10px;align-items:center;margin:10px 0}
+.gmix-bar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--surface-2);gap:2px}
+.gmix-bar i.gs{display:flex;align-items:center;justify-content:center;height:100%;min-width:2px}
+.gmix-bar i.gs b{font-size:11px;font-style:normal;color:#fff}
+.gmix-bar i.gs-c b,.gmix-bar i.gs-none b{color:var(--text)}
+.gmix-legend{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-2)}
+.gt-tbl td,.gt-tbl th{white-space:nowrap}
+.gt-cell{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.2}
+.gmove-sum{display:flex;gap:14px;flex-wrap:wrap;font-weight:600;margin-bottom:8px}
+.gmove-list,.grq-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.gmove-list li,.grq-list li{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.gmove-list .dt{color:var(--muted);min-width:76px}
+.grq-list li{padding:6px 0;border-bottom:1px solid var(--border)}
+.grq-list li:last-child{border-bottom:0}
+.grq-list .grq-why{flex:1 1 200px;min-width:0}
+.grq-list .btn{margin-left:auto}
+.gp-tbl td{vertical-align:middle}
+/* Dashboard › By campaign: benchmarks */
+.cb-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.cb-pct{font-size:18px}
+.cb-pct.ok{color:var(--ok)} .cb-pct.late{color:var(--err)}
+.cb-tbl td,.cb-tbl th{white-space:nowrap}
+/* Planner › Benchmarks · Settings › Grades · New deal */
+.pl-bench{grid-template-columns:minmax(0,1fr)}
+.pl-bench .field input{max-width:220px}
+.gr-tbl{max-width:560px}
+.gr-tbl th{text-align:left;font-weight:600}
+.gr-tbl input{width:110px}
+.gr-acts{display:flex;gap:14px;flex-wrap:wrap}
+.gr-set h4{margin:16px 0 6px}
+.bk-dwarn{margin-top:6px}
+.bk-anyway{display:inline-flex;margin-top:4px}
+.mi-tbl td{vertical-align:top}
+@media (max-width:760px){.gmix-row{grid-template-columns:80px minmax(0,1fr) auto}}
+/* CR-34: the Grade filter joins the New deal quick row — it still fits one line at 1440 (CR-25) */
+.bk-quick .search{min-width:120px;flex:1 1 120px}
+.bk-quick #bk_ftier,.bk-quick #bk_fgrade{max-width:118px}
+.bk-quick > .tick{max-width:120px;white-space:normal;line-height:1.2;align-items:center}

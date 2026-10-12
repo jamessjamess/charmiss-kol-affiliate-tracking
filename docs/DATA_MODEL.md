@@ -1,6 +1,6 @@
 # Data model — Charmiss KOL Tracker
 
-schema_version **24** (CR-33 · 09/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
+schema_version **25** (CR-34 · 12/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
 ที่มาข้อมูลตั้งต้น: `data/KOL_seed_v2.json` → `data/seed.js` (ห้ามแก้) · การอัปเกรดทำใน `src/store.js` `migrate()` ตอนโหลด (seed · localStorage · Backup เก่า v1–v10) — ทำครั้งเดียวตาม `schema_version` · เพิ่ม field เท่านั้น ไม่ลบข้อมูลเงิน
 
 ## Collections
@@ -351,6 +351,21 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 | `shipping_addresses` · `payee_profiles` | สร้างได้ตอน New KOL (เข้ารหัส CR-16 · default) | |
 
 **Migration v23:** `deal_gencodes` = [] · deals `other_fee` = 0 · `other_fee_note` = null · `handle` ตัด @ / ช่องว่าง · ไม่แตะยอดเงิน
+
+## CR-34 — schema 25 (Partner Grade · Benchmarks · Incidents · ที่มาของ metrics)
+
+| ที่ | เปลี่ยน | หมายเหตุ |
+|---|---|---|
+| `deal_posts` | + `reach` · `impressions` · `clicks` · `sales` · `roas` · `metrics_day` (7 \| 30) · `fetch_status` · `fetched_at` · `metrics_legacy` · `metrics_source` = `auto` \| `import` \| `manual` | captured_at = `metrics_updated_at` เดิม · ไม่มี store `post_metrics` แยก |
+| `campaigns` | + `benchmarks` { cpm · cons_rate · cpcons (null = คำนวณ) · roas · affiliate_roas · clips_target_pct } \| null | ว่าง = ค่า default ใน `lookups.grade_rules.bench` |
+| `deal_incidents` (ใหม่) | `incident_id` (IN-0001) · `deal_id` · `kol_id` · `type` (late · missed_brief · no_show · breach · other) · `date` · `note` · `created_by/at` · `deleted_at/by` | No-show / Breach = ร้ายแรง · event `incident` บน deal |
+| `partner_grades` (ใหม่) | `kol_id` · `suggested` · `confirmed` · `status` (graded · ops_only · not_enough · none) · `perf_ratio` · `ops_score` · `score` · `basis_posts` · `reason` (ส่วนของเหตุผล) · `serious` · `override_reason` · `locked_until` · `locked_basis` · `reviewed_by/at` · `computed_at` | `R.syncGrades` ทุก commit / ตอนเปิดแอป (Suggested เท่านั้น) |
+| `grade_history` (ใหม่) | `id` (GH-00001) · `kol_id` · `from` · `to` · `suggested` · `kind` (confirm \| override) · `reason` · `by` · `at` · `perf_ratio` · `ops_score` | Grade movement ของ Dashboard |
+| `lookups.grade_rules` | เกณฑ์ A–D · น้ำหนัก · หน้าต่าง (6 โพสต์ · 6 เดือน · ขั้นต่ำ 2) · consideration actions · lock 90 วัน · bench (default) | Settings › Grades |
+| `campaign_events` | type `benchmarks` (from / to) | |
+| roles | + `grade.review` (+ `settings.grades`) — Admin · KOL Manager | |
+
+**Migration v25** (`rules-grade.js migrateV25` · รันซ้ำได้ผลเดิม): ตัวเลขเดิม → `manual` (ของไฟล์เก่า + `metrics_legacy`) · field ใหม่ null · `benchmarks` null · collections ใหม่ว่าง · `lookups.grade_rules` default · คำนวณ Suggested ครั้งแรกทุก partner (ยังไม่มี Confirmed — ตัวที่ข้อมูลพอเข้า review queue) · ยอดเงินไม่เปลี่ยน
 
 ## CR-33 — schema 24 (เอกสารเป็นไฟล์ · รอบ PR · Verify / Return · Print)
 

@@ -138,11 +138,11 @@ KT.store = (function (R) {
   const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
   const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 24;   // CR-33: payment rounds · documents as files / links · payee confirmed
+  const SCHEMA_VERSION = 25;   // CR-34: Partner Grade · Benchmarks · Incidents · metrics sources
   const QUOTA_MB = 5;
-  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes', 'deal_gencodes'];
+  const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes', 'deal_gencodes', 'deal_incidents', 'partner_grades', 'grade_history'];
   /* collections that older versions do not have yet (they are created by migrate) */
-  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12, shipping_addresses: 15, campaign_budget_changes: 17, kol_packages: 19, step_notes: 19, deal_gencodes: 23 };
+  const ADDED_IN = { deal_events: 2, users: 4, campaign_events: 5, products: 6, campaign_products: 6, deal_products: 6, payee_profiles: 8, payment_lines: 8, payment_runs: 8, sample_shipments: 11, pick_lists: 12, shipping_addresses: 15, campaign_budget_changes: 17, kol_packages: 19, step_notes: 19, deal_gencodes: 23, deal_incidents: 25, partner_grades: 25, grade_history: 25 };
   /* client-side IDs continue from the highest number in use */
   const ID_FORMATS = {
     kol: { prefix: 'K', coll: 'kol_master', key: 'kol_id', width: 4 },
@@ -152,6 +152,8 @@ KT.store = (function (R) {
     payee: { prefix: 'PY-', coll: 'payee_profiles', key: 'payee_id', width: 4 },
     address: { prefix: 'AD-', coll: 'shipping_addresses', key: 'address_id', width: 4 },   // CR-16 §4.3
     gencode: { prefix: 'GC-', coll: 'deal_gencodes', key: 'code_id', width: 5 },   // CR-30 §3.1
+    incident: { prefix: 'IN-', coll: 'deal_incidents', key: 'incident_id', width: 4 },   // CR-34 §3.4
+    gradeHistory: { prefix: 'GH-', coll: 'grade_history', key: 'id', width: 5 },   // CR-34 §3.5
     line: { prefix: 'PL-', coll: 'payment_lines', key: 'line_id', width: 6 },
     post: { prefix: 'P', coll: 'deal_posts', key: 'post_id', width: 6 },
     user: { prefix: 'U', coll: 'users', key: 'user_id', width: 3 },
@@ -336,6 +338,8 @@ KT.store = (function (R) {
   /* v22 → v23 (CR-30 §4): Gencodes · Other fee · the Username */
   function toV23(obj) { R.migrateV23(obj); }
   function toV24(obj, now) { R.migrateV24(obj, (now || new Date()).toISOString()); }   // CR-33 §4 (once)
+  /* v24 → v25 (CR-34 §4): metrics Manual · Incidents · partner grades (the first suggestion of each) · lookups.grade_rules */
+  function toV25(obj, now) { const iso = (now || new Date()).toISOString(); R.migrateV25(obj, iso, R.dateOfTimestamp(iso)); }
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -361,6 +365,7 @@ KT.store = (function (R) {
     if (obj.schema_version === 21) toV22(obj, now);
     if (obj.schema_version === 22) toV23(obj);
     if (obj.schema_version === 23) toV24(obj, now);
+    if (obj.schema_version === 24) toV25(obj, now);
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)

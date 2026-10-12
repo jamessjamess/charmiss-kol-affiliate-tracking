@@ -11,6 +11,8 @@ KT.ui = (function () {
   /* ===================== storage ===================== */
   function browserStorage() { try { return window.localStorage || null; } catch (e) { return null; } }
   const store = S.createStore({ seed: window.KT_SEED, storage: browserStorage() });
+  /* CR-34 §3.5 — on opening: the partners whose numbers changed get their suggestion again (saved when one did) */
+  try { if (store.state && Array.isArray(store.state.partner_grades) && R.syncGrades && R.syncGrades(store.state, R.todayISO(), new Date().toISOString()).changed.length) store.save(); } catch (e) { /* shown as it was */ }
   const state = () => store.state;
   let otherTabChanged = false;
   /* per-viewer conveniences (theme, table column set) — never the data itself */
@@ -47,6 +49,8 @@ KT.ui = (function () {
     if (s && Array.isArray(s.sample_shipments)) { let e = 0; const evs = R.syncShipments(s, { shipmentId: () => store.newId('shipment'), eventId: () => store.newEventId() + e++, now: new Date().toISOString(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
     /* CR-20 §4.8 — a package's payment status follows its line · a deal knows whether its package is paid (Dashboard Paid / Pending) */
     if (s && Array.isArray(s.kol_packages)) { let e = 0; const evs = R.syncPackages(s, { eventId: () => store.newEventId() + e++, now: new Date(), user: userId() }); if (evs.length) s.deal_events.push(...evs); }
+    /* CR-34 §3.5 — the suggested grade of each partner follows (metrics · posts · Incidents · Cancel) · the confirmed one never moves by itself */
+    if (s && Array.isArray(s.partner_grades) && R.syncGrades) { try { R.syncGrades(s, today(), new Date().toISOString()); } catch (e) { /* the next commit tries again */ } }
     store.save(); renderBanners(); if (msg) toast(msg);
     /* CR-31 §2.7 — no room: the copies kept aside go to IndexedDB, then it is saved again (the red bar goes once it is) */
     if (!store.status.canSave && /quota/i.test(String(store.status.lastError || '')) && !commit.freeing) {

@@ -39,6 +39,7 @@ Object.assign(KT.rules, (function (R, C) {
     { key: 'payment.export', actions: ['payment.export'], admin: true, kol_manager: true, staff: true, viewer: false, accounting: true },
     { key: 'payment.reopen', actions: ['payment.reopen'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'settings.payments', actions: ['settings.payments'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },
+    { key: 'grade.review', actions: ['grade.review', 'settings.grades'], admin: true, kol_manager: true, staff: false, viewer: false, accounting: false },   // CR-34 §3.5: Confirm / Override a grade · Settings › Grades
     /* CR-11 §4.7 — Settings › Go-live clean-up: Admin runs it · Accounting sees the payments step read-only */
     { key: 'golive.run', actions: ['golive.run'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: false },
     { key: 'golive.view', actions: ['golive.view'], admin: true, kol_manager: false, staff: false, viewer: false, accounting: true },
@@ -54,7 +55,7 @@ Object.assign(KT.rules, (function (R, C) {
     'shipment.edit': 'shipments', 'shipment.ship': 'shipments', 'shipment.settings': 'shipments',
     'payee.edit': 'payments', 'payment.request': 'payments', 'payee.unlock': 'payments', 'payee.verify': 'payments', 'vault.admin': 'payments', 'payee.import': 'payments',
     'payment.run': 'payments', 'payment.paid': 'payments', 'payment.export': 'payments', 'payment.reopen': 'payments', 'settings.payments': 'payments',
-    'kol.edit': 'kol', 'kol.merge': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'settings.ops': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
+    'kol.edit': 'kol', 'kol.merge': 'kol', 'grade.review': 'kol', 'settings.lists': 'settings', 'settings.tiers': 'settings', 'settings.ops': 'settings', 'data.restore': 'settings', roles: 'settings', 'golive.run': 'settings', 'golive.view': 'settings' };
   const permGroups = () => PERM_MODULES.map(m => ({ module: m, rows: PERMISSIONS.filter(p => (PERM_MODULE[p.key] || 'settings') === m) })).filter(g => g.rows.length);
   /* can(user, action) — asked when a control is drawn and again right before anything is written ·
      user = the person as they act now (actingAs: an admin viewing as another role) */

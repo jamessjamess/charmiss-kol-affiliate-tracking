@@ -5,7 +5,7 @@ KT.screens.settings = (function () {
   const U = KT.ui;
   const { C, R, S, $, esc, today, store, state, commit, toast, checksHTML, kv, stChip, setHash, doBackup, openRestore, openReset, go, can, openDialog, closeDialog, downloadCSV } = U;
   const K = C.settings, LS = C.lists, P = C.products, KTY = C.kolTypes;
-  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['cancel_reasons', C.cancel.nav], ['kol_types', K.navKolTypes], ['partner_types', C.partner.nav], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
+  const SECTIONS = [['journey', K.navJourney], ['pillar_list', K.navPillar], ['cta_list', K.navCta], ['platform_list', K.navPlatform], ['cancel_reasons', C.cancel.nav], ['kol_types', K.navKolTypes], ['partner_types', C.partner.nav], ['tiers', K.navTiers], ['products', K.navProducts], ['perf', K.navPerf], ['grades', C.grade.set.nav], ['samples', C.samples.settings.nav], ['payments', K.navPayments], ['opsmode', K.navOpsMode], ['data', K.navData], ['golive', C.golive.nav]];   // CR-17 §4.1: Operations mode
   const LIST_SECTIONS = SECTIONS.filter(x => x[0] !== 'data' && x[0] !== 'golive' && x[0] !== 'opsmode');
   const st = { section: 'journey', tiers: null, targets: null, pq: '', perf: null, pay: null };
 
@@ -36,6 +36,7 @@ KT.screens.settings = (function () {
       $('set_body').addEventListener('input', e => {
         if (e.target.matches('[data-psearch]')) { st.pq = e.target.value; $('pr_body').innerHTML = productRowsHTML(); }
         if (e.target.dataset.pf2 && can('settings.lists')) { st.perf[e.target.dataset.pf2] = e.target.value; perfCheck(); }
+        if (st.grades && can('settings.grades') && (e.target.dataset.gr || e.target.dataset.grb)) { if (e.target.dataset.gr) st.grades[e.target.dataset.gr] = e.target.value; else st.grades.bench[e.target.dataset.grb] = e.target.value; gradesCheck(); }   // CR-34
         if (st.smp && can('settings.lists') && (e.target.dataset.ss || e.target.dataset.sst)) { if (e.target.dataset.ss) st.smp[e.target.dataset.ss] = e.target.value; else st.smp.tracking_url[e.target.dataset.sst] = e.target.value; samplesCheck(); }
       });
       sec.dataset.built = '1';
@@ -45,9 +46,10 @@ KT.screens.settings = (function () {
       `<div class="grp">${esc(K.dataGroup)}</div>` + navBtn(SECTIONS.find(x => x[0] === 'opsmode')) + navBtn(SECTIONS.find(x => x[0] === 'data')) + navBtn(SECTIONS.find(x => x[0] === 'golive'));   // CR-11 §4.7 · CR-17
     $('set_select').innerHTML = SECTIONS.map(([k, l]) => `<option value="${k}"${k === st.section ? ' selected' : ''}>${esc(l)}</option>`).join('');
     setHash('settings/' + st.section);
-    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : st.section === 'partner_types' ? partnerTypesHTML() : listHTML(st.section);
+    $('set_body').innerHTML = st.section === 'data' ? dataHTML() : st.section === 'golive' ? KT.golive.settingsHTML() : st.section === 'journey' ? journeyHTML() : st.section === 'tiers' ? tiersHTML() : st.section === 'products' ? productsHTML() : st.section === 'perf' ? perfHTML() : st.section === 'grades' ? gradesHTML() : st.section === 'samples' ? samplesHTML() : st.section === 'kol_types' ? kolTypesHTML() : st.section === 'payments' ? paymentsHTML() : st.section === 'opsmode' ? opsModeHTML() : st.section === 'cancel_reasons' ? cancelReasonsHTML() : st.section === 'partner_types' ? partnerTypesHTML() : listHTML(st.section);
     if (st.section === 'data') fillDocFiles();
     if (st.section === 'perf') perfCheck();
+    if (st.section === 'grades') gradesCheck();
     if (st.section === 'samples') samplesCheck();
     if (st.section === 'tiers') tiersCheck();
     /* CR-04 §4.4 — Lists and Pillar targets are read-only for everyone but an admin */
@@ -59,9 +61,9 @@ KT.screens.settings = (function () {
     }
   }
   /* CR-05 §4.1: Tier rules — admin · the other Lists, Pillar targets and Products (CR-06) — admin and KOL Manager */
-  const editAction = () => (st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : st.section === 'samples' ? 'shipment.settings' : st.section === 'opsmode' ? 'settings.ops' : 'settings.lists');
+  const editAction = () => (st.section === 'grades' ? 'settings.grades' : st.section === 'tiers' ? 'settings.tiers' : st.section === 'products' ? 'products.edit' : st.section === 'payments' ? 'settings.payments' : st.section === 'samples' ? 'shipment.settings' : st.section === 'opsmode' ? 'settings.ops' : 'settings.lists');
   const navBtn = ([k, l]) => `<button type="button" data-sec="${k}" class="${k === st.section ? 'on' : ''}">${esc(l)}</button>`;
-  function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; st.smp = null; render(); }
+  function go2(section) { st.section = section; st.tiers = null; st.targets = null; st.perf = null; st.pay = null; st.smp = null; st.grades = null; render(); }
 
   /* ===================== CR-17 §4.1 — Operations mode (Admin): Payments · Shipments, Simple / Full · the data stays the same ===================== */
   function opsModeHTML() {
@@ -207,6 +209,38 @@ KT.screens.settings = (function () {
       /* CR-11 §4.12: checkpoints replace "stale after" (metrics_stale_days is kept as it was) */
       const L = state().lookups, g = Number(st.perf.ontime_grace_days), m = Number(st.perf.reliability_min_posts), cp = R.parseCheckpoints(st.perf.metrics_checkpoints).list;
       if (L.ontime_grace_days !== g || L.reliability_min_posts !== m || JSON.stringify(R.metricsCheckpoints(L)) !== JSON.stringify(cp)) { L.ontime_grace_days = g; L.reliability_min_posts = m; L.metrics_checkpoints = cp; commit(C.perf.saved); }
+    }
+    return res;
+  }
+
+  /* ===================== CR-34 §3.7 — Grades: A–D thresholds · weights · the window · consideration actions · lock · default benchmarks (saved as soon as valid) ===================== */
+  function gradesHTML() {
+    const L = state().lookups, G = C.grade.set, B = C.grade.bench, g = R.gradeRules(L);
+    if (!st.grades) st.grades = Object.assign(Object.fromEntries(Object.entries(g).filter(([k]) => k !== 'bench' && k !== 'cons_actions').map(([k, v]) => [k, String(v)])),
+      { cons_actions: g.cons_actions.slice(), bench: Object.fromEntries(R.BENCH_KEYS.map(k => [k, g.bench[k] == null ? '' : String(g.bench[k])])) });
+    const v = st.grades, num = (k, cls) => `<input type="text" inputmode="decimal" class="numin${cls ? ' ' + cls : ''}" id="gr_${k}" data-gr="${k}" value="${esc(v[k])}" autocomplete="off">`;
+    const fld = (k, label, input, hint) => `<div class="field"><label for="gr_${k}">${esc(label)}</label>${input}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
+    const row = (lab, a, o, letter) => `<tr><th>${KT.grades.letterHTML(letter)} ${esc(lab)}</th><td>${a ? num(a) : ''}</td><td>${o ? num(o) : ''}</td></tr>`;
+    const bin = (k, label) => `<div class="field"><label for="grb_${k}">${esc(label)}</label><input type="text" inputmode="decimal" class="numin" id="grb_${k}" data-grb="${k}" value="${esc(v.bench[k])}" autocomplete="off"></div>`;
+    return `<div class="card gr-set"><div class="card-head"><h3>${esc(G.title)}</h3></div><p class="hint" style="margin-top:0">${esc(G.intro)}</p>
+      <div class="tablewrap"><table class="tbl compact-sm gr-tbl"><thead><tr><th>${esc(G.thresholds)}</th><th>${esc(G.ratioL)}</th><th>${esc(G.opsL)}</th></tr></thead><tbody>` +
+        row(G.aRow.replace(/^A · /, ''), 'a_ratio', 'a_ops', 'A') + row(G.bRow.replace(/^B · /, ''), 'b_ratio', 'b_ops', 'B') + row(G.cRow.replace(/^C · /, ''), 'c_ratio', 'c_ops', 'C') +
+        `<tr><th colspan="3">${KT.grades.letterHTML('D')} ${esc(G.dRow.replace(/^D · /, ''))}</th></tr></tbody></table></div>
+      <h4>${esc(G.weights)}</h4><div class="fields">${fld('w_perf', G.wPerf, num('w_perf'))}${fld('w_ops', G.wOps, num('w_ops'))}</div>
+      <h4>${esc(G.windowH)}</h4><div class="fields">${fld('posts', G.posts, num('posts'))}${fld('months', G.months, num('months'))}${fld('min_posts', G.minPosts, num('min_posts'))}${fld('lock_days', G.lock, num('lock_days'))}</div>
+      <h4>${esc(G.actionsH)}</h4><p class="hint" style="margin-top:0">${esc(G.actionsHint)}</p><div class="gr-acts" data-key="cons_actions">${R.CONS_ACTIONS.map(a => `<label class="tick"><input type="checkbox" data-gra="${a}"${v.cons_actions.includes(a) ? ' checked' : ''}> ${esc(G.action[a])}</label>`).join('')}</div>
+      <h4>${esc(G.benchH)}</h4><p class="hint" style="margin-top:0">${esc(G.benchHint)}</p><div class="fields">${bin('cpm', B.cpm)}${bin('cons_rate', B.consRate)}${bin('cpcons', B.cpcons)}${bin('roas', B.roas)}${bin('affiliate_roas', B.affRoas)}${bin('clips_target_pct', B.clips)}</div>
+      <div class="checks" id="ls_checks" style="margin-top:12px"></div></div>`;
+  }
+  function gradesCheck() {
+    const res = R.validateGradeRules(st.grades);
+    $('ls_checks').innerHTML = checksHTML(res, '');
+    $('set_body').querySelectorAll('[data-gr]').forEach(i => i.classList.toggle('invalid', res.errs.some(e => e.field === i.dataset.gr)));
+    $('set_body').querySelectorAll('[data-grb]').forEach(i => i.classList.toggle('invalid', res.errs.some(e => e.field === 'bench_' + i.dataset.grb)));
+    if (!res.errs.length && can('settings.grades')) {
+      const L = state().lookups, v = st.grades, n = x => Number(String(x).replace(/,/g, ''));
+      const next = Object.assign(Object.fromEntries(Object.keys(R.GRADE_RULES_DEFAULT).filter(k => k !== 'bench' && k !== 'cons_actions').map(k => [k, n(v[k])])), { cons_actions: v.cons_actions.slice(), bench: R.benchRecord(v.bench) });
+      if (JSON.stringify(L.grade_rules || null) !== JSON.stringify(next)) { L.grade_rules = next; commit(C.grade.set.saved); }
     }
     return res;
   }
@@ -425,6 +459,7 @@ KT.screens.settings = (function () {
   function bodyChange(e) {
     if (!can(editAction())) return;
     const t = e.target, L = state().lookups;
+    if (t.dataset.gra && st.grades) { const a = t.dataset.gra, l = st.grades.cons_actions; st.grades.cons_actions = t.checked ? R.CONS_ACTIONS.filter(x => l.includes(x) || x === a) : l.filter(x => x !== a); gradesCheck(); return; }   // CR-34
     if (t.dataset.pf && t.closest('[data-pc]')) { productChange(t); return; }
     if (t.dataset.ktf && t.closest('[data-kt]')) { kolTypeChange(t); return; }
     if (t.dataset.ps) { st.pay[t.dataset.ps] = t.value; payCheck(); return; }

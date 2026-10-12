@@ -2,6 +2,14 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-34 v1.0 · 12/10/2026 — Partner Grade (A–D) · Benchmarks · Metrics Auto / Import / Manual · Incident · Grade review · Dashboard › Partners
+schema **24 → 25** (deal_incidents · partner_grades · grade_history · campaigns.benchmarks · โพสต์ + Reach / Impressions / Clicks / Sales / ROAS / ที่มา) · ยอดเงินเท่าเดิม
+- **Grade:** `R.gradeEngine` ตัวเดียว — Performance (CPM / CPCons / ROAS เทียบ benchmark ตาม pillar) + Operation (ตรงเวลา 50 · รอบแก้ 30 · ไม่มี Incident 20) · 6 โพสต์ใน 6 เดือน · < 2 = Not enough data · ไม่มี metrics = Ops only · No-show / Breach = D · แสดงเฉพาะเกรดที่คนยืนยัน
+- **Review:** Confirm / Override (เหตุผล · ล็อก 90 วัน / 2 โพสต์ใหม่) · KOL Manager / Admin · Operations "Review grade" · ประวัติใน KOL modal
+- **Benchmarks:** Phase Planner (CPM · rate → CPCons อัตโนมัติ · ROAS · Affiliate ROAS · % clips target) · default ใน Settings › **Grades**
+- **Metrics:** ป้าย Manual / Import / Auto · Deals › ⋯ › Import metrics (CSV / XLSX · Manual ไม่ถูกทับ) · ratio ต่อโพสต์ใน Deal modal · `+ Incident` ใน History
+- **หน้าจอ:** Dashboard › **Partners** (KPI 4 · Grade mix · Grade × Tier → KOL Master · Top / Watch list · movement · review) · By campaign "Clips beating benchmark" · KOL Master คอลัมน์ / ตัวกรอง Grade (แทน On-time) · New deal ตัวกรอง Grade + D ต้อง Add anyway · Export + grade
+
 ## CR-33 v2.0 · 09/10/2026 — Payee details บังคับ · เอกสารเป็นไฟล์ / ลิงก์ · รอบ PR · Accounting Verify / Return · Print PDF · Actual (posted)
 schema **23 → 24** (payee docs เป็นรายการ · แถวจ่าย payee_confirmed / verified / returned / printed · รอบ = payment_runs `round`) · ยอดแถวจ่ายเท่าเดิม
 - **Payee details:** ฟอร์มเดียวทั้ง KOL Master / Payments · บังคับ type · WHT · basis · ชื่อบัญชี · ธนาคาร (dropdown) · เลขบัญชี 10–15 หลัก · Full name · ID-card address · (Company: Tax ID) · กรอบ 🔒 Personal data แยก · การ์ด "Incomplete · n missing" + Complete

@@ -45,7 +45,7 @@ Object.assign(KT.rules, (function (R, C) {
     'post_date', 'post_link', 'gencode_code', 'views', 'likes', 'comments', 'saves', 'shares', 'metrics_updated_at', 'deal_status', 'deal_sub_status'];
   const LOG_COLS = ['log_id', 'deal_id', 'campaign_id', 'campaign_name', 'kol_name', 'from_sub_status', 'status', 'sub_status', 'effective_date', 'changed_at', 'source', 'note'];
   const KOL_COLS = ['kol_id', 'display_name', 'partner_type', 'kol_category', 'kol_type', 'gender', 'pic', 'kol_status', 'status_reason', 'contact_channel', 'contact_id', 'account_count', 'platforms',
-    'max_followers', 'tier', 'deal_count', 'latest_quote_total', 'latest_quote_source', 'last_worked', 'last_campaign', 'sources', 'note'];
+    'max_followers', 'tier', 'deal_count', 'latest_quote_total', 'latest_quote_source', 'last_worked', 'last_campaign', 'grade', 'grade_suggested', 'sources', 'note'];   // CR-34: + Grade (confirmed) · Suggested
   const ACCOUNT_COLS = ['account_id', 'kol_id', 'kol_name', 'platform', 'handle', 'profile_link', 'followers', 'tier', 'post_count', 'is_legacy'];
   const QUOTE_COLS = ['quote_id', 'kol_id', 'kol_name', 'account_id', 'platform', 'handle', 'quoted_at', 'source', 'source_row', 'rate_card', 'gencode_expense',
     'gencode_period', 'basket_fee', 'asset_fee', 'expediting_fee', 'total', 'note'];
@@ -103,7 +103,8 @@ Object.assign(KT.rules, (function (R, C) {
       const accs = ix.accounts.get(k.kol_id) || [], mf = R.maxFollowers(accs), q = (ix.quotes.get(k.kol_id) || [])[0], last = R.lastWorkedInfo(state, k.kol_id, pidx);
       return Object.assign({}, k, { kol_type: R.kolTypeLabel(state.lookups, k.kol_type) || null, partner_type: R.partnerTypeLabel(state.lookups, R.partnerTypeOf(k)), contact_id: k.contact_id || null, account_count: accs.length, platforms: [...new Set(accs.map(a => a.platform))], max_followers: mf, tier: R.tierOf(mf, rules),
         deal_count: (ix.deals.get(k.kol_id) || []).length, latest_quote_total: q ? totalCost(q) || null : null, latest_quote_source: q ? q.source : null,
-        last_worked: last ? last.date : null, last_campaign: last ? R.campaignName(state, last.campaignId) || null : null });   // CR-14 §4.4 — the same as the screen
+        last_worked: last ? last.date : null, last_campaign: last ? R.campaignName(state, last.campaignId) || null : null,   // CR-14 §4.4 — the same as the screen
+        grade: R.confirmedGrade ? R.confirmedGrade(state, k.kol_id) : null, grade_suggested: R.gradeOf && R.gradeOf(state, k.kol_id) ? R.gradeOf(state, k.kol_id).suggested : null });
     });
   }
   function accountRows(state, accounts) {

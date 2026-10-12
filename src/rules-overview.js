@@ -453,7 +453,7 @@ Object.assign(KT.rules, (function (R, C) {
   const stuckDaysOf = lookups => { const n = Number((lookups || {}).ops_stuck_days); return Number.isInteger(n) && n >= 1 && n <= 365 ? n : STUCK_DAYS; };
   const WORK_BUCKETS = ['overdue', 'today', 'week', 'later', 'none'];
   const workBucket = (due, today) => (!due ? 'none' : due < today ? 'overdue' : due === today ? 'today' : due <= addDays(today, 7) ? 'week' : 'later');
-  const WORK_KINDS = ['deal', 'shipment', 'payment', 'metrics', 'gencode', 'close', 'approval'];   // CR-29 (S): + Close campaign   // CR-30: + Collect gencode
+  const WORK_KINDS = ['deal', 'shipment', 'payment', 'metrics', 'gencode', 'close', 'approval', 'grade'];   // CR-34: + Review grade (KOL Manager / Admin)   // CR-29 (S): + Close campaign   // CR-30: + Collect gencode
   /* the day a deal came into its stage: its last log into that stage (with a date) · else the stage's own date (Brief · Draft k …) · null when not known
      (deals from the old files have neither) */
   function stageSince(state, deal) {
@@ -522,6 +522,12 @@ Object.assign(KT.rules, (function (R, C) {
       const at = String(q.at || '').slice(0, 10) || null;
       push({ kind: 'approval', key: 'apr:' + q.id, deal: null, kol_id: null, campaign_id: q.campaign_id || null, stage: null, action: 'review', waiting: 'us', due: at ? addDays(at, 2) : null, field: null,
         pic: null, approver: true, since: at, inStage: daysSince(at, today), ref: q });
+    });
+    /* CR-34 §3.5 — Review grade: a suggested grade waiting for a person — only for those who review (due: suggested + 7 days) */
+    if (o.viewer && R.canReview && R.canReview(o.viewer) && R.reviewQueue) R.reviewQueue(state, today).forEach(x => {
+      const at = String(x.rec.computed_at || '').slice(0, 10) || null;
+      push({ kind: 'grade', key: 'grd:' + x.rec.kol_id, deal: null, kol_id: x.rec.kol_id, campaign_id: null, stage: null, action: 'review_grade', waiting: 'us', due: at ? addDays(at, 7) : null, field: null,
+        pic: null, approver: true, since: at, inStage: daysSince(at, today), ref: x.rec });
     });
     const camps = Array.isArray(o.campaignIds) ? new Set(o.campaignIds) : null, person = o.person || '', mine = o.viewer ? R.picName(o.viewer) : null;
     return rows.filter(r => (!camps || !r.campaign_id || camps.has(r.campaign_id)) && (!o.waitingOn || r.waiting === o.waitingOn) &&

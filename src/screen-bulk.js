@@ -14,7 +14,7 @@ KT.bulk = (function () {
   const { C, R, $, esc, state, today, store, commit, toast, toastAction, optionsHTML, picList, userId, guard, pfIcon, dateHTML, setDate, checksHTML, pref } = U;
   const B = C.bulk, T = C.kol, MV = C.move;
   const PAGE = 50;
-  const blank = () => ({ q: '', partner: '', platform: '', tier: '', type: '', category: '', owner: '', status: 'Active', lastWorked: '', perf: '', workedIn: [], postedOnly: false, notIn: true });
+  const blank = () => ({ q: '', partner: '', grade: '', platform: '', tier: '', type: '', category: '', owner: '', status: 'Active', lastWorked: '', perf: '', workedIn: [], postedOnly: false, notIn: true });
   const MAX_CHIPS = 4;   // CR-25 §3.2: more → "+n more"
   /* CR-25 §3.2 — Filters open / folded, per user (folded unless that person opened it) */
   const foldKey = () => 'bkfold_' + (userId() || '');
@@ -24,7 +24,7 @@ KT.bulk = (function () {
   /* KOL Master (rows ticked → Add to campaign) opens New deal on this tab with those KOLs selected */
   function open(o = {}) { KT.newDeal.open({ tab: 'master', kolIds: o.kolIds, campaignId: o.campaignId }); }
   function init(o = {}) {
-    bk = { f: blank(), sel: new Map(), page: 0, submitted: false, dirty: false, rows: [] };
+    bk = { f: blank(), sel: new Map(), page: 0, submitted: false, dirty: false, rows: [], sort: 'name' };
     (o.kolIds || []).forEach(id => addSel(id));
     if ((o.kolIds || []).length) bk.f.notIn = false;   // KOL Master picked them already
   }
@@ -38,7 +38,16 @@ KT.bulk = (function () {
   const selectKols = ids => { if (!bk) return; ids.forEach(addSel); bk.dirty = true; };
 
   /* ---------- the KOLs that match (R.kolPickerFilter) ---------- */
-  function matches() { const h = api.header(); return R.kolPickerFilter(state(), bk.f, h.campaign, today()); }
+  /* CR-34 §3.7 — sorted by name, or by Grade (A first · Not graded last) */
+  function matches() {
+    const h = api.header(), s = state(), rows = R.kolPickerFilter(s, bk.f, h.campaign, today());
+    if (bk.sort !== 'grade') return rows;
+    const rank = r => { const g = R.confirmedGrade(s, r.k.kol_id); return g ? R.GRADES.indexOf(g) : 9; };
+    return rows.slice().sort((a, b) => rank(a) - rank(b) || a.k.display_name.localeCompare(b.k.display_name, 'th'));
+  }
+  /* a D partner: the main reason (an Override's own reason first) */
+  const dReason = (s, id) => { const rec = R.gradeOf(s, id); return rec ? rec.override_reason || KT.grades.reasonText(rec.reason) || C.grade.names.D : ''; };
+  const isD = (s, id) => R.confirmedGrade(s, id) === 'D';
 
   /* ---------- draw ---------- */
   function draw(a, top) {
@@ -48,6 +57,7 @@ KT.bulk = (function () {
     api.m.setBody(api.headerHTML() + `<div class="bk-main"><div class="bk-left"><div class="toolbar bk-tools bk-quick" id="bk_tools"><input type="search" class="search" id="bk_q" placeholder="${esc(T.search)}" value="${esc(bk.f.q)}" autocomplete="off">` +
         `<span class="tlab bk-pt">${esc(C.partner.field)} ${U.partnerSegHTML('data-bkpt', bk.f.partner, { all: true, keys: ['kol', 'affiliate'], id: 'bk_fpartner' })}</span>` +
         `<select id="bk_ftier" aria-label="${esc(T.tier)}">${optionsHTML(R.tierOrder(L.tier_rules), bk.f.tier, T.allTiers)}</select>` +   // "All tiers" says what it is (as on KOL Master)
+        `<select id="bk_fgrade" aria-label="${esc(C.grade.newDeal.filter)}">${optionsHTML(R.GRADES.map(g => ({ value: g, label: C.grade.gradeOf(g) })).concat([{ value: 'none', label: C.grade.notGraded }]), bk.f.grade, C.grade.allGrades)}</select>` +   // CR-34
         `<label class="tick small"><input type="checkbox" id="bk_notin"${bk.f.notIn ? ' checked' : ''}> ${esc(B.notInCampaign)}</label>` +
         `<button type="button" class="btn bk-fbtn" id="bk_fbtn" data-bkfold aria-expanded="${open}" aria-controls="bk_more" title="${esc(B.filtersTip)}">${U.ICON.filter} <span id="bk_fbtnt">${esc(B.filtersN(foldChips().length))}</span></button></div>` +
         `<div class="toolbar bk-tools bk-more${open ? '' : ' hidden'}" id="bk_more">${moreHTML()}</div><div class="fchips bk-chips hidden" id="bk_chips"></div>` +
@@ -126,13 +136,13 @@ KT.bulk = (function () {
     const page = rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE), allPage = page.length > 0 && page.every(r => bk.sel.has(r.k.kol_id));
     const fol = n => (n ? R.fmtNum(n) : '—');
     $('bk_list').innerHTML = !rows.length ? emptyHTML() : `<div class="tablewrap bk-wrap"><table class="tbl bk-tbl"><thead><tr><th class="cb"><input type="checkbox" id="bk_page" aria-label="${esc(B.selectPage)}"${allPage ? ' checked' : ''}></th>` +
-      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th class="bk-own" title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th>${esc(B.colLastCampaign)}</th><th>${esc(B.perf)}</th></tr></thead><tbody>` +
+      `<th>${esc(B.colKol)}</th><th>${esc(T.platform)}</th><th class="num">${esc(B.colFollowers)}</th><th>${esc(T.tier)}</th><th>${esc(B.type)}</th><th class="bk-own" title="${esc(B.kolOwnerTip)}">${esc(B.kolOwner)}</th><th>${esc(B.colLastCampaign)}</th><th class="sort" data-bksort title="${esc(bk.sort === 'grade' ? C.grade.newDeal.sortName : C.grade.newDeal.sortGrade)}">${esc(C.grade.col)}${bk.sort === 'grade' ? '<span class="arr">▲</span>' : ''}</th></tr></thead><tbody>` +
       page.map(r => { const li = R.lastWorkedInfo(s, r.k.kol_id);
         return `<tr class="click${bk.sel.has(r.k.kol_id) ? ' selected' : ''}" data-bkrow="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-bksel="${esc(r.k.kol_id)}"${bk.sel.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
         `<td class="bk-kol"><span class="bk-kn">${U.avatarHTML(r.k, 'sm')}<b>${U.nameHTML(r.k.display_name)}</b>${U.partnerChipHTML(r.k)}</span>${r.inCamp ? ` <span class="chip">${esc(B.inCampaign)}</span>` : ''}${(r.k.kol_status || 'Active') !== 'Active' ? ` <span class="chip warn-chip">${esc(r.k.kol_status)}</span>` : ''}</td>` +
         `<td>${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p, 'posted', p)).join('')}</td><td class="num">${fol(r.mf)}</td><td><span class="chip">${esc(r.tier)}</span></td>` +
         `<td class="bk-type">${esc(R.kolTypeLabel ? R.kolTypeLabel(s.lookups, r.k.kol_type) || '' : r.k.kol_type || '')}</td><td class="bk-own">${esc(r.k.pic || '')}</td>` +
-        `<td class="bk-camp">${li ? esc(R.campaignName(s, li.campaignId) || '') : '<span class="muted">—</span>'}</td><td>${r.pf.perf ? U.reliabilityChip(r.pf.perf) : ''}</td></tr>`; }).join('') + `</tbody></table></div>` +
+        `<td class="bk-camp">${li ? esc(R.campaignName(s, li.campaignId) || '') : '<span class="muted">—</span>'}</td><td title="${esc(r.pf.perf && r.pf.perf.measured ? `${C.perf.colOnTime}: ${C.perf.postsOf(r.pf.perf.onTime, r.pf.perf.measured)}` : '')}">${KT.grades.chipHTML(s, r.k.kol_id, { noWait: true })}</td></tr>`; }).join('') + `</tbody></table></div>` +
       (pages > 1 ? `<div class="bk-pager"><button type="button" class="btn small" data-bkpage="-1"${bk.page ? '' : ' disabled'}>‹</button><span class="muted small">${esc(B.pageOf(bk.page + 1, pages, rows.length))}</span><button type="button" class="btn small" data-bkpage="1"${bk.page < pages - 1 ? '' : ' disabled'}>›</button></div>` : '');
     const pageSel = page.filter(r => bk.sel.has(r.k.kol_id)).length, allSel = rows.length > 0 && rows.every(r => bk.sel.has(r.k.kol_id));
     $('bk_selbar').innerHTML = allPage && rows.length > page.length && !allSel ? `<div class="bk-banner">${esc(B.pageSelected(pageSel))} · <button type="button" class="link" data-bkall>${esc(B.selectAllMatching(Math.min(rows.length, R.MAX_BULK)))}</button></div>`
@@ -159,6 +169,8 @@ KT.bulk = (function () {
     const p = pseudo(id, x), r = R.checkMove(state(), p.deal, startAt(), p.form);
     return r.errs.filter(e => !['to', 'pillar', 'cta', 'ship_method', 'ship_items', 'ship_by'].includes(e.field));   // the pillar · CTA · sample method / products are the header's (one message there)
   }
+  /* the D rows not ticked Add anyway (CR-34) */
+  const dOpen = () => { const s = state(), p = plan(); return p.create.filter(x => isD(s, x.kol.kol_id) && !bk.sel.get(x.kol.kol_id).anyway); };
   function plan() { const h = api.header(); return R.bulkShortlistPlan(state(), [...bk.sel.keys()], h.campaign, { pic: h.assign || 'me', me: R.picName(U.me()) || '' }); }
   function drawSide() {
     if (!$('bk_selected')) return;
@@ -167,7 +179,7 @@ KT.bulk = (function () {
     const skip = new Set(p.skip.map(x => x.kol.kol_id));
     $('bk_selected').innerHTML = !n ? `<div class="hint">${esc(B.noneSelected)}</div>` : [...bk.sel.entries()].map(([id, x]) => {
       const k = R.kolById(s, id); if (!k) return '';
-      const errs = bk.submitted && !skip.has(id) ? rowChecks(id, x) : [], bad = f => errs.some(e => e.field === f);
+      const errs = bk.submitted && !skip.has(id) ? rowChecks(id, x) : [], bad = f => errs.some(e => e.field === f), dd = isD(s, id) && !skip.has(id);
       const tier = R.tierOf(R.maxFollowers(R.accountsOfKol(s, id)), s.lookups.tier_rules || []) || R.UNKNOWN_TIER;
       const pk = x.term === 'package' ? R.packageChoices(s, id, today(), null).map(c => ({ value: c.pkg.package_id, label: MV.pkgOption(R.packageLabel(c.pkg), Math.max(0, c.left)) })) : [];
       const pkObj = x.term === 'package' && x.packageId ? R.packageById(s, x.packageId) : null, rateAuto = !!pkObj;
@@ -180,7 +192,8 @@ KT.bulk = (function () {
         (showTerm ? `<label class="bk-f"><span>${esc(B.term)}${termReq ? ' <span class="req">*</span>' : ''}</span><select data-sterm="${esc(id)}"${bad('payment_term') ? ' class="invalid"' : ''}>${optionsHTML(R.PAYMENT_TERMS.map(t => ({ value: t, label: C.term[t] })), x.term, MV.chooseTerm)}</select><span>&nbsp;</span></label>` : '') +
         (showTerm && x.term === 'package' ? `<label class="bk-f"><span>${esc(MV.package)} <span class="req">*</span></span><select data-spkg="${esc(id)}"${bad('package_id') ? ' class="invalid"' : ''}>${optionsHTML(pk, x.packageId, MV.choosePackage)}</select><span>&nbsp;</span></label>` +
           `<label class="bk-f bk-uses"><span>${esc(B.uses)}</span><input type="number" min="1" step="1" data-suses="${esc(id)}" value="${esc(x.units)}"><span>&nbsp;</span></label>` : '') +
-        `</div>${errs.length ? `<div class="bk-serr">${errs.map(e => `<span>${esc(e.msg)}</span>`).join('')}</div>` : ''}</div>`;
+        `</div>${dd ? `<div class="check ${bk.submitted && !x.anyway ? 'err' : 'warn'} bk-dwarn">! <span>${esc(C.grade.newDeal.warnD(dReason(s, id)))}</span></div><label class="tick small bk-anyway"><input type="checkbox" data-sanyway="${esc(id)}"${x.anyway ? ' checked' : ''}> ${esc(C.grade.newDeal.anyway)}</label>` : ''}` +   // CR-34 §3.7
+        `${errs.length ? `<div class="bk-serr">${errs.map(e => `<span>${esc(e.msg)}</span>`).join('')}</div>` : ''}</div>`;
     }).join('');
     /* the money: Remaining → after adding (the rates of the rows that will be added) */
     const c = s.campaigns.find(x => x.campaign_id === h.campaign), add = p.create.reduce((a, x) => { const r = bk.sel.get(x.kol.kol_id), pk = r.term === 'package' && r.packageId ? R.packageById(s, r.packageId) : null;
@@ -196,7 +209,8 @@ KT.bulk = (function () {
       (remain == null ? `<div class="muted small">${esc(B.noBudgetLine)}</div>` : `<div class="bk-budget"><span class="${after < 0 ? 'over' : ''}">${esc(B.remainingLine(R.baht(remain), R.baht(after)))}</span>` +
         (after < 0 && add > 0 ? `<div class="check warn">! <span>${esc(C.msg.campaignOver(R.baht(-after)))}</span></div>` : '') + `</div>`) +
       `<div>${esc(B.willAddSkip(p.create.length, p.skip.length))}</div>` + (noDue ? `<div class="muted small">${esc(B.withoutDue(noDue))}</div>` : '') +
-      [...byWhat.entries()].map(([w, k]) => `<div class="check err">✕ <span>${esc(B.rowsNeed(k, w))}</span></div>`).join('');
+      [...byWhat.entries()].map(([w, k]) => `<div class="check err">✕ <span>${esc(B.rowsNeed(k, w))}</span></div>`).join('') +
+      (bk.submitted && dOpen().length ? `<div class="check err">✕ <span>${esc(C.grade.newDeal.needAnyway(dOpen().length))}</span></div>` : '');
     $('bk_checks').innerHTML = over ? checksHTML({ errs: [{ msg: B.maxPerBatch(R.MAX_BULK) }], warns: [], infos: [] }, '') : p.errs.length && n ? checksHTML({ errs: p.errs, warns: [], infos: [] }, '') : '';
     const addB = $('bk_add'); addB.textContent = B.addDeals(p.create.length); addB.disabled = over || !p.create.length || p.errs.length > 0;
     $('bk_addopen').disabled = addB.disabled;
@@ -207,6 +221,8 @@ KT.bulk = (function () {
     const t = e.target; if (!bk) return false;
     if (api && api.headerClick(e)) return true;
     if (t.id === 'bk_page') { const on = t.checked; bk.rows.slice(bk.page * PAGE, bk.page * PAGE + PAGE).forEach(r => (on ? addSel(r.k.kol_id) : bk.sel.delete(r.k.kol_id))); bk.dirty = true; drawList(); return true; }
+    if (t.closest('[data-bksort]')) { bk.sort = bk.sort === 'grade' ? 'name' : 'grade'; bk.page = 0; drawList(); return true; }   // CR-34
+    const an = t.closest('[data-sanyway]'); if (an) { const x = bk.sel.get(an.dataset.sanyway); if (x) { x.anyway = an.checked; bk.dirty = true; drawSide(); } return true; }
     const cb = t.closest('[data-bksel]'); if (cb) { cb.checked ? addSel(cb.dataset.bksel) : bk.sel.delete(cb.dataset.bksel); bk.dirty = true; drawList(); return true; }
     if (t.closest('[data-bkall]')) { bk.rows.slice(0, R.MAX_BULK).forEach(r => addSel(r.k.kol_id)); bk.dirty = true; drawList(); return true; }
     if (t.closest('[data-bkclearsel]')) { bk.sel.clear(); bk.dirty = true; drawList(); return true; }
@@ -238,7 +254,7 @@ KT.bulk = (function () {
     const du = e.target.closest('[data-sdue]'); if (du && R.isISODate(du.value)) { bk.sel.get(du.dataset.sdue).postDue = du.value; const ph = document.querySelector(`[data-sphase="${CSS.escape(du.dataset.sdue)}"]`); if (ph) ph.innerHTML = KT.move.dateHintHTML(api.header().campaign, du.value) || '&nbsp;'; }
   }
   function onChange(e) {
-    const t = e.target, map = { bk_fplatform: 'platform', bk_ftier: 'tier', bk_ftype: 'type', bk_fcat: 'category', bk_fowner: 'owner', bk_fstatus: 'status', bk_flast: 'lastWorked', bk_fperf: 'perf' };
+    const t = e.target, map = { bk_fgrade: 'grade', bk_fplatform: 'platform', bk_ftier: 'tier', bk_ftype: 'type', bk_fcat: 'category', bk_fowner: 'owner', bk_fstatus: 'status', bk_flast: 'lastWorked', bk_fperf: 'perf' };
     if (!bk) return;
     if (map[t.id]) { bk.f[map[t.id]] = t.value; bk.page = 0; drawList(); drawTools(); return; }
     if (t.id === 'bk_notin') { bk.f.notIn = t.checked; bk.page = 0; drawList(); drawTools(); return; }
@@ -257,7 +273,7 @@ KT.bulk = (function () {
     if (!guard('deal.edit')) return;
     const s = state(), h = api.header(), p = plan(); if (!p.create.length || p.errs.length) return;
     bk.submitted = true;
-    const bad = p.create.filter(x => rowChecks(x.kol.kol_id, bk.sel.get(x.kol.kol_id)).length);
+    const bad = p.create.filter(x => rowChecks(x.kol.kol_id, bk.sel.get(x.kol.kol_id)).length || (isD(s, x.kol.kol_id) && !bk.sel.get(x.kol.kol_id).anyway));   // CR-34: a D needs Add anyway
     if (bad.length || api.headerErrors().length) { drawSide(); api.showHeaderErrors(); const el = document.querySelector(`[data-srow="${CSS.escape(bad.length ? bad[0].kol.kol_id : '')}"]`); if (el) el.scrollIntoView({ block: 'center' }); return; }
     const n = p.create.length, batchId = 'B' + Date.now().toString(36), firstLog = store.newLogId(), step = R.stepOf(s.lookups, h.startAt) || R.shortlistStep(s.lookups);
     const dealIds = []; for (let i = 0; i < n; i++) { const id = store.newId('deal'); dealIds.push(id); s.deals.push({ deal_id: id, _reserve: true }); }

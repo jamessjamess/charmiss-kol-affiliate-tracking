@@ -7,7 +7,8 @@ Object.assign(KT.rules, (function (R, C) {
   const issue = (field, msg, kind) => (kind ? { field, msg, kind } : { field, msg });
   const OPEN = ['List', 'Inprocess'];
   const MONEY_KEYS = ['rate_card', 'gencode_expense', 'basket_fee', 'asset_fee', 'expediting_fee', 'other_fee'];   // CR-30 §3.2
-  const METRIC_KEYS = ['views', 'likes', 'comments', 'saves', 'shares'];
+  const METRIC_KEYS = ['reach', 'impressions', 'views', 'likes', 'comments', 'saves', 'shares', 'clicks'];   // CR-34 §3.2: + Reach · Impressions · Clicks (whole numbers)
+  const METRIC_MONEY = ['sales', 'roas'];   // CR-34: Sales ฿ · ROAS (decimals · Conversion / an Affiliate)
   const DATE_KEYS = ['docs_done_date', 'paid_50_date', 'paid_full_date', 'gencode_start_date', 'delivery_date', 'brief_date',
     'expected_script_date', 'script_date', 'expected_draft1_date', 'approved_draft1_date', 'expected_draft2_date', 'approved_draft2_date', 'expected_draft3_date', 'approved_draft3_date',
     'expected_approve_date', 'approved_date', 'expected_post_date'];
@@ -279,6 +280,7 @@ Object.assign(KT.rules, (function (R, C) {
       else if (!acc || acc.kol_id !== d.kol_id) both(issue(f('account_id'), M.postAccountOther(n)));
       /* CR-10 §4.5: one reader for a count (12,500 · 12.5K · 1.3M) and the same warnings as Deals › Performance */
       METRIC_KEYS.forEach(k => { if (!isBlank(p[k]) && R.parseCount(p[k]).error) both(issue(f(k), M.postCount(n, k))); });
+      METRIC_MONEY.forEach(k => { const v = isBlank(p[k]) ? null : Number(String(p[k]).replace(/[,฿\s]/g, '')); if (!isBlank(p[k]) && (isNaN(v) || v < 0)) both(issue(f(k), M.postCount(n, k))); });
       if (METRIC_KEYS.every(k => isBlank(p[k]) || !R.parseCount(p[k]).error)) {
         const vals = Object.fromEntries(METRIC_KEYS.map(k => [k, isBlank(p[k]) ? null : R.parseCount(p[k]).value]));
         if (orig ? !R.sameMetrics(orig, vals) : true) R.metricsWarnings(orig, vals).forEach(w => warns.push(issue(f('views'), `${n}: ${w.msg}`)));
@@ -749,7 +751,7 @@ Object.assign(KT.rules, (function (R, C) {
   /* all of them back to empty at once — the Campaign stays · PIC = All PICs */
   function clearFilters(f) { return Object.assign(blankDealFilter(), { campaign: (f && f.campaign) || '', pic: 'all', reason: '' }); }
   /* KOL Master: the same rule (it has no Campaign) */
-  const KOL_FILTER_KEYS = ['q', 'platform', 'tier', 'partner', 'lastWorked', 'category', 'type', 'pic', 'status', 'term', 'history', 'source'];   // CR-25: + Partner type
+  const KOL_FILTER_KEYS = ['q', 'platform', 'tier', 'partner', 'grade', 'lastWorked', 'category', 'type', 'pic', 'status', 'term', 'history', 'source'];   // CR-25: + Partner type · CR-34: + Grade
   const activeKolFilters = f => KOL_FILTER_KEYS.filter(k => (k === 'q' ? !!trim(f.q) : Array.isArray(f[k]) ? f[k].length > 0 : !!f[k]));
 
   /* the wide drawers (CR-07 §4.7, CR-09 §4.12 / §4.17): KOL clamp(720px, 60% of the window, 1200px) · Deal clamp(680px, 50%, 1100px) ·
@@ -782,7 +784,7 @@ Object.assign(KT.rules, (function (R, C) {
     UNKNOWN_TIER, dealTier, tierOrder, tierRange, stageKey, stageOrder, stageOf, stageName, stageLabel, stageMoney, groupDeals, groupStats,
     DEAL_SECTIONS, POST_EDIT_FIELDS, AUTO_FIELDS, paymentRecorded, fieldEditable, sectionEditable, diffFields, diffPosts, editEvent, pillarCleared,
     campaignCta, ctaDiffers, dealsWithCta, termSource, termDiffers,
-    MONEY_KEYS, METRIC_KEYS, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, CORE_STEPS, isCoreStep, validateTiers,
+    MONEY_KEYS, METRIC_KEYS, METRIC_MONEY, DATE_KEYS, LIST_KEYS, activeValues, isInactiveValue, listValueUse, validateListValue, stepUse, stepDealUse, stepLocked, CORE_STEPS, isCoreStep, validateTiers,
     dealContext, postsOfCtx, postPlatform, PAY_FLAGS, togglePayment, isUnpaid, validateDeal, rowWarnings,
     PAY_TABS, PAY_GROUPS, payTabOf, outstandingOf, paymentsView, payGroupOf, payGroupTotals, payFlags,
     DEAL_TABS, dealTabOf, inDealTab, ATTENTION, docsByDeal, attentionContext, attentionReasons, dealTabs, hasReason, DEAL_TAB_KEY, dealTabPref, setDealTabPref, dealTabFromLink, defaultDealsCampaign,

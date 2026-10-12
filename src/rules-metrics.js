@@ -6,6 +6,9 @@ Object.assign(KT.rules, (function (R, C) {
   'use strict';
   const { isBlank, isISODate, trim, dayDiff } = R;
   const METRICS = ['views', 'likes', 'comments', 'shares', 'saves'];   // the order on screen and in a paste (§4.6)
+  /* CR-34 §3.2 — every number a post can have (Reach · Impressions · Clicks · Sales ฿ · ROAS too) · where they came from: Auto · Import · Manual */
+  const METRICS_ALL = ['reach', 'impressions', 'views', 'likes', 'comments', 'shares', 'saves', 'clicks', 'sales', 'roas'];
+  const METRIC_SOURCES = ['auto', 'import', 'manual'];
   const ENGAGE = ['likes', 'comments', 'shares', 'saves'];
   const PERF_PLATFORMS = ['TikTok', 'Instagram', 'Facebook', 'X', 'YouTube', 'Lemon8', 'Other'];
   /* CR-11 §4.12 — the metrics of a post are collected at checkpoints (D+7 …) — replaces CR-10's Updated / Stale */
@@ -13,7 +16,7 @@ Object.assign(KT.rules, (function (R, C) {
   const val = v => (v == null || v === '' || isNaN(v) ? null : Number(v));
   const n0 = v => val(v) || 0;
   const engagementOf = p => ENGAGE.reduce((a, k) => a + n0(p[k]), 0);
-  const hasMetrics = p => val(p.views) != null;
+  const hasMetrics = p => val(p.views) != null || val(p.reach) != null || val(p.impressions) != null;   // CR-34: Reach / Impressions count as numbers in too
   /* §4.1 — posted = a post date on or before today, or a link (an old post with a link and no date counts) */
   const isPosted = (p, today) => (isISODate(p.post_date) && p.post_date <= today) || !isBlank(p.post_link);
   const metricsStaleDays = lookups => { const v = Number((lookups || {}).metrics_stale_days); return v > 0 ? Math.round(v) : 14; };   // CR-10 · kept, no longer used (CR-11 §4.12)
@@ -52,7 +55,7 @@ Object.assign(KT.rules, (function (R, C) {
      checkpoints = days after the post date ([7] · Settings can add 30) · goLive = lookups.go_live.date */
   function metricsInfo(p, today, checkpoints, goLive) {
     const cps = (checkpoints && checkpoints.length ? checkpoints : [7]).slice().sort((a, b) => a - b), has = hasMetrics(p), at = String(p.metrics_updated_at || '').slice(0, 10);
-    if (has && (p.metrics_source === 'legacy' || !isISODate(at))) return { status: 'imported' };
+    if (has && (p.metrics_legacy || p.metrics_source === 'legacy' || !isISODate(at))) return { status: 'imported' };   // CR-34: the old file's numbers (metrics_legacy)
     if (!has && isISODate(goLive) && isISODate(p.post_date) && p.post_date < R.addDays(goLive, -30)) return { status: 'not_tracked' };
     if (!isISODate(p.post_date)) return { status: has ? 'collected' : 'not_posted' };
     if (isBlank(p.post_link) && !has) return { status: 'not_posted' };
@@ -170,8 +173,8 @@ Object.assign(KT.rules, (function (R, C) {
   const perfMetricsOf = rows => postMetrics(rows.map(r => ({ post: r.post, cost: r.cost })));
 
   /* ===================== updating metrics (§4.5–4.6) ===================== */
-  const metricsOf = p => Object.fromEntries(METRICS.map(k => [k, val((p || {})[k])]));
-  const sameMetrics = (a, b) => METRICS.every(k => val((a || {})[k]) === val((b || {})[k]));
+  const metricsOf = p => Object.fromEntries(METRICS_ALL.map(k => [k, val((p || {})[k])]));
+  const sameMetrics = (a, b) => METRICS_ALL.every(k => val((a || {})[k]) === val((b || {})[k]));
   /* warnings — saved anyway: a like / comment / share / save count above views · views lower than the last update */
   function metricsWarnings(before, after) {
     const w = [], v = val(after.views), b = val((before || {}).views);
@@ -179,13 +182,15 @@ Object.assign(KT.rules, (function (R, C) {
     if (b != null && v != null && v < b) w.push({ kind: 'viewsDown', msg: C.msg.metricsViewsDown(R.fmtNum(b)) });
     return w;
   }
-  /* write values on the post (keys left out keep theirs) → its 'metrics' event (from / to = the five values) ·
-     ctx = {today, now, user, eventId, note} · source 'manual' | 'paste' */
+  /* write values on the post (keys left out keep theirs) → its 'metrics' event (from / to = the values) ·
+     ctx = {today, now, user, eventId, note, day (7 | 30)} · source 'manual' | 'import' | 'auto' (CR-34 · a paste from a sheet = import) */
   function setMetrics(post, values, ctx, source) {
     const from = metricsOf(post), to = Object.assign({}, from);
-    METRICS.forEach(k => { if (Object.prototype.hasOwnProperty.call(values, k)) to[k] = val(values[k]); });
-    METRICS.forEach(k => { post[k] = to[k]; });
-    Object.assign(post, { metrics_updated_at: ctx.today, metrics_updated_by: ctx.user || null, metrics_source: source || 'manual' });
+    METRICS_ALL.forEach(k => { if (Object.prototype.hasOwnProperty.call(values, k)) to[k] = val(values[k]); });
+    METRICS_ALL.forEach(k => { post[k] = to[k]; });
+    const src = source === 'paste' ? 'import' : METRIC_SOURCES.includes(source) ? source : 'manual';
+    Object.assign(post, { metrics_updated_at: ctx.today, metrics_updated_by: ctx.user || null, metrics_source: src, metrics_day: ctx.day === 30 ? 30 : post.metrics_day || 7 });
+    if (src !== 'auto') post.metrics_legacy = false;
     return { event_id: ctx.eventId, deal_id: post.deal_id, post_id: post.post_id, type: 'metrics', from, to, changed_at: ctx.now || null, changed_by: ctx.user || null, note: ctx.note || null };
   }
   /* who may change a post's metrics: Admin · KOL Manager · Staff on deals they are the PIC of — Viewer / Accounting read only */
@@ -253,7 +258,7 @@ Object.assign(KT.rules, (function (R, C) {
   const pasteTemplate = rows => [[C.perfTab.paste.colLink].concat(METRICS.map(k => C.perfTab.col[k])).join('\t')]
     .concat([...new Set(rows.map(r => trim(r.post.post_link)).filter(Boolean))]).join('\n');
 
-  return { METRICS, ENGAGE, PERF_PLATFORMS, METRICS_STATUSES, engagementOf, hasMetrics, isPosted, metricsStaleDays, metricsCheckpoints, postMetrics, duplicatePostGroups, firstOfLink, metricsInfo, metricsStatus, metricsDue, metricsDues, parseCheckpoints, parseCount,
+  return { METRICS, METRICS_ALL, METRIC_SOURCES, ENGAGE, PERF_PLATFORMS, METRICS_STATUSES, engagementOf, hasMetrics, isPosted, metricsStaleDays, metricsCheckpoints, postMetrics, duplicatePostGroups, firstOfLink, metricsInfo, metricsStatus, metricsDue, metricsDues, parseCheckpoints, parseCount,
     normalizePostLink, perfRows, blankPerfFilter, PERF_FILTER_KEYS, filterPerfRows, sortPerfRows, groupPerfRows, perfMetricsOf,
     metricsOf, sameMetrics, metricsWarnings, setMetrics, canEditMetrics, planPaste, pasteTemplate };
 })(KT.rules, KT.content));

@@ -54,7 +54,10 @@ KT.planner = (function () {
       /* the period only helps plan (not saved): an existing Campaign starts with its Phases' dates; typing it makes the count re-split the dates */
       period: { start: phases.map(p => p.start_date).filter(Boolean).sort()[0] || '', end: phases.map(p => p.end_date).filter(Boolean).sort().pop() || '' },
       countErr: null, moved: null,
+      /* CR-34 §3.1 — the Campaign's benchmarks as typed (blank = the default of Settings › Grades) · saved with the plan, at once (not an approval) */
+      bench: Object.fromEntries(R.BENCH_KEYS.map(k => [k, c && c.benchmarks && c.benchmarks[k] != null ? String(c.benchmarks[k]) : ''])),
     };
+    pl.benchBase = JSON.stringify(R.benchRecord(pl.bench));
     /* the % of a Budget % row from its saved amount (the amount stays as it was) · the others follow the budget */
     pl.rows.forEach(r => { if (r.basis === 'percent') { const b = budget(), a = R.money(r.amount); r.pct = b && a != null ? pctText(round2(a / b * 100)) : ''; } else syncRow(r); });
     pl.base = snapNow();   // what the footer compares with (CR-21: "3 changes · …")
@@ -151,8 +154,26 @@ KT.planner = (function () {
   /* CR-21 §3.4 — mode 'draft': the name only · else everything (CR-19 §4.8: the KOL budget above ฿0 — an approved budget is read-only here) */
   function validate(mode) {
     const res = R.validatePlan(state(), campDraft(), planRows(), pl.deleted, mode === 'draft' ? 'draft' : 'submit', { budgetLocked: budgetLocked() });
+    res.errs.push(...R.validateBenchmarks(pl.bench, 'bm_'));   // CR-34: numbers ≥ 0 · % up to 100
     if (pl.countErr && mode !== 'draft') res.errs.unshift(pl.countErr);
     return res;
+  }
+  const benchChanged = () => JSON.stringify(R.benchRecord(pl.bench)) !== pl.benchBase;
+  /* CR-34 §3.1 — Benchmarks: Awareness CPM · Consideration rate (→ Cost per consideration, worked out unless typed) · Conversion ROAS · Affiliate ROAS ·
+     the Campaign KPI (% of clips beating the benchmark) */
+  function benchAuto() {
+    const def = R.gradeRules(state().lookups).bench, b = pl.bench, n = v => (R.isBlank(v) || isNaN(String(v).replace(/,/g, '')) ? null : Number(String(v).replace(/,/g, '')));
+    return R.cpconsFrom(n(b.cpm) != null ? n(b.cpm) : def.cpm, n(b.cons_rate) != null ? n(b.cons_rate) : def.cons_rate);
+  }
+  function benchHTML() {
+    const B = C.grade.bench, def = R.gradeRules(state().lookups).bench, b = pl.bench, auto = benchAuto();
+    const inp = (k, ph) => `<input class="numin" inputmode="decimal" id="f_bm_${k}" data-bm="${k}" data-key="bm_${k}" value="${esc(b[k])}" placeholder="${esc(ph != null ? ph : B.defaultPh(def[k]))}" autocomplete="off">`;
+    const autoTxt = auto != null && R.isBlank(b.cpcons) ? B.cpconsAuto(`฿${auto.toFixed(2)}`) : '';
+    return `<p class="hint" style="margin-top:0">${esc(B.hint)}</p><div class="fields pl-bench">` +
+      field('bm_cpm', `${B.aw} · ${B.cpm}`, inp('cpm')) + field('bm_cons_rate', `${B.co} · ${B.consRate}`, inp('cons_rate')) +
+      field('bm_cpcons', `${B.co} · ${B.cpcons}`, inp('cpcons', auto != null ? auto.toFixed(2) : B.defaultPh(def.cpcons)), { hint: `<span id="pl_cpcons">${esc(autoTxt)}</span>` }) +
+      field('bm_roas', `${B.cv} · ${B.roas}`, inp('roas')) + field('bm_affiliate_roas', `${B.aff} · ${B.affRoas}`, inp('affiliate_roas')) +
+      field('bm_clips_target_pct', `${B.kpi} · ${B.clips}`, inp('clips_target_pct')) + `</div>`;
   }
   /* "Phase n" of each row by its start date (CR-06 §4.2) */
   const rowNames = () => { const seqs = R.planSeqs(planRows()); return pl.rows.map((r, i) => R.phaseTitle(seqs[i], '')); };
@@ -201,7 +222,7 @@ KT.planner = (function () {
     const table = plan + `<div class="tablewrap"><table class="tbl pl-tbl"><thead><tr><th>${esc(K.colName)}</th><th>${esc(K.colLabel)}</th><th>${esc(K.colPeriod)}</th><th class="num">${esc(K.colDays)}</th>` +
       `<th class="num">${esc(K.colBudgetPct)}</th><th class="num">${esc(K.colAmount)}</th><th title="${esc(C.fill.defaultPillarHint)}">${esc(C.fill.defaultPillar)}</th><th></th></tr></thead><tbody>${pl.rows.map(rowHTML).join('')}</tbody><tfoot id="pl_foot"></tfoot></table></div>` +
       `<div class="btns" style="margin-top:8px"><button type="button" class="btn small" data-add>${esc(K.add)}</button></div><div class="pl-bar" id="pl_bar"></div>`;
-    return { body: `${barsHTML()}<div class="pl-grid"><div class="pl-l">${sec(K.secCampaign, campaign)}</div><div class="pl-r">${sec(K.secPhases, table)}${sec(K.secTimeline, `<div id="pl_tl"></div>`)}` +
+    return { body: `${barsHTML()}<div class="pl-grid"><div class="pl-l">${sec(K.secCampaign, campaign)}${sec(C.grade.bench.sec, benchHTML(), '', 'pl_benchSec')}</div><div class="pl-r">${sec(K.secPhases, table)}${sec(K.secTimeline, `<div id="pl_tl"></div>`)}` +
         `${isNew ? '' : sec(K.secImpact, `<div id="pl_impact"></div>`, '', 'pl_impactSec')}</div></div>`,
       left: `${hint() ? `<div class="hint pl-aphint">${esc(hint())}</div>` : ''}<div class="pl-diff muted small" id="pl_diff"></div><div class="checks" id="pl_checks"></div>`,
       buttons: `<button type="button" class="btn" data-cmclose>${esc(C.common.cancel)}</button>` +
@@ -291,8 +312,8 @@ KT.planner = (function () {
       w.classList.toggle('invalid', bad); el.classList.toggle('invalid', bad);
     });
     /* the footer says what changed (an existing Campaign) · nothing → a grey "No changes" */
-    const diff = pl.mode === 'edit' ? diffNow() : [], none = pl.mode === 'edit' && !diff.length && !canSendAsIs();
-    $('pl_diff').textContent = R.diffSummary(diff);
+    const diff = pl.mode === 'edit' ? diffNow() : [], none = pl.mode === 'edit' && !diff.length && !canSendAsIs() && !benchChanged();
+    $('pl_diff').textContent = [R.diffSummary(diff), pl.mode === 'edit' && benchChanged() ? C.grade.bench.sec : ''].filter(Boolean).join(' · ');
     const sv = b.querySelector('[data-plsave]'); sv.disabled = none || (red && pl.submitted !== 'draft' && res.errs.length > 0); sv.textContent = none ? C.approval.noChanges : saveLabel(); sv.classList.toggle('nochg', none);
     const dr = b.querySelector('[data-pldraft]'); if (dr) dr.disabled = othersRequest() || (pl.status !== 'new' && pl.status !== 'draft' && !diff.length);
     if (othersRequest()) { sv.disabled = true; $('pl_diff').textContent = C.approval.readOnly; }
@@ -367,6 +388,13 @@ KT.planner = (function () {
   function onInput(e) {
     if (!mine()) return;
     const t = e.target, tr = t.closest('[data-row]');
+    if (t.dataset.bm) {   // CR-34: Benchmarks (Cost per consideration follows CPM · rate while it is not typed)
+      pl.bench[t.dataset.bm] = t.value; pl.touched.add('bm_' + t.dataset.bm); pl.dirty = true;
+      const auto = benchAuto(), cc = $('f_bm_cpcons'), h = $('pl_cpcons');
+      if (cc && cc !== t) cc.placeholder = auto != null ? auto.toFixed(2) : '';
+      if (h) h.textContent = auto != null && R.isBlank(pl.bench.cpcons) ? C.grade.bench.cpconsAuto(`฿${auto.toFixed(2)}`) : '';
+      refresh(); return;
+    }
     if (t.dataset.c) { const had = !!budget(); pl.camp[t.dataset.c] = t.value; if (t.dataset.c === 'budget_kol') { sync(); if (had !== !!budget()) { pl.dirty = true; render(); const el = $('f_budget_kol'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } return; } } }
     else if (t.dataset.plnote != null) { pl.note = t.value; pl.dirty = true; return; }
     else if (t.dataset.pp) { pl.period[t.dataset.pp] = t.value === 'invalid' ? '' : t.value; }
@@ -543,6 +571,9 @@ KT.planner = (function () {
       events.push({ event_id: ctx.eventId(), campaign_id: id, type: 'phase_plan', from: { phases: before, products: productsBefore },
         to: { campaign: fields, phases: snap(s.phases.filter(p => p.campaign_id === id)), products: c0.products.slice() }, changed_at: nowIso, changed_by: userId(), note: null });
     }
+    /* CR-34 §3.1 — the benchmarks: on the Campaign at once (measuring targets — not a budget, no approval) · one event when they changed */
+    { const nb = R.benchRecord(pl.bench), had = c.benchmarks || null, now2 = R.BENCH_KEYS.some(k => nb[k] != null) ? nb : null;
+      if (JSON.stringify(had) !== JSON.stringify(now2)) { c.benchmarks = now2; events.push({ event_id: ctx.eventId(), campaign_id: id, type: 'benchmarks', from: had, to: now2, changed_at: nowIso, changed_by: userId(), note: null }); } }
     s.campaign_events.push(...events);
     /* CR-18 §3 — the first budget of a Campaign that is not approved yet follows it · CR-19: an approved one that had none */
     if (!R.isApproved(c) || !(s.campaign_budget_changes || []).some(x => x.campaign_id === id)) R.syncInitial(s, id, userId(), nowIso);

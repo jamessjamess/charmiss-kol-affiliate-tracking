@@ -173,6 +173,7 @@ KT.screens.deals = (function () {
           <button type="button" class="mi" data-export="deals">${esc(D.exportDeals)}</button><button type="button" class="mi" data-export="posts">${esc(D.exportPosts)}</button>
           <button type="button" class="mi" data-export="template">${esc(D.exportTemplate)}</button>
           <button type="button" class="mi" data-export="gencodes" id="dl_exportGc" title="${esc(C.gencode.exportTip)}">${esc(C.gencode.exportItem)}</button>
+          <button type="button" class="mi" data-export="importmetrics" id="dl_importMetrics">${esc(C.grade.imp.menu)}</button>
           <div class="mh">${esc(D.density)}</div><div class="mi-seg"><div class="seg" role="group" aria-label="${esc(D.density)}"><button type="button" data-cols="compact">${esc(D.compact)}</button><button type="button" data-cols="template">${esc(D.template)}</button></div></div>
         </div></details>
       </div>
@@ -225,7 +226,7 @@ KT.screens.deals = (function () {
       const b = e.target.closest('[data-reason]'); if (b) { dl.reason = dl.reason === b.dataset.reason ? '' : b.dataset.reason; dl.limit = PAGE; renderLeft(); }
     });
     $('dl_export').addEventListener('click', e => {
-      const b = e.target.closest('[data-export]'); if (b) { exportFiltered(b.dataset.export); b.closest('details').open = false; return; }
+      const b = e.target.closest('[data-export]'); if (b) { b.closest('details').open = false; if (b.dataset.export === 'importmetrics') { KT.grades.openImport(b.closest('details').querySelector('summary'), () => renderLeft()); return; } exportFiltered(b.dataset.export); return; }   // CR-34: Import metrics
       const c = e.target.closest('[data-cols]'); if (c) { dl.cols = c.dataset.cols; pref.set('dealcols', dl.cols); c.closest('details').open = false; renderLeft(); }
     });
     $('dl_new').addEventListener('click', e => openNewDeal({ opener: e.currentTarget }));   // CR-11 §4.4
@@ -328,6 +329,7 @@ KT.screens.deals = (function () {
     const edit = can('deal.edit');
     ['dl_new', 'dl_reassign', 'dl_setPillar', 'dl_moveTo', 'dl_setDetails'].forEach(id => $(id).classList.toggle('hidden', !edit));
     $('dl_exportGc').classList.toggle('hidden', !gcManager());   // CR-30 §3.1: Manager / Admin only
+    $('dl_importMetrics').classList.toggle('hidden', !can('deal.edit'));   // CR-34 §3.2
     ensureCampaign(s, td);
     document.querySelectorAll('#dl_view [data-v]').forEach(b => { const on = b.dataset.v === dl.view; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
     document.querySelectorAll('#dl_export [data-cols]').forEach(b => b.classList.toggle('on', b.dataset.cols === dl.cols));
@@ -1303,7 +1305,7 @@ KT.screens.deals = (function () {
       return `<div class="post" data-post="${esc(x.post_id)}"><div class="top"><span>${pfIcon(a.platform || x.platform || 'Other', done ? 'posted' : 'planned', done ? D.tipPosted(a.platform || x.platform, R.dmy(x.post_date)) : D.tipPlanned(a.platform || x.platform, R.dmy(x.expected_post_date)))} @${esc(a.handle || '')}${lockMark(lockOf(d, 'account_id', x))}</span><span class="st ${done ? 'done' : 'list'}">${esc(done ? D.posted : D.planned)}</span></div>` +
         `<div class="meta"><span>${esc(F.phase_override)} ${phaseTagHTML(R.resolvePostPhase(x, phases))}</span><span>${esc(F.expected_post_date)} ${R.dmy(x.expected_post_date) || '—'}</span><span>${esc(F.post_date)} ${R.dmy(x.post_date) || '—'}</span>${x.gencode_code ? `<span>${esc(F.gencode_code)} ${esc(R.shortCode(x.gencode_code))}</span>` : ''}</div>` +
         (x.post_link ? `<a href="${esc(x.post_link)}" target="_blank" rel="noopener" class="small">${esc(x.post_link.length > 70 ? x.post_link.slice(0, 70) + '…' : x.post_link)}</a>` : '') +
-        `<div class="meta">${R.METRIC_KEYS.map(m => `<span>${esc(F[m])} ${R.fmtNum(x[m]) || '—'}</span>`).join('')}${x.metrics_updated_at ? `<span>${esc(D.asOf(R.dmy(x.metrics_updated_at)))}</span>` : ''}</div></div>`; }).join('');
+        `<div class="meta pmetrics">${metricsMetaHTML(x)}${KT.grades.sourceHTML(x)}${KT.grades.ratioHTML(s, d, x)}</div></div>`; }).join('');
     const ids = (d.legacy_job_ids || []).concat(d.source_record_ids || []);
     const source = ids.length ? `<details class="sec"><summary><span>${esc(D.secSource)}</span><span class="chev">${ICON.chevron}</span></summary>` +
       kvF(d, 'legacy_job_ids', (d.legacy_job_ids || []).join(', '), D.legacyJobs) + kvF(d, 'source_record_ids', (d.source_record_ids || []).join(', '), D.sourceRecords) + `</details>` : '';
@@ -1376,7 +1378,7 @@ KT.screens.deals = (function () {
     /* CR-23 §3.8 — Shipments full width (product names · the row's buttons fit), the posts under it */
     if (tab === 'ships') return `<div class="dm-stack">${KT.samples.sectionHTML(d)}${secCard(d, 'posts', D.secPosts(posts.length), posts.length ? postCards : `<div class="hint">${esc(D.noPosts)}</div>`,
       can('deal.edit') && R.sectionEditable(s, d, 'posts', U.actor()) ? `<button type="button" class="btn small sec-add" data-act="addPostModal">${esc(D.addPost)}</button>` : '')}${gencodeSecHTML(s, d)}</div>`;
-    if (tab === 'history') return `${source}<section class="sec"><div class="sec-h"><span>${esc(D.secHistory)}</span></div>${historyHTML(s, d)}</section>`;
+    if (tab === 'history') return `${source}${KT.grades.incidentsHTML(s, d)}<section class="sec"><div class="sec-h"><span>${esc(D.secHistory)}</span></div>${historyHTML(s, d)}</section>`;   // CR-34 §3.4: Incidents
     /* Overview: Deal · Money · Next */
     const term = R.termOf(d), st = R.paymentState(d, td), payee = R.payeeOfDeal(s, d), nx = R.nextStep(s.lookups, d), ships = R.shipmentsOf(s, d.deal_id), sh = ships.filter(y => y.status !== 'not_required').pop();
     const money2 = `<div class="kv total"><span>${esc(F.total_cost)}</span><b>${R.baht(R.totalCost(d))}</b></div>` + `<div class="kv"><span>${esc(D.term)}</span><b>${esc(C.term[term || 'none'])}</b></div>` +
@@ -1478,7 +1480,7 @@ KT.screens.deals = (function () {
     const d = dealById(dl.id); if (!d || !guard('deal.edit') || !R.sectionEditable(state(), d, key, U.actor())) return;
     if (dl.sec === key) return;
     if (dl.sec && dl.dirty && !(await U.confirmDialog(C.common.discardTitle, C.common.discardBody, C.common.discard, true))) return;
-    dl.posts = R.postsOf(state(), d.deal_id).map(p => { const c = JSON.parse(JSON.stringify(p)); R.METRIC_KEYS.forEach(k => { c[k] = asText(c[k]); }); return c; });
+    dl.posts = R.postsOf(state(), d.deal_id).map(p => { const c = JSON.parse(JSON.stringify(p)); R.METRIC_KEYS.concat(R.METRIC_MONEY).forEach(k => { c[k] = asText(c[k]); }); return c; });
     Object.assign(dl, { sec: key, draft: copyForEdit(d), ticks: null, dirty: false, costReason: '' }); dl.touched.clear();
     renderPanel();
     const box = $('drawer_content').querySelector(`[data-secbox="${key}"], .hdr-edit`); if (box) box.scrollIntoView({ block: 'nearest' });
@@ -1513,6 +1515,14 @@ KT.screens.deals = (function () {
   const redrawProducts = () => { const el = $('dl_prods'); if (el) el.innerHTML = productsBox(); };
   /* "TR×qty, …" for the change log */
   const productsLog = list => (list || []).map(x => `${x.tr_code}×${x.qty}`).join(', ') || null;
+  /* CR-34 §3.2 — a post's numbers: the ones that are in (Views always) · Sales ฿ / ROAS when there */
+  function metricsMetaHTML(x) {
+    const keys = R.METRIC_KEYS.filter(m => m === 'views' || x[m] != null);
+    return keys.map(m => `<span>${esc(F[m])} ${R.fmtNum(x[m]) || '—'}</span>`).join('') +
+      (x.sales != null ? `<span>${esc(F.sales)} ${esc(R.fmtNum(x.sales))}</span>` : '') + (x.roas != null ? `<span>${esc(F.roas)} ${esc(Number(x.roas).toFixed(2))}</span>` : '');
+  }
+  /* Sales ฿ · ROAS are asked of a Conversion deal or an Affiliate partner */
+  const salesOn = () => { const s = state(), d = dealById(dl.id) || dl.draft || {}, k = d.kol_id ? R.kolById(s, d.kol_id) : null; return (dl.draft && dl.draft.pillar === 'Conversion') || d.pillar === 'Conversion' || (!!k && R.partnerTypeOf(k) === 'affiliate'); };
   function postCardHTML(p, i, accs) {
     const key = k => `post${i}_${k}`, inp = (k, type) => `<input type="${type || 'text'}" id="f_${key(k)}" data-p="${k}" data-key="${key(k)}" value="${esc(asText(p[k]))}"${type === 'number' ? ' min="0" step="1" inputmode="numeric"' : ''} autocomplete="off">`;
     const dateP = k => dateHTML(`id="f_${key(k)}" data-p="${k}" data-key="${key(k)}"`, p[k], { label: F[k] });
@@ -1528,7 +1538,7 @@ KT.screens.deals = (function () {
         ${f('expected_post_date', F.expected_post_date, dateP('expected_post_date'))}${f('post_date', F.post_date, dateP('post_date'))}
         <div class="field wide" data-phasebox="${i}"><label>${esc(F.phase_override)}</label><div class="pbox"></div></div>
         ${f('post_link', F.post_link, inp('post_link', 'url'), 1)}<div class="field wide"><div class="hint" data-hint="${i}"></div></div>
-        ${f('gencode_code', F.gencode_code, inp('gencode_code'))}${R.METRIC_KEYS.map(m => f(m, F[m], inp(m, 'text'))).join('')}
+        ${f('gencode_code', F.gencode_code, inp('gencode_code'))}${R.METRIC_KEYS.map(m => f(m, F[m], inp(m, 'text'))).join('')}${salesOn() || p.sales != null || p.roas != null ? R.METRIC_MONEY.map(m => f(m, F[m], inp(m, 'text'))).join('') : ''}
         ${f('metrics_updated_at', F.metrics_updated_at, dateP('metrics_updated_at'))}
       </div></div>`;
   }
@@ -1651,6 +1661,7 @@ KT.screens.deals = (function () {
   function normPost(p) {
     const x = Object.assign({}, p);
     R.METRIC_KEYS.forEach(k => { x[k] = R.isBlank(x[k]) ? null : R.parseCount(x[k]).value; });   // CR-10 §4.5: 12.5K · 1,300,000 · 1.3M
+    R.METRIC_MONEY.forEach(k => { x[k] = R.isBlank(x[k]) ? null : Number(String(x[k]).replace(/[,฿\s]/g, '')); });   // CR-34: Sales ฿ · ROAS
     ['expected_post_date', 'post_date', 'metrics_updated_at'].forEach(k => { x[k] = R.isBlank(x[k]) ? null : x[k]; });
     x.phase_override = x.phase_override || null;
     ['post_link', 'gencode_code'].forEach(k => { x[k] = R.trim(x[k]) || null; });
@@ -1680,9 +1691,9 @@ KT.screens.deals = (function () {
       /* CR-10 §4.5: changed metrics → updated today (unless the date was changed here) by this person · 'manual' · a 'metrics' event */
       posts.forEach(p => {
         const o = before.find(b => b.post_id === p.post_id);
-        if (o ? R.sameMetrics(o, p) : !R.METRICS.some(k => p[k] != null)) return;
+        if (o ? R.sameMetrics(o, p) : !R.METRICS_ALL.some(k => p[k] != null)) return;
         if (!o || (o.metrics_updated_at || null) === (p.metrics_updated_at || null)) p.metrics_updated_at = today();
-        Object.assign(p, { metrics_updated_by: me.user_id, metrics_source: 'manual' });
+        Object.assign(p, { metrics_updated_by: me.user_id, metrics_source: 'manual', metrics_legacy: false, metrics_day: p.metrics_day || 7 });   // CR-34: typed by hand = Manual
         push(id => ({ event_id: id, deal_id: stored.deal_id, post_id: p.post_id, type: 'metrics', from: R.metricsOf(o), to: R.metricsOf(p), changed_at: now.toISOString(), changed_by: me.user_id, note: null }));
       });
       changes = R.diffPosts(before, posts);
@@ -1720,6 +1731,7 @@ KT.screens.deals = (function () {
 
   function panelClick(e) {
     if (e.target.closest('[data-backstage]')) { if (dl.backTo) openStagePop(dl.backTo, true); return; }
+    if (KT.grades.dealClick(e, () => { if (dl.mode === 'view') renderPanel(); })) return;   // CR-34 §3.4: + Incident · Remove
     /* CR-20 §4.6 — ‹ › · ‹ Back to <KOL> (the KOL modal again, on its tab) · a Draft step of the Journey → its notes (§4.13) */
     const nv = e.target.closest('[data-dmnav]'); if (nv) { if (!nv.disabled) navStep(+nv.dataset.dmnav); return; }
     if (e.target.closest('[data-dmopenpage]')) { const id = dl.id; U.requestCloseDrawer().then(ok => { if (ok) go('deals', { deal: id }); }); return; }   // CR-27 §3.3

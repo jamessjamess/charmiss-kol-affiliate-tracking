@@ -159,7 +159,7 @@ KT.profile = (function () {
     return it(PF.sDeals, esc(R.fmtNum(sum.deals))) + it(PF.sCommitted, esc(R.baht(sum.committed)), PF.committedTip) +
       it(P.colLastWorked, sum.last ? esc(R.dmy(sum.last)) : '—', sum.last ? P.daysAgo(R.dayDiff(td, sum.last)) : '') +
       it(T.colLastCampaign, sum.lastCampaign ? esc(sum.lastCampaign) : '—') +
-      it(P.colOnTime, sum.perf.measured ? U.reliabilityChip(sum.perf) : `<span class="muted">${esc(P.noData)}</span>`) +
+      it(C.grade.col, KT.grades.chipHTML(state(), pm.id, { name: true }), sum.perf.measured ? `${P.colOnTime}: ${P.postsOf(sum.perf.onTime, sum.perf.measured)}` : '') +   // CR-34: Grade in place of On-time
       it(PF.sLatest, sum.latestRate != null ? esc(R.baht(sum.latestRate)) : '—');
   }
   function bodyHTML(s, k) {
@@ -266,7 +266,10 @@ KT.profile = (function () {
         `<td class="num">${x.views != null ? esc(U.shortNum(x.views)) : '<span class="muted">—</span>'}</td><td class="num">${x.er != null ? esc(`${(Math.round(x.er * 10000) / 100).toFixed(2)}%`) : '<span class="muted">—</span>'}</td>` +
         `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener" data-nodeal>${esc(PF.openPost)} ↗</a>` : '<span class="muted">—</span>'}</td></tr>`).join('') + `</tbody></table></div>`
       : `<div class="hint">${esc(PF.noPosts)}</div>`;
-    return `<div class="kpm-2"><div class="kpm-col">${sec(P.sec, ph.numbers, U.info({ h: P.info.h, d: P.info.d(st.grace, st.minPosts), f: P.info.f }))}</div>` +
+    const gr = KT.grades.profileHTML(s, k.kol_id);   // CR-34 §3.7: the grade first
+    return `<div class="kpm-2"><div class="kpm-col">${sec(C.grade.col, gr.head)}</div><div class="kpm-col">${sec(C.grade.history, gr.history)}</div></div>` +
+      (gr.posts ? sec(C.grade.basisPosts(gr.n), gr.posts) : '') +
+      `<div class="kpm-2"><div class="kpm-col">${sec(P.sec, ph.numbers, U.info({ h: P.info.h, d: P.info.d(st.grace, st.minPosts), f: P.info.f }))}</div>` +
       `<div class="kpm-col">${ph.late ? sec(P.latePosts, ph.late) : ''}</div></div>` + sec(PF.postsN(posts.length), table);
   }
 
@@ -446,6 +449,7 @@ KT.profile = (function () {
     /* §4.2 · §4.3 — the Payee & shipping tab */
     if (!editing() && pm.tab === 'payee' && KT.payee.onClick(e, R.kolById(state(), pm.id), rerender)) return;
     if (!editing() && pm.tab === 'rates' && KT.packages.click(e, pm.id, rerender)) return;   // CR-20 §4.8
+    const gv = e.target.closest('[data-grvopen]'); if (gv && !editing()) { KT.grades.review(gv.dataset.grvopen, { opener: gv, after: rerender }); return; }   // CR-34 §3.5
     if (e.target.closest('a[href]')) return;
     const dl = e.target.closest('[data-deal]'); if (dl && !editing()) { openDeal(dl.dataset.deal); return; }
     const del = e.target.closest('[data-del]');

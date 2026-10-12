@@ -11,7 +11,7 @@ KT.screens.overview = (function () {
   const U = KT.ui;
   const { C, R, $, esc, today, state, pref, info, ICON, shortNum, bahtShort, stepTitle, dateHTML, setDate, downloadCSV, openDialog, closeDialog, go, pfIcon, phaseChip, dm, optionsHTML, can, initials, toast } = U;
   const O = C.overview, MN = C.money;
-  const TABS = ['all', 'campaign', 'ops'];
+  const TABS = ['all', 'campaign', 'ops', 'partners'];   // CR-34 §3.6: + Partners
   const ov = {
     tab: TABS.includes(pref.get('dashtab', 'all')) ? pref.get('dashtab', 'all') : 'all',
     all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', platformMeasure: 'spend', platformView: 'chart', sort: null }, savedPreset()),
@@ -38,7 +38,7 @@ KT.screens.overview = (function () {
     U.setHash('overview/' + ov.tab);
     sec.querySelectorAll('#ov_tabs [data-tab2]').forEach(b => { const on = b.dataset.tab2 === ov.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
     opsTabLabel();
-    if (ov.tab === 'all') renderAll(); else if (ov.tab === 'campaign') renderCampaign(); else renderOps();
+    if (ov.tab === 'all') renderAll(); else if (ov.tab === 'campaign') renderCampaign(); else if (ov.tab === 'partners') KT.partners.render(); else renderOps();
   }
   function build(sec) {
     sec.innerHTML = `<div class="pagehead"><h1 class="page">${esc(O.title)}</h1></div>
@@ -583,7 +583,7 @@ KT.screens.overview = (function () {
       `<span class="spacer"></span><button type="button" class="btn small ov-export" data-export="campaign" title="${esc(O.exportTip)}">${ICON.download}<span>${esc(O.exportTab)}</span></button>`;
     U.enhanceCombos($('ov_tools'));
     if (!P.campaign) { $('ov_body').innerHTML = `<div class="card empty"><b>${esc(O.noCampaign)}</b></div>`; return; }
-    $('ov_body').innerHTML = `<div class="kpis cards4" id="ov_cards"></div>${activityCard()}
+    $('ov_body').innerHTML = `<div class="kpis cards4" id="ov_cards"></div>${KT.partners.campaignBenchHTML(s, P.campaign, P.phase)}${activityCard()}
       <div class="card ov-full"><div class="card-head"><h3>${esc(O.phaseBudgetTitle)}</h3><div class="btns ov-ctl">${dlMenu('phasebudget')}</div></div><div id="ov_pbudget"></div></div>
       ${bvaCard('budgetactual_camp')}
       <div class="ov-r4 r3 camp-mix">${pillarCard()}${tierCard()}${platformCard()}</div>
@@ -925,6 +925,7 @@ KT.screens.overview = (function () {
     /* CR-26 §3.5 — Mark paid on the row (the CR-17 popover): who may, as on Payments — Simple mode: Admin · KOL Manager · Accounting · Staff on their own deals */
     if (r.kind === 'payment') return b(W.btn.paid, R.isSimple(s, 'payments') ? R.canPaySimple(s, U.actor(), r.ref) && r.ref.status !== 'on_hold' : can('payment.paid'));
     if (r.kind === 'metrics') return b(W.btn.metrics, can('deal.edit'));
+    if (r.kind === 'grade') return b(W.btn.review_grade, R.canReview(U.actor()));   // CR-34
     if (r.kind === 'gencode') return b(W.btn.gencode, can('deal.edit') && !R.campaignCancelled(s, r.campaign_id));   // CR-30
     if (r.kind === 'close') return b(R.canApprove(U.actor()) ? W.btn.closeCamp : W.btn.requestClose, can('campaign.draft') || can('campaign.edit'));   // CR-29 (S)
     return b(W.btn.review, R.canApprove(U.actor()));
@@ -960,6 +961,7 @@ KT.screens.overview = (function () {
     if (r.kind === 'shipment') { KT.samples.quick(r.action === 'ship' ? 'shipped' : 'delivered', [r.ref.shipment_id], btn, after); return; }
     if (r.kind === 'payment') { KT.screens.payments.markPaid(btn, [r.ref.key], after); return; }
     if (r.kind === 'metrics') { go('deals', { perf: { campaign: r.deal.campaign_id, pic: 'all', status: 'due', q: r.deal.deal_id } }); return; }
+    if (r.kind === 'grade') { KT.grades.review(r.kol_id, { opener: btn, after }); return; }   // CR-34
     if (r.kind === 'close') { KT.screens.campaign.openClose(r.campaign_id, { opener: btn, after }); return; }   // CR-29 (S)
     if (r.kind === 'gencode') { KT.screens.deals.openDealModal(r.deal.deal_id, { tab: 'shipments', after, source: 'ops' }); KT.screens.deals.gencodeAdd(); return; }   // CR-30: + Add codes over the deal
     if (r.kind === 'approval') KT.approvals.review(r.ref.id, { opener: btn, after });
@@ -969,6 +971,7 @@ KT.screens.overview = (function () {
     const r = ov.ops.byKey && ov.ops.byKey.get(key); if (!r) return;
     const after = () => { if (U.currentTab() === 'overview' && ov.tab === 'ops') renderOpsBody(); };
     if (r.kind === 'approval') { KT.approvals.review(r.ref.id, { after }); return; }
+    if (r.kind === 'grade') { KT.grades.review(r.kol_id, { after }); return; }   // CR-34
     if (r.kind === 'close') { KT.screens.campaign.openCampaign(r.campaign_id); return; }   // CR-29 (S): the Campaign's panel
     if (!r.deal) { if (r.kind === 'shipment') location.hash = '#shipments/' + r.ref.shipment_id; return; }
     /* CR-28 §3 mapping: Ship samples / metrics → Shipments & posts (no Ship by → that cell) · Pay KOL → Costs & payment · a deal's next date (Set date · Post due) → Timeline */
@@ -1013,6 +1016,7 @@ KT.screens.overview = (function () {
 
   /* ===================== events ===================== */
   function onToolsClick(e) {
+    if (ov.tab === 'partners' && KT.partners.toolsClick(e)) return;   // CR-34
     const ex = e.target.closest('[data-export]'); if (ex) { exportTab(ex.dataset.export); return; }
     const p = e.target.closest('[data-preset]');
     if (p) {
@@ -1033,6 +1037,7 @@ KT.screens.overview = (function () {
   }
   function onToolsChange(e) {
     const t = e.target;
+    if (ov.tab === 'partners' && KT.partners.toolsChange(e)) return;   // CR-34
     if (t.id === 'ov_camp') { Object.assign(ov.camp, { campaign: t.value, phase: '' }); renderCampaign(); }
     else if (t.id === 'ov_phase') { Object.assign(ov.camp, { phase: t.value }); renderCampaign(); }
     else if (t.id === 'ov_opic') choosePic(t.value);
@@ -1042,6 +1047,8 @@ KT.screens.overview = (function () {
     else if (t.id === 'ov_crange' && R.isISODate(t.dataset.from) && R.isISODate(t.dataset.to)) { Object.assign(ov.all, { preset: 'custom', from: t.dataset.from, to: t.dataset.to, custom: null }); savePreset(); renderAll(); }
   }
   function onBodyClick(e) {
+    if (ov.tab === 'partners' && KT.partners.bodyClick(e)) return;   // CR-34
+    const pb = e.target.closest('[data-pbdeal]'); if (pb) { KT.screens.deals.openDealModal(pb.dataset.pbdeal, { tab: 'ships', source: 'overview', after: () => { if (U.currentTab() === 'overview' && ov.tab === 'campaign') renderCampaign(); } }); return; }   // CR-34: a clip → its deal
     const D2 = KT.screens.deals;
     const dl = e.target.closest('[data-dl]'); if (dl) { const d = dl.closest('details'); if (d) d.open = false; downloadWidget(dl.dataset.w, dl.dataset.dl); return; }
     const ps = e.target.closest('[data-psort]'); if (ps) { const k = ps.dataset.psort, so = ov.all.sort; ov.all.sort = so && so.key === k ? (so.dir === 'asc' ? { key: k, dir: 'desc' } : null) : { key: k, dir: 'asc' }; renderPortfolio(); return; }

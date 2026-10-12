@@ -116,12 +116,12 @@ Object.assign(KT.rules, (function (R, C) {
       if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.tier && tier !== f.tier) || (f.type && (k.kol_type || '') !== f.type) || (f.category && k.kol_category !== f.category) ||
         (f.owner && (k.pic || '') !== (f.owner === '__none' ? '' : f.owner)) || (f.status && (k.kol_status || 'Active') !== f.status) || (f.lastWorked && pf.bucket !== f.lastWorked) ||
         (f.perf && ((pf.perf || {}).badge || 'none') !== f.perf) || (f.notIn && inCamp.has(k.kol_id)) || (worked && !worked.has(k.kol_id)) ||
-        (f.partner && !R.partnerMatch(k, f.partner))) return null;   // CR-25: Partner type
+        (f.partner && !R.partnerMatch(k, f.partner)) || (f.grade && ((R.confirmedGrade && R.confirmedGrade(state, k.kol_id)) || 'none') !== f.grade)) return null;   // CR-25: Partner type · CR-34: Grade
       return { k, accs, mf, tier, pf, inCamp: inCamp.has(k.kol_id) };
     }).filter(Boolean).sort((a, b) => a.k.display_name.localeCompare(b.k.display_name, 'th'));
   }
   /* the filters that count for Clear all filters (Not in this campaign yet is one too) */
-  const PICKER_KEYS = ['q', 'partner', 'platform', 'tier', 'type', 'category', 'owner', 'status', 'lastWorked', 'perf', 'workedIn', 'postedOnly', 'notIn'];
+  const PICKER_KEYS = ['q', 'partner', 'grade', 'platform', 'tier', 'type', 'category', 'owner', 'status', 'lastWorked', 'perf', 'workedIn', 'postedOnly', 'notIn'];
   const pickerActive = f => PICKER_KEYS.filter(k => (Array.isArray(f[k]) ? f[k].length > 0 : k === 'q' ? !!trim(f.q) : !!f[k]));
   /* §4.12 — Set details: only the fields ticked (PIC · Pillar · Payment term · Phase · CTA) · one event a deal for what really changed
      fields = {pic?, pillar?, payment_term?, cta?} (Phase is set on the deal's posts by the caller) → [{deal (new), changes [{field, from, to}]}] */

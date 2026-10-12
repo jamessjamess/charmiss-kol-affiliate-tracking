@@ -245,14 +245,22 @@ KT.export = (function (R, C) {
         r.post ? (r.account ? `${r.account.platform} @${r.account.handle}` : r.post.post_id) : G.notLinked, r.account ? r.account.platform : '', dmy(R.dateOfTimestamp(r.g.received_at)),
         dmy(r.deal.gencode_start_date), dmy(r.validity.until), G.status[r.validity.status]]), total: null };
   }
-  const WIDGETS = { gencodes, packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, platformmix, tiermix_camp: tiermix, pillarmix_camp: pillarmix, platformmix_camp: platformmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
+  /* CR-34 §3.7 — Dashboard › Partners: every partner in scope (the confirmed grade · the suggested one · the two scores · deals · spend) */
+  function partners(x) {
+    const P = C.grade.part, G = C.grade, d = R.partnersData(x.state, x.f, x.today);
+    const rows = d.rows.slice().sort((a, b) => (a.grade || 'Z').localeCompare(b.grade || 'Z') || b.spend - a.spend).map(r => [r.kol.display_name, r.type === 'affiliate' ? P.affiliate : P.kol, r.tier,
+      r.grade || '', r.rec && r.rec.suggested ? r.rec.suggested : '', r.rec ? G.status[r.rec.status] || '' : '', r.rec && r.rec.perf_ratio != null ? Math.round(r.rec.perf_ratio * 100) / 100 : '',
+      r.rec && r.rec.ops_score != null ? r.rec.ops_score : '', r.rec && r.rec.score != null ? r.rec.score : '', r.deals, r2(r.spend), KT.grades ? KT.grades.reasonText(r.rec ? r.rec.reason : []) : '']);
+    return { name: P.sheet, header: P.exportCols, rows, total: [P.total, '', '', '', '', '', '', '', '', d.rows.reduce((a, r) => a + r.deals, 0), r2(d.kpi.spend), ''] };
+  }
+  const WIDGETS = { partners, gencodes, packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, platformmix, tiermix_camp: tiermix, pillarmix_camp: pillarmix, platformmix_camp: platformmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
     summary_ops: summaryOps, workqueue: workQueue };
   const rowsFor = (widget, x) => WIDGETS[widget](x);
   /* the whole tab (§4.5): one sheet per widget, the Summary first */
   /* CR-13 §4.1: the sheets of All campaigns in the order of the screen */
   /* CR-19 §4.5: Campaign timeline in place of Activity */
   /* CR-20: + Packages · Draft notes (counts) at the end */
-  const TABS = { all: ['summary', 'budgetactual', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'platformmix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'budgetactual_camp', 'pillarmix_camp', 'tiermix_camp', 'platformmix_camp', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-29: + Platform mix · CR-24: no Pillar allocation · Operations = Work queue · CR-26: + Budget vs Actual (after the KPI · after Phase budget)
+  const TABS = { partners: ['partners'], all: ['summary', 'budgetactual', 'portfolio', 'timeline', 'pillarmix', 'tiermix', 'platformmix', 'packages', 'draftnotes'], campaign: ['summary_camp', 'activity_camp', 'phasebudget', 'budgetactual_camp', 'pillarmix_camp', 'tiermix_camp', 'platformmix_camp', 'products', 'cancelled', 'workload'], ops: ['summary_ops', 'workqueue'] };   // CR-29: + Platform mix · CR-24: no Pillar allocation · Operations = Work queue · CR-26: + Budget vs Actual (after the KPI · after Phase budget)
   const tabTables = (tab, x) => TABS[tab].map(w => rowsFor(w, x));
 
   /* ===================== files ===================== */

@@ -6,7 +6,7 @@ KT.screens.kol = (function () {
   const U = KT.ui;
   const { C, R, $, esc, today, store, state, commit, toast, downloadCSV, checksHTML, ICON, pfIcon, tierRules, distinct, optionsHTML, sortBy, takeParams, can, guard } = U;
   const T = C.kol, PT = C.partner, PAGE = 100;
-  const blankFilter = () => ({ q: '', platform: '', tier: '', partner: '', lastWorked: '', category: '', type: [], pic: '', status: '', term: '', history: '', source: '', contact: '' });
+  const blankFilter = () => ({ q: '', platform: '', tier: '', partner: '', grade: '', lastWorked: '', category: '', type: [], pic: '', status: '', term: '', history: '', source: '', contact: '' });
   const KTY = C.kolTypes, PR = C.priceRef;
   const typeName = (L, v) => (v ? R.kolTypeLabel(L, v) : KTY.notSet);
   const P = C.perf;
@@ -20,6 +20,8 @@ KT.screens.kol = (function () {
     const sec = $('tab-kol');
     if (!sec.dataset.built) build(sec);
     const p = takeParams('kol');
+    /* CR-34 §3.6 — Dashboard › Partners › Grade × Tier: that grade and tier */
+    if (p && (p.grade || p.tier)) { km.f = Object.assign(blankFilter(), { grade: p.grade || '', tier: p.tier && p.tier !== R.UNKNOWN_TIER ? p.tier : '' }); $('km_q').value = ''; km.limit = PAGE; }
     renderList();
     if (p) {
       if (p.newKol) { openNewKol(); return; }
@@ -34,7 +36,7 @@ KT.screens.kol = (function () {
     sec.innerHTML = `<div class="pagehead"><h1 class="page">${esc(T.title)} <span class="count" id="km_count"></span></h1><span class="spacer"></span><button type="button" class="btn primary" id="km_new">${esc(T.newKol)}</button></div>
       <div class="toolbar" id="km_tools">
         <input type="search" class="search" id="km_q" placeholder="${esc(T.search)}" autocomplete="off">
-        ${sel('platform', T.platform)}${sel('tier', T.tier)}${sel('partner', PT.field)}${sel('lastWorked', P.colLastWorked)}
+        ${sel('platform', T.platform)}${sel('tier', T.tier)}${sel('partner', PT.field)}${sel('grade', C.grade.field)}${sel('lastWorked', P.colLastWorked)}
         <details class="menu"><summary class="btn">${ICON.filter} ${esc(T.filters)} <span class="badge hidden" id="km_fbadge"></span></summary><div class="popover" id="km_fpop"></div></details>
         <span class="spacer"></span>
         <details class="menu"><summary class="btn icon" title="${esc(C.app.more)}" aria-label="${esc(C.app.more)}">⋯</summary><div class="menu-list right" id="km_more">
@@ -93,6 +95,7 @@ KT.screens.kol = (function () {
       platform: [L.platform_list || [], T.allPlatforms], tier: [[...rules].sort((a, b) => a.min_followers - b.min_followers).map(t => t.tier), T.allTiers],
       lastWorked: [R.LAST_WORKED.map(v => ({ value: v, label: P.last[v] })), P.lastAll],
       partner: [R.partnerTypesOf(L).map(t => ({ value: t.key, label: t.label })), PT.allPartners],   // CR-25 · CR-32: KOL · Affiliate
+      grade: [R.GRADES.map(g => ({ value: g, label: C.grade.gradeOf(g) })).concat([{ value: 'none', label: C.grade.notGraded }]), C.grade.allGrades],   // CR-34
     };
     document.querySelectorAll('#km_tools [data-kf]').forEach(el => { const [items, ph] = lists[el.dataset.kf]; el.innerHTML = optionsHTML(items, f[el.dataset.kf], ph); });
     const pop = { category: [T.category, distinct(s.kol_master.map(k => k.kol_category))], type: [T.type, []],
@@ -107,9 +110,9 @@ KT.screens.kol = (function () {
     const on = POP_KEYS.filter(k => (Array.isArray(f[k]) ? f[k].length : f[k]));
     $('km_fbadge').textContent = `· ${on.length}`; $('km_fbadge').classList.toggle('hidden', !on.length);
     const chips = on.map(k => [k, `${pop[k][0]}: ${k === 'history' ? (f[k] === 'yes' ? T.hasDeals : T.noDeals) : k === 'term' ? C.term[f[k]] : k === 'type' ? f.type.map(v => typeName(L, v)).join(', ') : k === 'contact' ? (f[k] === 'has' ? T.hasContact : T.missingContact) : f[k]}`]);
-    const active = R.activeKolFilters(f), inBar = { platform: T.platform, tier: T.tier, partner: PT.field, lastWorked: P.colLastWorked };
+    const active = R.activeKolFilters(f), inBar = { platform: T.platform, tier: T.tier, partner: PT.field, grade: C.grade.field, lastWorked: P.colLastWorked };
     km.used = [].concat(active.includes('q') ? [C.common.searchChip(R.trim(f.q))] : [],
-      Object.keys(inBar).filter(k => f[k]).map(k => `${inBar[k]}: ${k === 'lastWorked' ? P.last[f[k]] : k === 'partner' ? R.partnerTypeLabel(L, f[k]) : f[k]}`), chips.map(c => c[1]));
+      Object.keys(inBar).filter(k => f[k]).map(k => `${inBar[k]}: ${k === 'lastWorked' ? P.last[f[k]] : k === 'partner' ? R.partnerTypeLabel(L, f[k]) : k === 'grade' ? (f[k] === 'none' ? C.grade.notGraded : f[k]) : f[k]}`), chips.map(c => c[1]));
     U.filterChips($('km_chips'), chips, active.length);
 
     const q = f.q.trim().toLowerCase(), qh = q.replace(/^@/, ''), rows = [];
@@ -122,17 +125,18 @@ KT.screens.kol = (function () {
       if ((f.platform && !accs.some(a => a.platform === f.platform)) || (f.category && k.kol_category !== f.category) || (f.type.length && !f.type.includes(k.kol_type || '')) ||
         (f.tier && tier !== f.tier) || (f.pic && k.pic !== f.pic) || (f.term && (R.isTerm(k.default_payment_term) ? k.default_payment_term : 'none') !== f.term) || (f.status && (k.kol_status || 'Active') !== f.status) ||
         (f.history === 'yes' && !deals.length) || (f.history === 'no' && deals.length) || (f.source && !(k.sources || []).includes(f.source)) || (f.partner && !R.partnerMatch(k, f.partner))) return;
-      const pf = perf.get(k.kol_id);
+      const pf = perf.get(k.kol_id), grade = R.confirmedGrade(s, k.kol_id);
       if (f.lastWorked && pf.bucket !== f.lastWorked) return;
+      if (f.grade && (grade || 'none') !== f.grade) return;   // CR-34
       const quote = (ix.quotes.get(k.kol_id) || [])[0] || null;
       /* CR-14 §4.4 — Last campaign: the Campaign of the deal that gave Last worked (its Phase in the tooltip) */
       const li = pf.lastInfo, lp = li ? (pidx.post.get(li.postId) || {}).phase || R.primaryPhase(pidx, li.dealId) : null;
       const lastCamp = li ? { name: R.campaignName(s, li.campaignId) || '', phase: lp && ix.phases.get(lp) ? R.phaseName(s, lp) : '' } : null;
-      rows.push({ k, accs, deals, mf, tier, quote, rate: quote ? R.totalCost(quote) || null : null, lastCamp, pf });
+      rows.push({ k, accs, deals, mf, tier, quote, rate: quote ? R.totalCost(quote) || null : null, lastCamp, pf, grade });
     });
     /* On-time: by rate, Not enough data last · Last worked: by date, Never last */
     const key = { id: r => r.k.kol_id, kol: r => String(r.k.display_name).toLowerCase(), followers: r => r.mf, rate: r => r.rate, deals: r => r.deals.length || null,
-      ontime: r => (r.pf.perf.badge === 'none' ? null : r.pf.perf.rate), last: r => r.pf.last,
+      ontime: r => (r.pf.perf.badge === 'none' ? null : r.pf.perf.rate), last: r => r.pf.last, grade: r => (r.grade ? R.GRADES.indexOf(r.grade) : null),   // CR-34: A first · Not graded last
       lastcamp: r => (r.lastCamp ? `${r.lastCamp.name.toLowerCase()}|${r.pf.last}` : null) }[km.sort.key];
     km.rows = sortBy(rows, key, km.sort.dir, (a, b) => a.k.kol_id.localeCompare(b.k.kol_id));
     const filtered = rows.length !== s.kol_master.length;
@@ -142,13 +146,13 @@ KT.screens.kol = (function () {
     if (!rows.length) { $('km_body').innerHTML = U.noMatchHTML(T.noMatch, km.used); bulkBar(); return; }
     $('km_body').innerHTML = `<div class="tablewrap" style="max-height:calc(100vh - 250px)"><table class="tbl km-tbl"><thead><tr>
         <th class="cb" style="width:44px"><input type="checkbox" id="km_all"${allSel ? ' checked' : ''} aria-label="${esc(T.selectAll)}" title="${esc(T.selectAll)}"></th>
-        ${th(T.colKol, 'kol')}${th(PT.col, null, 'kpt')}${th(T.colPlatforms)}${th(T.colFollowers, 'followers', 'num')}${th(T.colTier)}${th(T.colCategoryType)}${th(T.colPic)}${th(T.colRate, 'rate', 'num')}${th(T.colDeals, 'deals', 'num')}${th(P.colOnTime, 'ontime')}${th(P.colLastWorked, 'last')}${th(T.colLastCampaign, 'lastcamp')}
+        ${th(T.colKol, 'kol')}${th(PT.col, null, 'kpt')}${th(T.colPlatforms)}${th(T.colFollowers, 'followers', 'num')}${th(T.colTier)}${th(T.colCategoryType)}${th(T.colPic)}${th(T.colRate, 'rate', 'num')}${th(T.colDeals, 'deals', 'num')}${th(C.grade.col, 'grade')}${th(P.colLastWorked, 'last')}${th(T.colLastCampaign, 'lastcamp')}
       </tr></thead><tbody>` +
       shown.map(r => `<tr class="click" tabindex="0" data-id="${esc(r.k.kol_id)}"><td class="cb"><input type="checkbox" data-sel="${esc(r.k.kol_id)}"${km.selected.has(r.k.kol_id) ? ' checked' : ''} aria-label="${esc(r.k.display_name)}"></td>` +
         `<td class="kcol"><div class="kolcell">${U.avatarHTML(r.k)}<div class="cell2"><span class="kname"><b>${U.nameHTML(r.k.display_name)}</b>${U.copyBtnHTML(r.k.display_name)}</span><span class="sub">${esc(r.k.kol_id)}${r.k.kol_status && r.k.kol_status !== 'Active' ? ` · ${esc(r.k.kol_status)}` : ''}</span></div></div></td>` +
         `<td class="kpt">${U.partnerTagHTML(r.k)}</td><td><span class="pfs">${[...new Set(r.accs.map(a => a.platform))].map(p => pfIcon(p)).join('')}</span></td>` +
         `<td class="num">${R.fmtNum(r.mf)}</td><td>${esc(r.tier)}</td><td class="kcat" title="${esc([r.k.kol_category, R.kolTypeLabel(L, r.k.kol_type)].filter(Boolean).join(' · '))}"><span class="cell2"><span>${esc(r.k.kol_category || '')}</span>${r.k.kol_type ? `<span class="sub">${esc(R.kolTypeLabel(L, r.k.kol_type))}</span>` : ''}</span></td><td>${esc(r.k.pic || '')}</td>` +
-        `<td class="num" title="${esc(r.quote ? r.quote.source : '')}">${priceText(r.quote)}</td><td class="num">${r.deals.length || ''}</td><td>${r.pf.perf.measured ? U.reliabilityChip(r.pf.perf) : ''}</td><td>${lastWorkedHTML(r.pf.last, td)}</td>` +
+        `<td class="num" title="${esc(r.quote ? r.quote.source : '')}">${priceText(r.quote)}</td><td class="num">${r.deals.length || ''}</td><td class="kgrade" title="${esc(r.pf.perf.measured ? `${P.colOnTime}: ${P.postsOf(r.pf.perf.onTime, r.pf.perf.measured)}` : '')}">${KT.grades.chipHTML(s, r.k.kol_id)}</td><td>${lastWorkedHTML(r.pf.last, td)}</td>` +
         `<td class="kphase"${r.lastCamp ? ` title="${esc(T.lastCampTip(r.lastCamp.name, r.lastCamp.phase))}"` : ''}>${r.lastCamp ? esc(r.lastCamp.name) : `<span class="muted">—</span>`}</td></tr>`).join('') +
       `</tbody></table></div>` + (km.rows.length > shown.length ? `<div class="loadmore"><button type="button" class="btn" data-more>${esc(T.loadMore(km.rows.length - shown.length))}</button></div>` : '');
     markSelected(); bulkBar();
