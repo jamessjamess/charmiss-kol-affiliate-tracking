@@ -10,19 +10,27 @@ KT.perf = (function () {
   const U = KT.ui;
   const { C, R, $, esc, pref, toast, toastAction, userId, ICON, pfIcon, downloadCSV, openDialog, closeDialog, store, state } = U;
   const P = C.perfTab;
-  /* §4.2 columns: the first 15 are on by default · KOL is always there · the choice is kept per person */
-  const COLS = ['kol', 'tier', 'platform', 'post', 'post_date', 'views', 'likes', 'comments', 'shares', 'saves', 'er', 'cost', 'cpv', 'updated', 'pic',
-    'phase', 'followers', 'vpf', 'engagement', 'cpe', 'gencode', 'pillar', 'expected', 'ontime'];
-  const DEFAULT_COLS = COLS.slice(0, 15);
+  /* §4.2 columns: the first 17 are on by default · KOL is always there · the choice is kept per person ·
+     14/10/2026: Post due + On-time (Post date against Post due) sit after Post date and are on by default */
+  const COLS = ['kol', 'tier', 'platform', 'post', 'post_date', 'expected', 'ontime', 'views', 'likes', 'comments', 'shares', 'saves', 'er', 'cost', 'cpv', 'updated', 'pic',
+    'phase', 'followers', 'vpf', 'engagement', 'cpe', 'gencode', 'pillar'];
+  const DEFAULT_COLS = COLS.slice(0, 17);
   const NUM = new Set(['views', 'likes', 'comments', 'shares', 'saves', 'er', 'cost', 'cpv', 'followers', 'vpf', 'engagement', 'cpe']);
   const GROUPS = ['none', 'tier', 'platform', 'phase', 'pic'];
   const pv = { sort: { key: 'views', dir: 'desc' }, sorted: [], all: [], byKey: new Map(), o: null, editing: null, paste: null };
   const me = () => userId() || '';
+  /* a list saved before 14/10/2026 gets Post due + On-time once (untick them again and they stay off) */
   function colsOn() {
-    try { const v = JSON.parse(pref.get('perfcols_' + me(), 'null')); if (Array.isArray(v)) return COLS.filter(k => k === 'kol' || v.includes(k)); } catch (e) { /* default */ }
+    try {
+      const v = JSON.parse(pref.get('perfcols_' + me(), 'null'));
+      if (Array.isArray(v)) {
+        if (pref.get('perfcolsdue_' + me(), '') !== '1') { ['expected', 'ontime'].forEach(k => { if (!v.includes(k)) v.push(k); }); setCols(v); }
+        return COLS.filter(k => k === 'kol' || v.includes(k));
+      }
+    } catch (e) { /* default */ }
     return DEFAULT_COLS.slice();
   }
-  const setCols = list => pref.set('perfcols_' + me(), JSON.stringify(list));
+  const setCols = list => { pref.set('perfcols_' + me(), JSON.stringify(list)); pref.set('perfcolsdue_' + me(), '1'); };
   const groupBy = () => { const v = pref.get('perfgroup_' + me(), 'none'); return GROUPS.includes(v) ? v : 'none'; };
   const foldKey = () => `perffold_${me()}_${groupBy()}`;
   const folded = () => { try { return new Set(JSON.parse(pref.get(foldKey(), '[]'))); } catch (e) { return new Set(); } };
@@ -66,9 +74,17 @@ KT.perf = (function () {
       case 'phase': return `<td>${r.phase ? esc(groupLabel(s, 'phase', r.phase)) : DASH}</td>`;
       case 'gencode': return `<td>${p.gencode_code ? `<span title="${esc(P.gencodeTip(R.dmy(R.gencodeEndDate(r.deal))))}">${esc(P.gencodeYes)}</span>` : DASH}</td>`;
       case 'pillar': return `<td>${r.deal.pillar ? KT.ui.pillarChipHTML(r.deal.pillar, true) : DASH}</td>`;
-      case 'ontime': return `<td class="nowrap">${r.lateDays == null ? DASH : r.lateDays ? `<span class="pf-late">${esc(P.late(r.lateDays))}</span>` : esc(P.onTime)}</td>`;
+      case 'ontime': return `<td class="nowrap">${timingHTML(r)}</td>`;
       default: return '<td></td>';
     }
+  }
+  /* 14/10/2026 — Post date against Post due: "3 d early" · "On due date" · "+1 d (grace)" · "+4 d late" — a mark and the words, never the colour alone */
+  function timingHTML(r) {
+    const p = r.post, T = P.timing;
+    if (r.dueDiff == null) return `<span class="muted" title="${esc(p.expected_post_date ? T.noDateTip : T.noDueTip)}">—</span>`;
+    const tip = T.tip(R.dmy(p.expected_post_date), R.dmy(p.post_date), r.grace);
+    if (r.lateDays > 0) return `<span class="pf-tm late" title="${esc(tip)}">! ${esc(T.late(r.dueDiff))}</span>`;
+    return `<span class="pf-tm ok" title="${esc(tip)}">✓ ${esc(r.dueDiff < 0 ? T.early(-r.dueDiff) : r.dueDiff === 0 ? T.onDay : T.grace(r.dueDiff))}</span>`;
   }
   /* CR-11 §4.12 — the metrics status: Due (amber) · Waiting "D+7 on dd/mm" · Collected (the day saved) · Not posted · Not tracked · Imported (grey) */
   function statusHTML(r, s) {
@@ -92,6 +108,8 @@ KT.perf = (function () {
       if (k === 'cost') return `<td class="num"><b>${thbText(m.cost, 0)}</b></td>`;
       if (k === 'cpv') return `<td class="num"><b>${thbText(m.cpv, 3)}</b></td>`;
       if (k === 'cpe') return `<td class="num"><b>${thbText(m.cpe, 2)}</b></td>`;
+      if (k === 'ontime') { const t = R.perfTiming(rows); return t.measured ? `<td class="nowrap" title="${esc(P.timing.totalTip(t.onTime, t.measured, t.late, t.avgLate))}"><b>${esc(P.timing.total(t.onTime, t.measured))}</b>` +
+        ` <span class="muted small">${esc(`${Math.round(t.rate * 100)}%`)}</span></td>` : '<td></td>'; }   // 14/10/2026
       return '<td></td>';
     }).join('') + `</tr>`;
   }
@@ -104,7 +122,7 @@ KT.perf = (function () {
     const rows = R.filterPerfRows(all, o.f), m = R.perfMetricsOf(rows);
     const sorted = R.sortPerfRows(rows, pv.sort.key, pv.sort.dir, s.lookups.tier_rules);
     pv.sorted = sorted; pv.all = all; pv.byKey = new Map(all.map(r => [r.key, r]));
-    const dueN = rows.filter(r => r.status === 'due').length, ntN = rows.filter(r => r.status === 'not_tracked').length;
+    const dueN = rows.filter(r => r.status === 'due').length, ntN = rows.filter(r => r.status === 'not_tracked').length, tm = R.perfTiming(rows);
     const card = (key, value, sub, extra) => `<div class="pf-k${extra ? ' ' + extra : ''}"${key === 'withMetrics' && dueN ? ` role="button" tabindex="0" data-pfkpi="due" title="${esc(P.showNoMetrics)}"` : ''}>` +
       `<span class="l">${U.labelInfo(P.kpi[key].h, P.kpi[key])}</span><span class="v">${value}</span><span class="s">${sub || '&nbsp;'}</span></div>`;
     const kpis = `<div class="pf-kpis">` +
@@ -113,7 +131,9 @@ KT.perf = (function () {
       card('views', `<span title="${esc(R.fmtNum(m.views))}">${esc(U.shortNum(m.views))}</span>`) +
       card('engagement', `<span title="${esc(R.fmtNum(m.engagement))}">${esc(U.shortNum(m.engagement))}</span>`) +
       card('er', esc(pctText(m.er)), m.withViews ? esc(P.onViews(m.withViews)) : '') +
-      card('cpv', esc(thbText(m.cpv, 3)), m.withViews ? esc(P.costOn(R.baht(m.costViews))) : '') + `</div>` +
+      card('cpv', esc(thbText(m.cpv, 3)), m.withViews ? esc(P.costOn(R.baht(m.costViews))) : '') +
+      /* 14/10/2026: On time — the posts posted by Post due (+ grace) of the posts that have both dates */
+      card('ontime', tm.measured ? esc(`${Math.round(tm.rate * 100)}%`) : '—', tm.measured ? esc(P.timing.kpiSub(tm.onTime, tm.measured, tm.avgLate)) : esc(P.timing.kpiNone)) + `</div>` +
       /* CR-11 §4.6: the posts nobody collects (before go-live − 30 days, no numbers) — a small line, the formulas do not change */
       (ntN ? `<div class="pf-nt muted small">${esc(P.notTrackedLine(R.dmy(R.addDays(R.goLiveDate(s.lookups), -30)), R.fmtNum(ntN)))}</div>` : '');
     /* CR-14 §4.2 — Columns: the one multi-select (KOL always shows · Reset = the default columns · one column at least) */
@@ -149,7 +169,7 @@ KT.perf = (function () {
     if (e.target.closest('a') || e.target.closest('[data-copyname]') || e.target.closest('.info')) return true;
     if (e.target.closest('details.menu > summary') || e.target.closest('[data-ms]')) return true;   // the Columns multi-select looks after itself
     const k = e.target.closest('[data-pfkpi]'); if (k) { o.setFilter('mstatus', k.dataset.pfkpi); return true; }
-    const so = e.target.closest('[data-pfsort]'); if (so) { const key = so.dataset.pfsort; pv.sort = { key, dir: pv.sort.key === key ? (pv.sort.dir === 'asc' ? 'desc' : 'asc') : (NUM.has(key) || key === 'updated' || key === 'post_date' ? 'desc' : 'asc') }; o.rerender(); return true; }
+    const so = e.target.closest('[data-pfsort]'); if (so) { const key = so.dataset.pfsort; pv.sort = { key, dir: pv.sort.key === key ? (pv.sort.dir === 'asc' ? 'desc' : 'asc') : (NUM.has(key) || ['updated', 'post_date', 'expected', 'ontime'].includes(key) ? 'desc' : 'asc') }; o.rerender(); return true; }
     const f = e.target.closest('[data-pffold]'); if (f) { const set = folded(), g = f.dataset.pffold; set.has(g) ? set.delete(g) : set.add(g); setFolded(set); o.rerender(); return true; }
     const a = e.target.closest('[data-pfall]'); if (a) { setFolded(a.dataset.pfall === 'collapse' ? new Set(R.groupPerfRows(o.s, pv.sorted, groupBy()).map(g => String(g.key))) : new Set()); o.rerender(); return true; }
     const d = e.target.closest('[data-pfdl]'); if (d) { const m = d.closest('details'); if (m) m.open = false; exportRows(d.dataset.pfdl); return true; }

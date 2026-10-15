@@ -213,23 +213,27 @@ KT.screens.settings = (function () {
     return res;
   }
 
-  /* ===================== CR-34 §3.7 — Grades: A–D thresholds · weights · the window · consideration actions · lock · default benchmarks (saved as soon as valid) ===================== */
+  /* ===================== CR-34 §3.7 · CR-35 — Grades: On time ≥ % for A / B / C · grace days · the posts counted · lock · a serious incident = D ·
+     Benchmarks (consideration actions · default benchmarks — for Campaigns, not for grades) · saved as soon as valid ===================== */
   function gradesHTML() {
     const L = state().lookups, G = C.grade.set, B = C.grade.bench, g = R.gradeRules(L);
-    if (!st.grades) st.grades = Object.assign(Object.fromEntries(Object.entries(g).filter(([k]) => k !== 'bench' && k !== 'cons_actions').map(([k, v]) => [k, String(v)])),
-      { cons_actions: g.cons_actions.slice(), bench: Object.fromEntries(R.BENCH_KEYS.map(k => [k, g.bench[k] == null ? '' : String(g.bench[k])])) });
+    if (!st.grades) st.grades = Object.assign(Object.fromEntries(R.GRADE_RULE_NUMS.map(k => [k, String(g[k])])),
+      { serious_incident_d: g.serious_incident_d, cons_actions: g.cons_actions.slice(), bench: Object.fromEntries(R.BENCH_KEYS.map(k => [k, g.bench[k] == null ? '' : String(g.bench[k])])) });
     const v = st.grades, num = (k, cls) => `<input type="text" inputmode="decimal" class="numin${cls ? ' ' + cls : ''}" id="gr_${k}" data-gr="${k}" value="${esc(v[k])}" autocomplete="off">`;
     const fld = (k, label, input, hint) => `<div class="field"><label for="gr_${k}">${esc(label)}</label>${input}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
-    const row = (lab, a, o, letter) => `<tr><th>${KT.grades.letterHTML(letter)} ${esc(lab)}</th><td>${a ? num(a) : ''}</td><td>${o ? num(o) : ''}</td></tr>`;
+    const row = (lab, k, letter) => `<tr><th>${KT.grades.letterHTML(letter)} ${esc(lab)}</th><td>${num(k)}</td></tr>`;
     const bin = (k, label) => `<div class="field"><label for="grb_${k}">${esc(label)}</label><input type="text" inputmode="decimal" class="numin" id="grb_${k}" data-grb="${k}" value="${esc(v.bench[k])}" autocomplete="off"></div>`;
     return `<div class="card gr-set"><div class="card-head"><h3>${esc(G.title)}</h3></div><p class="hint" style="margin-top:0">${esc(G.intro)}</p>
-      <div class="tablewrap"><table class="tbl compact-sm gr-tbl"><thead><tr><th>${esc(G.thresholds)}</th><th>${esc(G.ratioL)}</th><th>${esc(G.opsL)}</th></tr></thead><tbody>` +
-        row(G.aRow.replace(/^A · /, ''), 'a_ratio', 'a_ops', 'A') + row(G.bRow.replace(/^B · /, ''), 'b_ratio', 'b_ops', 'B') + row(G.cRow.replace(/^C · /, ''), 'c_ratio', 'c_ops', 'C') +
-        `<tr><th colspan="3">${KT.grades.letterHTML('D')} ${esc(G.dRow.replace(/^D · /, ''))}</th></tr></tbody></table></div>
-      <h4>${esc(G.weights)}</h4><div class="fields">${fld('w_perf', G.wPerf, num('w_perf'))}${fld('w_ops', G.wOps, num('w_ops'))}</div>
-      <h4>${esc(G.windowH)}</h4><div class="fields">${fld('posts', G.posts, num('posts'))}${fld('months', G.months, num('months'))}${fld('min_posts', G.minPosts, num('min_posts'))}${fld('lock_days', G.lock, num('lock_days'))}</div>
-      <h4>${esc(G.actionsH)}</h4><p class="hint" style="margin-top:0">${esc(G.actionsHint)}</p><div class="gr-acts" data-key="cons_actions">${R.CONS_ACTIONS.map(a => `<label class="tick"><input type="checkbox" data-gra="${a}"${v.cons_actions.includes(a) ? ' checked' : ''}> ${esc(G.action[a])}</label>`).join('')}</div>
-      <h4>${esc(G.benchH)}</h4><p class="hint" style="margin-top:0">${esc(G.benchHint)}</p><div class="fields">${bin('cpm', B.cpm)}${bin('cons_rate', B.consRate)}${bin('cpcons', B.cpcons)}${bin('roas', B.roas)}${bin('affiliate_roas', B.affRoas)}${bin('clips_target_pct', B.clips)}</div>
+      <div class="tablewrap"><table class="tbl compact-sm gr-tbl"><thead><tr><th>${esc(G.thresholds)}</th><th>${esc(G.onTimeL)}</th></tr></thead><tbody>` +
+        row(G.aRow.replace(/^A · /, ''), 'a', 'A') + row(G.bRow.replace(/^B · /, ''), 'b', 'B') + row(G.cRow.replace(/^C · /, ''), 'c', 'C') +
+        `<tr><th colspan="2">${KT.grades.letterHTML('D')} ${esc(G.dRow.replace(/^D · /, ''))}</th></tr></tbody></table></div>
+      <div class="fields">${fld('grace_days', G.grace, num('grace_days'), G.graceHint)}</div>
+      <h4>${esc(G.windowH)}</h4><p class="hint" style="margin-top:0">${esc(G.windowHint)}</p>
+      <div class="fields">${fld('window_posts', G.posts, num('window_posts'))}${fld('window_months', G.months, num('window_months'))}${fld('min_posts', G.minPosts, num('min_posts'))}${fld('lock_days', G.lock, num('lock_days'))}</div>
+      <label class="tick gr-serious"><input type="checkbox" data-grs${v.serious_incident_d ? ' checked' : ''}> ${esc(G.serious)}</label>
+      <h4 class="gr-bench">${esc(G.benchSec)}</h4>
+      <div class="gr-sub"><b>${esc(G.actionsH)}</b> <span class="hint">${esc(G.actionsHint)}</span></div><div class="gr-acts" data-key="cons_actions">${R.CONS_ACTIONS.map(a => `<label class="tick"><input type="checkbox" data-gra="${a}"${v.cons_actions.includes(a) ? ' checked' : ''}> ${esc(G.action[a])}</label>`).join('')}</div>
+      <div class="gr-sub"><b>${esc(G.benchH)}</b> <span class="hint">${esc(G.benchHint)}</span></div><div class="fields">${bin('cpm', B.cpm)}${bin('cons_rate', B.consRate)}${bin('cpcons', B.cpcons)}${bin('roas', B.roas)}${bin('affiliate_roas', B.affRoas)}${bin('clips_target_pct', B.clips)}</div>
       <div class="checks" id="ls_checks" style="margin-top:12px"></div></div>`;
   }
   function gradesCheck() {
@@ -239,7 +243,9 @@ KT.screens.settings = (function () {
     $('set_body').querySelectorAll('[data-grb]').forEach(i => i.classList.toggle('invalid', res.errs.some(e => e.field === 'bench_' + i.dataset.grb)));
     if (!res.errs.length && can('settings.grades')) {
       const L = state().lookups, v = st.grades, n = x => Number(String(x).replace(/,/g, ''));
-      const next = Object.assign(Object.fromEntries(Object.keys(R.GRADE_RULES_DEFAULT).filter(k => k !== 'bench' && k !== 'cons_actions').map(k => [k, n(v[k])])), { cons_actions: v.cons_actions.slice(), bench: R.benchRecord(v.bench) });
+      /* in the stored order (the same as R.GRADE_RULES_DEFAULT) — opening the section saves nothing */
+      const next = Object.fromEntries(Object.keys(R.GRADE_RULES_DEFAULT).map(k => [k, k === 'basis' ? 'on_time' : k === 'serious_incident_d' ? !!v.serious_incident_d
+        : k === 'cons_actions' ? v.cons_actions.slice() : k === 'bench' ? R.benchRecord(v.bench) : n(v[k])]));
       if (JSON.stringify(L.grade_rules || null) !== JSON.stringify(next)) { L.grade_rules = next; commit(C.grade.set.saved); }
     }
     return res;
@@ -459,6 +465,7 @@ KT.screens.settings = (function () {
   function bodyChange(e) {
     if (!can(editAction())) return;
     const t = e.target, L = state().lookups;
+    if (t.hasAttribute && t.hasAttribute('data-grs') && st.grades) { st.grades.serious_incident_d = t.checked; gradesCheck(); return; }   // CR-35
     if (t.dataset.gra && st.grades) { const a = t.dataset.gra, l = st.grades.cons_actions; st.grades.cons_actions = t.checked ? R.CONS_ACTIONS.filter(x => l.includes(x) || x === a) : l.filter(x => x !== a); gradesCheck(); return; }   // CR-34
     if (t.dataset.pf && t.closest('[data-pc]')) { productChange(t); return; }
     if (t.dataset.ktf && t.closest('[data-kt]')) { kolTypeChange(t); return; }

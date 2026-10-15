@@ -103,7 +103,8 @@ Object.assign(KT.rules, (function (R, C) {
   /* ===================== Deals › Performance (§4.1–4.4) ===================== */
   /* one row per posted post of the deals given (cancelled deals left out) · the tier and followers are the posting account's (§9 #3) */
   function perfRows(state, deals, today, ctx) {
-    const rules = state.lookups.tier_rules || [], cps = metricsCheckpoints(state.lookups), gl = R.goLiveDate(state.lookups), grace = R.perfSettings(state.lookups).grace, rows = [];
+    const rules = state.lookups.tier_rules || [], cps = metricsCheckpoints(state.lookups), gl = R.goLiveDate(state.lookups), rows = [];
+    const grace = R.gradeRules ? R.gradeRules(state.lookups).grace_days : R.perfSettings(state.lookups).grace;   // CR-35: On time = the grade's grace (Settings › Grades) everywhere
     const dupOf = new Map(); duplicatePostGroups(state).forEach(g => g.posts.forEach((p, i) => dupOf.set(p.post_id, { first: i === 0, n: g.posts.length })));
     (deals || []).forEach(d => {
       if (R.isCancelled(d)) return;
@@ -118,7 +119,7 @@ Object.assign(KT.rules, (function (R, C) {
           phase: r.phase || (r.slot === 'unscheduled' ? R.UNSCHEDULED : r.slot === 'needs' ? R.NEEDS : null), status: mi.status, minfo: mi, dup: dupOf.get(p.post_id) || null, cost,
           views, likes: val(p.likes), comments: val(p.comments), shares: val(p.shares), saves: val(p.saves), engagement: hasMetrics(p) || eng ? eng : null,
           er: views > 0 ? eng / views : null, cpv: views > 0 ? cost / views : null, cpe: eng > 0 ? cost / eng : null, vpf: views != null && followers ? views / followers : null,
-          lateDays: late == null ? null : late > grace ? late : 0, pic: d.pic || '' });
+          lateDays: late == null ? null : late > grace ? late : 0, dueDiff: late, grace, pic: d.pic || '' });   // 14/10/2026: dueDiff = Post date − Post due (days · − = early)
       });
     });
     return rows;
@@ -148,7 +149,7 @@ Object.assign(KT.rules, (function (R, C) {
       kol: r => ((r.kol && r.kol.display_name) || '').toLowerCase(), tier: r => tiers.indexOf(r.tier), platform: r => PERF_PLATFORMS.indexOf(r.platform),
       post: r => (isBlank(r.post.post_link) ? 0 : 1), post_date: r => r.post.post_date || null, updated: r => METRICS_STATUSES.indexOf(r.status),
       pic: r => r.pic || null, phase: r => r.phase || null, gencode: r => (isBlank(r.post.gencode_code) ? 0 : 1), pillar: r => r.deal.pillar || null,
-      expected: r => r.post.expected_post_date || null, ontime: r => r.lateDays,
+      expected: r => r.post.expected_post_date || null, ontime: r => r.dueDiff,
     }[key] || (r => r[key]);
     const empty = v => v == null || v === '';
     return rows.slice().sort((a, b) => {
@@ -171,6 +172,13 @@ Object.assign(KT.rules, (function (R, C) {
     return order.filter(k => m.has(k)).map(k => ({ key: k, rows: m.get(k) })).concat([...m.keys()].filter(k => !order.includes(k)).map(k => ({ key: k, rows: m.get(k) })));
   }
   const perfMetricsOf = rows => postMetrics(rows.map(r => ({ post: r.post, cost: r.cost })));
+  /* 14/10/2026 — Post date against Post due over the rows that have both: on time = by Post due + the grace days (Settings › KOL performance) ·
+     → { measured, onTime, late, early, avgLate (days, the late posts only), rate } */
+  function perfTiming(rows) {
+    const m = rows.filter(r => r.dueDiff != null), late = m.filter(r => r.lateDays > 0);
+    return { measured: m.length, onTime: m.length - late.length, late: late.length, early: m.filter(r => r.dueDiff < 0).length,
+      avgLate: late.length ? Math.round(late.reduce((a, r) => a + r.dueDiff, 0) / late.length * 10) / 10 : null, rate: m.length ? (m.length - late.length) / m.length : null };
+  }
 
   /* ===================== updating metrics (§4.5–4.6) ===================== */
   const metricsOf = p => Object.fromEntries(METRICS_ALL.map(k => [k, val((p || {})[k])]));
@@ -259,6 +267,6 @@ Object.assign(KT.rules, (function (R, C) {
     .concat([...new Set(rows.map(r => trim(r.post.post_link)).filter(Boolean))]).join('\n');
 
   return { METRICS, METRICS_ALL, METRIC_SOURCES, ENGAGE, PERF_PLATFORMS, METRICS_STATUSES, engagementOf, hasMetrics, isPosted, metricsStaleDays, metricsCheckpoints, postMetrics, duplicatePostGroups, firstOfLink, metricsInfo, metricsStatus, metricsDue, metricsDues, parseCheckpoints, parseCount,
-    normalizePostLink, perfRows, blankPerfFilter, PERF_FILTER_KEYS, filterPerfRows, sortPerfRows, groupPerfRows, perfMetricsOf,
+    normalizePostLink, perfRows, blankPerfFilter, PERF_FILTER_KEYS, filterPerfRows, sortPerfRows, groupPerfRows, perfMetricsOf, perfTiming,
     metricsOf, sameMetrics, metricsWarnings, setMetrics, canEditMetrics, planPaste, pasteTemplate };
 })(KT.rules, KT.content));

@@ -11,7 +11,7 @@ KT.screens.overview = (function () {
   const U = KT.ui;
   const { C, R, $, esc, today, state, pref, info, ICON, shortNum, bahtShort, stepTitle, dateHTML, setDate, downloadCSV, openDialog, closeDialog, go, pfIcon, phaseChip, dm, optionsHTML, can, initials, toast } = U;
   const O = C.overview, MN = C.money;
-  const TABS = ['all', 'campaign', 'ops', 'partners'];   // CR-34 §3.6: + Partners
+  const TABS = ['all', 'campaign', 'ops', 'partners'];   // CR-34 §3.6: + Partners (hidden 14/10/2026 · back 15/10/2026)
   const ov = {
     tab: TABS.includes(pref.get('dashtab', 'all')) ? pref.get('dashtab', 'all') : 'all',
     all: Object.assign({ measure: 'posts', view: 'chart', custom: null, statuses: null, stUser: null, tierMeasure: 'spend', tierView: 'chart', pillarMeasure: 'spend', pillarView: 'chart', platformMeasure: 'spend', platformView: 'chart', sort: null }, savedPreset()),
@@ -883,12 +883,16 @@ KT.screens.overview = (function () {
     const rows = all.filter(r => (!t || R.workTileHas(t, r)) && (!stg || r.stage === stg));
     ov.ops.byKey = new Map(all.map(r => [r.key, r]));
     const tile = (k, n, sub) => `<button type="button" class="wq-tile t-${k}${t === k ? ' on' : ''}${n ? '' : ' zero'}" data-wqtile="${k}" aria-pressed="${t === k}"><span class="n">${R.fmtNum(n)}</span><span class="t">${esc(W.tiles[k])}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</button>`;
-    const usParts = ['shipment', 'payment', 'metrics', 'close', 'approval'].filter(k => sum.usBy[k]).map(k => W.usPart[k](sum.usBy[k])).join(' · ');
+    const usParts = ['shipment', 'payment', 'metrics', 'close', 'approval', 'grade'].filter(k => sum.usBy[k] && W.usPart[k]).map(k => W.usPart[k](sum.usBy[k])).join(' · ');   // CR-35: + grades
     const tiles = `<div class="wq-tiles">${tile('overdue', sum.overdue)}${tile('week', sum.week)}${tile('none', sum.none, sum.noneKol ? W.noneKol(sum.noneKol) : '')}${tile('stuck', sum.stuck)}${tile('us', sum.us, usParts)}</div>`;
     const everyone = !o.person, team = everyone && isManager() ? R.teamLoad(s, all, o) : null, fix = R.dataToFix(s, o);   // CR-26 §3.4: open deals by R.teamWorkload
     ov.ops.fix = fix;
     const chip = t || stg ? `<span class="wq-fchip">${esc(t ? W.tiles[t] : stg)}<button type="button" class="icon-btn" data-wqclear aria-label="${esc(W.clearFilter)}" title="${esc(W.clearFilter)}">${ICON.close}</button></span>` : '';
-    $('ov_body').innerHTML = tiles + `<div class="card wq-card"><div class="card-head"><h3>${esc(W.title)} <span class="muted">${R.fmtNum(rows.length)}</span></h3>${chip}<div class="btns ov-ctl">${dlMenu('workqueue')}</div></div>${queueHTML(s, rows, everyone)}</div>` +
+    /* CR-35 §3.5 — Review grade (KOL Manager / Admin only): the suggested grades waiting, one line above the queue · Review → the Grade review modal */
+    const nGrade = R.canReview(U.actor()) ? R.reviewQueue(s, td()).length : 0;
+    const gradeBar = nGrade ? `<div class="wq-gradebar" id="wq_grades"><b>${esc(W.action.review_grade)}</b><span class="wq-gn">${R.fmtNum(nGrade)}</span><span class="muted small">${esc(W.gradeHint)}</span>` +
+      `<button type="button" class="btn small primary" data-wqgrades>${esc(W.btn.review_grade)}</button></div>` : '';
+    $('ov_body').innerHTML = tiles + gradeBar + `<div class="card wq-card"><div class="card-head"><h3>${esc(W.title)} <span class="muted">${R.fmtNum(rows.length)}</span></h3>${chip}<div class="btns ov-ctl">${dlMenu('workqueue')}</div></div>${queueHTML(s, rows, everyone)}</div>` +
       `<div class="card wq-flowcard"><div class="card-head"><h3>${esc(W.flowTitle)}</h3></div>${flowHTML(R.stageFlow(s, o))}</div>` +
       (team ? `<div class="card"><div class="card-head"><h3>${esc(W.teamTitle)}</h3></div>${teamHTML(team)}</div>` : '') + fixHTML(s, fix);
   }
@@ -1047,6 +1051,7 @@ KT.screens.overview = (function () {
     else if (t.id === 'ov_crange' && R.isISODate(t.dataset.from) && R.isISODate(t.dataset.to)) { Object.assign(ov.all, { preset: 'custom', from: t.dataset.from, to: t.dataset.to, custom: null }); savePreset(); renderAll(); }
   }
   function onBodyClick(e) {
+    const gq = e.target.closest('[data-wqgrades]'); if (gq) { KT.grades.openQueue({ opener: gq, after: () => { if (U.currentTab() === 'overview' && ov.tab === 'ops') renderOpsBody(); } }); return; }   // CR-35 §3.5
     if (ov.tab === 'partners' && KT.partners.bodyClick(e)) return;   // CR-34
     const pb = e.target.closest('[data-pbdeal]'); if (pb) { KT.screens.deals.openDealModal(pb.dataset.pbdeal, { tab: 'ships', source: 'overview', after: () => { if (U.currentTab() === 'overview' && ov.tab === 'campaign') renderCampaign(); } }); return; }   // CR-34: a clip → its deal
     const D2 = KT.screens.deals;

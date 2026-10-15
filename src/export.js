@@ -213,14 +213,16 @@ KT.export = (function (R, C) {
         case 'updated': return r.status === 'collected' ? dmy(String(p.metrics_updated_at || '').slice(0, 10)) || P.status.collected
           : r.status === 'waiting' && r.minfo ? P.waitingL(r.minfo.next, dmy(r.minfo.nextDate)) : P.status[r.status] || '';   // CR-11 §4.12
         case 'pic': return r.pic; case 'phase': return phaseOf(r.phase); case 'gencode': return p.gencode_code || ''; case 'pillar': return r.deal.pillar || '';
-        case 'ontime': return r.lateDays == null ? '' : r.lateDays ? P.late(r.lateDays) : P.onTime;
+        case 'ontime': return r.dueDiff == null ? '' : r.lateDays > 0 ? P.timing.late(r.dueDiff) : r.dueDiff < 0 ? P.timing.early(-r.dueDiff) : r.dueDiff === 0 ? P.timing.onDay : P.timing.grace(r.dueDiff);   // 14/10/2026
         default: return r[k];
       }
     };
     const header = cols.flatMap(k => (k === 'kol' ? [P.col.kol, P.account] : [P.col[k]])).concat([P.postLink, P.postId]);
     const rows = x.rows.map(r => cols.flatMap(k => (k === 'kol' ? [(r.kol && r.kol.display_name) || r.deal.kol_id, r.handle ? '@' + r.handle : ''] : [value(k, r)])).concat([r.post.post_link || '', r.post.post_id]));
     const m = R.perfMetricsOf(x.rows);
-    const tot = k => (['views', 'likes', 'comments', 'shares', 'saves', 'engagement'].includes(k) ? m[k] : k === 'cost' ? r2(m.cost) : k === 'er' ? r4(m.er) : k === 'cpv' ? r4(m.cpv) : k === 'cpe' ? r2(m.cpe) : '');
+    const tm = R.perfTiming(x.rows);
+    const tot = k => (['views', 'likes', 'comments', 'shares', 'saves', 'engagement'].includes(k) ? m[k] : k === 'cost' ? r2(m.cost) : k === 'er' ? r4(m.er) : k === 'cpv' ? r4(m.cpv) : k === 'cpe' ? r2(m.cpe)
+      : k === 'ontime' && tm.measured ? P.timing.total(tm.onTime, tm.measured) : '');
     return { key: 'performance', name: P.sheet, header, rows, total: cols.flatMap(k => (k === 'kol' ? [P.total, P.postsN(x.rows.length)] : [tot(k)])).concat(['', '']) };
   }
 
@@ -246,12 +248,17 @@ KT.export = (function (R, C) {
         dmy(r.deal.gencode_start_date), dmy(r.validity.until), G.status[r.validity.status]]), total: null };
   }
   /* CR-34 §3.7 — Dashboard › Partners: every partner in scope (the confirmed grade · the suggested one · the two scores · deals · spend) */
+  /* CR-35: the rows of Partner performance (the filters · the table's order) · Grade (confirmed, else suggested) and where it came from · Posts · On time ·
+     Avg days late (the grade's) · Views · ER · CPV (the posts in scope) */
   function partners(x) {
-    const P = C.grade.part, G = C.grade, d = R.partnersData(x.state, x.f, x.today);
-    const rows = d.rows.slice().sort((a, b) => (a.grade || 'Z').localeCompare(b.grade || 'Z') || b.spend - a.spend).map(r => [r.kol.display_name, r.type === 'affiliate' ? P.affiliate : P.kol, r.tier,
-      r.grade || '', r.rec && r.rec.suggested ? r.rec.suggested : '', r.rec ? G.status[r.rec.status] || '' : '', r.rec && r.rec.perf_ratio != null ? Math.round(r.rec.perf_ratio * 100) / 100 : '',
-      r.rec && r.rec.ops_score != null ? r.rec.ops_score : '', r.rec && r.rec.score != null ? r.rec.score : '', r.deals, r2(r.spend), KT.grades ? KT.grades.reasonText(r.rec ? r.rec.reason : []) : '']);
-    return { name: P.sheet, header: P.exportCols, rows, total: [P.total, '', '', '', '', '', '', '', '', d.rows.reduce((a, r) => a + r.deals, 0), r2(d.kpi.spend), ''] };
+    const P = C.grade.part, G = C.grade, d = R.partnersData(x.state, x.f, x.today), so = x.sort || { key: 'grade', dir: 'asc' }, r4 = v => (v == null ? '' : Math.round(v * 10000) / 10000);
+    const rows = R.sortPartnerRows(d.rows, so.key, so.dir, x.state.lookups.tier_rules || []).map(r => { const rec = r.rec || {}, t = r.ot;
+      return [r.kol.display_name, r.type === 'affiliate' ? P.affiliate : P.kol, r.tier, r.grade || '', r.gradeSrc ? P.gradeFrom[r.gradeSrc] : '', r.confirmed || '', R.GRADES.includes(rec.suggested) ? rec.suggested : '',
+        G.status[rec.status] || '', r.posted || 0, t.measured ? `${t.onTime}/${t.measured}` : '', t.avgLate == null ? '' : t.avgLate, r.views == null ? '' : r.views, r4(r.er), r4(r.cpv),
+        r.deals, r2(r.spend), KT.grades ? KT.grades.reasonText(rec.reason || [], x.state) : '']; });
+    const sum = f => d.rows.reduce((a, r) => a + (f(r) || 0), 0), k = d.kpi.ontime;
+    return { name: P.sheet, header: P.exportCols, rows, total: [P.total, '', '', '', '', '', '', '', sum(r => r.posted), k.measured ? `${k.onTime}/${k.measured}` : '', k.avgLate == null ? '' : k.avgLate,
+      sum(r => r.views), r4(d.kpi.engagement.er), '', sum(r => r.deals), r2(d.kpi.spend), ''] };
   }
   const WIDGETS = { partners, gencodes, packages, draftnotes, performance, summary, activity, timeline, timelinetable: timelineTable, tiermix, pillarmix, platformmix, tiermix_camp: tiermix, pillarmix_camp: pillarmix, platformmix_camp: platformmix, portfolio, summary_camp: summaryCamp, activity_camp: activityCamp, phasebudget: phaseBudget, products: productsGiven, cancelled, workload, budgetactual: budgetActual, budgetactual_camp: budgetActual,
     summary_ops: summaryOps, workqueue: workQueue };

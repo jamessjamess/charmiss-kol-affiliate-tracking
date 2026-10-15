@@ -1,7 +1,9 @@
-/* screen-grades.js — CR-34: the Grade on screen (one chip everywhere: A green · B blue · C yellow · D red · the letter always written) ·
-   Grade review (one card a partner: Suggested · Confirmed now · the main reason · the posts used · Confirm · Override with a reason — KOL Manager / Admin) ·
-   Incidents of a deal (+ Incident · No-show / Breach = suggested D at once) · Deals › ⋯ › Import metrics (CSV / XLSX · Manual is kept unless Replace manual
-   values) · a post's numbers: where they came from (Auto · Import · Manual) and their ratio against the benchmark. Every score comes from R.gradeEngine. → KT.grades */
+/* screen-grades.js — CR-34: the Grade on screen (one chip everywhere: A green · B blue · C yellow · D red · the letter always written · its tooltip = the
+   main reason, CR-35 §2: "On time 3/3" · "Late 2 of 5 posts · avg 3 days late" · "No-show on <Campaign>") · Grade review (one card a partner: Suggested ·
+   Confirmed now · On time · Avg days late · ER · the posts used (Posted on · Post due · Days late …) · Confirm · Override with a reason — KOL Manager / Admin ·
+   anyone else: View, no buttons) · Incidents of a deal (+ Incident · No-show / Breach = suggested D at once) · Deals › ⋯ › Import metrics (CSV / XLSX · Manual
+   is kept unless Replace manual values) · a post's numbers: where they came from (Auto · Import · Manual) and their ratio against the benchmark.
+   Every grade comes from R.gradeEngine. → KT.grades */
 KT.grades = (function () {
   'use strict';
   const U = KT.ui;
@@ -16,15 +18,49 @@ KT.grades = (function () {
   /* the grade of a partner as shown everywhere: the confirmed one · else "—" (Not graded / Not enough data) · a waiting suggestion = a small ring after it */
   function chipHTML(s, kolId, o = {}) {
     const rec = R.gradeOf(s, kolId), g = rec && R.GRADES.includes(rec.confirmed) ? rec.confirmed : null, wait = !!rec && R.needsReview(rec, today(), R.gradeRules(s.lookups));
-    const sug = wait ? ` <span class="gsug ${CLS[rec.suggested]}" title="${esc(G.suggestedTip(rec.suggested, G.names[rec.suggested]))}">${esc(rec.suggested)}?</span>` : '';
-    if (g) return letterHTML(g, { name: o.name, tip: G.chipTip(g, G.names[g]) + (rec.locked_until ? ` · ${G.lockedUntil(R.dmy(rec.locked_until))}` : '') }) + (o.noWait ? '' : sug);
+    const why = rec ? reasonText(rec.reason, s) : '';
+    const sug = wait ? ` <span class="gsug ${CLS[rec.suggested]}" title="${esc(G.suggestedTip(rec.suggested, G.names[rec.suggested]) + (why ? ` · ${why}` : ''))}">${esc(rec.suggested)}?</span>` : '';
+    if (g) return letterHTML(g, { name: o.name, tip: G.chipTip(g, G.names[g]) + (why ? ` · ${why}` : '') + (rec.locked_until ? ` · ${G.lockedUntil(R.dmy(rec.locked_until))}` : '') }) + (o.noWait ? '' : sug);
     const text = !rec || rec.status === 'none' ? G.notGraded : rec.status === 'not_enough' ? G.notEnough : G.notGraded;
-    const tip = !rec || rec.status === 'none' ? G.notGraded : rec.status === 'not_enough' ? G.notEnoughTip(rulesNow().min_posts) : G.notGradedTip;
+    const tip = !rec || rec.status === 'none' ? G.notGraded : rec.status === 'not_enough' ? (why || G.notEnoughTip(rulesNow().min_posts)) : G.notGradedTip;
     return `<span class="gchip g-none" title="${esc(tip)}">${o.name ? esc(text) : '—'}</span>` + (o.noWait ? '' : sug);
   }
-  /* the main reason in words */
-  const reasonText = parts => (parts || []).map(p => { const f = G.reason[p.k]; if (!f) return '';
-    return p.k === 'perf' ? f(p.pct, p.pillar ? R.pillarShort ? R.pillarShort(p.pillar) : p.pillar : null) : p.k === 'ontime' ? f(p.n, p.of) : f(p.n); }).filter(Boolean).join(' · ');
+  /* 15/10/2026 — Dashboard › Partners: the level = the confirmed chip (+ the ring of a waiting suggestion) · else the suggested letter, dashed, with
+     "Suggested" · else the status in words (Not enough data · Not graded) */
+  function levelHTML(s, kolId) {
+    const rec = R.gradeOf(s, kolId), lv = R.levelOf(rec);
+    if (lv.src === 'suggested') return `<span class="lvl">${letterHTML(lv.level, { cls: 'sug', tip: G.suggestedTip(lv.level, G.names[lv.level]) + (rec.reason && rec.reason.length ? ` · ${reasonText(rec.reason, s)}` : '') })}<span class="lvl-s">${esc(G.suggested)}</span></span>`;
+    return chipHTML(s, kolId, { name: !lv.level, noWait: !lv.level });
+  }
+  /* the main reason in words (CR-35 §2) · s for a Campaign's name */
+  function reasonText(parts, s) {
+    return (parts || []).map(p => { const f = G.reason[p.k]; if (!f) return '';
+      if (p.k === 'serious') return f(G.inc.types[p.type] || p.type, p.campaign_id ? R.campaignName(s || state(), p.campaign_id) : '');
+      if (p.k === 'late') return f(p.n, p.of, p.avg);
+      return p.k === 'ontime' ? f(p.n, p.of) : f(p.n); }).filter(Boolean).join(' · ');
+  }
+  const reasonOf = (s, kolId) => { const rec = R.gradeOf(s, kolId); return rec ? reasonText(rec.reason, s) : ''; };
+  const pct2 = v => `${(v * 100).toFixed(2)}%`;
+  /* CR-35 — On time · Avg days late · ER (· Revisions in the KOL modal) */
+  function numsHTML(g, rounds) {
+    return `<div class="grv-nums"><span title="${esc(G.ontimeTip)}">${esc(G.ontimeL)} <b class="${g.late ? 'late' : ''}">${g.measured ? esc(`${g.onTime}/${g.measured}`) : '—'}</b></span>` +
+      `<span>${esc(G.avgLateL)} <b>${g.avgLate == null ? '—' : esc(String(g.avgLate))}</b></span>` +
+      `<span title="${esc(G.erTip)}">${esc(G.erL)} <b>${g.er == null ? '—' : esc(pct2(g.er))}</b></span>` +
+      (rounds ? `<span title="${esc(G.revisionsTip)}">${esc(G.revisionsL)} <b>${g.avgRounds == null ? '—' : esc(String(g.avgRounds))}</b></span>` : '') + `</div>`;
+  }
+  /* CR-35 §3.5 — the posts the grade counts (+ the ones without a Post due, shown, not counted): Posted on · Post due · Days late · Campaign · Pillar · Cost · Views · ER */
+  function postsUsedHTML(s, g, clickable) {
+    const rows = (g.posts || []).concat(g.nodue || []), dash = '<span class="muted">—</span>';
+    if (!rows.length) return '';
+    const tr = p => `<tr class="${clickable ? 'click' : ''}${p.due ? '' : ' grv-nodue'}"${clickable ? ` data-deal="${esc(p.deal_id)}" tabindex="0"` : ''}${p.due ? '' : ` title="${esc(G.notCounted)}"`}>` +
+      `<td class="nowrap">${p.post_date ? esc(R.dmy(p.post_date)) : `<span class="late">${esc(G.notPosted)}</span>`}</td>` +
+      `<td class="nowrap">${p.due ? esc(R.dmy(p.due)) : `<span class="muted">${esc(G.noDue)}</span>`}</td>` +
+      `<td class="num">${p.days_late == null ? dash : `<b class="${p.late ? 'late' : 'ok'}">${esc(String(p.days_late))}</b>`}</td>` +
+      `<td>${esc(R.campaignName(s, p.campaign_id) || '')}</td><td>${p.pillar ? U.pillarChipHTML(p.pillar) : dash}</td><td class="num">${esc(R.baht(p.cost))}</td>` +
+      `<td class="num">${p.views != null ? esc(R.fmtNum(p.views)) : dash}</td><td class="num">${p.er != null ? esc(pct2(p.er)) : dash}</td></tr>`;
+    return `<div class="tablewrap"><table class="tbl compact-sm grv-posts"><thead><tr><th>${esc(G.postedOn)}</th><th>${esc(G.postDue)}</th><th class="num">${esc(G.daysLate)}</th>` +
+      `<th>${esc(G.campaignL)}</th><th>${esc(G.pillarL)}</th><th class="num">${esc(G.costL)}</th><th class="num">${esc(G.viewsL)}</th><th class="num">${esc(G.erL)}</th></tr></thead><tbody>${rows.map(tr).join('')}</tbody></table></div>`;
+  }
   const ratioText = r => (r == null ? '—' : G.ratioX(r));
   const pctOf = r => Math.round((r - 1) * 100);
 
@@ -32,13 +68,16 @@ KT.grades = (function () {
   /* o = { kolId (this one only — even when nothing waits), opener, after } */
   function openQueue(o = {}) {
     const me = { editing: null, m: null };
+    /* 15/10/2026 — Set grade: one partner with nothing to confirm (or o.edit) → straight to choosing a grade */
+    if (o.kolId && R.canReview(U.actor())) { const r0 = R.gradeOf(state(), o.kolId);
+      if (r0 && (o.edit || !(R.GRADES.includes(r0.suggested) && r0.suggested !== r0.confirmed))) Object.assign(me, { editing: o.kolId, pick: R.GRADES.includes(r0.suggested) ? r0.suggested : '', why: '' }); }
     const title = () => (o.kolId ? G.rev.titleOne((R.kolById(state(), o.kolId) || {}).display_name || o.kolId) : G.rev.title(R.reviewQueue(state(), today()).length));
     me.m = U.createModal({ size: 'L', title: title(), opener: o.opener, isDirty: () => !!me.editing, onClick: e => click(e), onClose: () => { if (o.after) o.after(); },
       foot: ['', `<button type="button" class="btn" data-cmclose>${esc(C.common.close)}</button>`], body: '' });
     const draw = () => {
       const s = state(), td = today(), list = o.kolId ? [{ rec: R.gradeOf(s, o.kolId), kol: R.kolById(s, o.kolId) }].filter(x => x.rec && x.kol) : R.reviewQueue(s, td);
       const ro = !R.canReview(U.actor());
-      me.m.setBody((ro ? `<div class="hint ro-note">${esc(G.rev.viewOnly)}</div>` : '') + `<p class="hint" style="margin-top:0">${esc(G.rev.dAlways)} · ${esc(G.window(rulesNow().posts, rulesNow().months))}</p>` +
+      me.m.setBody(`<p class="hint" style="margin-top:0">${esc(G.rev.dAlways)} · ${esc(G.window(rulesNow().window_posts, rulesNow().window_months))}</p>` +
         (list.length ? `<div class="grv-list">${list.map(x => cardHTML(s, x.rec, x.kol, ro)).join('')}</div>` : `<div class="card empty"><b>${esc(G.rev.empty)}</b></div>`), true);
       if ($('cm_title')) $('cm_title').textContent = title();
     };
@@ -46,22 +85,17 @@ KT.grades = (function () {
     function cardHTML(s, rec, kol, ro) {
       const accs = R.accountsOfKol(s, kol.kol_id), tier = R.tierOf(R.maxFollowers(accs), s.lookups.tier_rules || []) || R.UNKNOWN_TIER;
       const g = R.gradeEngine(s, kol.kol_id, today()), ed = me.editing === kol.kol_id;
-      const posts = g.posts.length ? `<div class="tablewrap"><table class="tbl compact-sm grv-posts"><thead><tr><th>${esc(G.postedL)}</th><th>${esc(G.campaignL)}</th><th>${esc(G.pillarL)}</th><th class="num">${esc(G.costL)}</th><th class="num">${esc(G.cpm)} · ${esc(G.cpcons)} · ${esc(G.roas)}</th><th class="num">${esc(G.ratio)}</th></tr></thead><tbody>` +
-        g.posts.map(p => `<tr><td class="nowrap">${esc(R.dmy(p.post_date))}</td><td>${esc(R.campaignName(s, p.campaign_id) || '')}</td><td>${p.pillar ? U.pillarChipHTML ? U.pillarChipHTML(p.pillar) : esc(p.pillar) : '<span class="muted">—</span>'}</td>` +
-          `<td class="num">${esc(R.baht(p.cost))}</td><td class="num nowrap">${esc([p.cpm != null ? `฿${p.cpm.toFixed(2)}` : '—', p.cpcons != null ? `฿${p.cpcons.toFixed(2)}` : '—', p.roas != null ? p.roas.toFixed(2) : '—'].join(' · '))}</td>` +
-          `<td class="num"><b class="${p.ratio == null ? 'muted' : p.ratio >= 1 ? 'ok' : 'late'}">${esc(ratioText(p.ratio))}</b></td></tr>`).join('') + `</tbody></table></div>` : '';
+      const posts = postsUsedHTML(s, g, false);
       const form = ed ? `<div class="grv-form" data-grvform="${esc(kol.kol_id)}"><div class="field"><label>${esc(G.rev.newGrade)} <span class="req">*</span></label><div class="seg grv-seg" role="group">` +
           R.GRADES.map(x => `<button type="button" data-grvpick="${x}" class="${me.pick === x ? 'on' : ''}">${letterHTML(x, { name: true })}</button>`).join('') + `</div></div>` +
           `<div class="field"><label for="grv_why">${esc(G.rev.reasonL)} <span class="req">*</span></label><textarea id="grv_why" rows="2" placeholder="${esc(G.rev.reasonPh)}">${esc(me.why || '')}</textarea></div>` +
           `<div class="checks" id="grv_err"></div><div class="btns"><button type="button" class="btn" data-grvcancel>${esc(C.common.cancel)}</button><button type="button" class="btn primary" data-grvsave="${esc(kol.kol_id)}">${esc(G.rev.save)}</button></div></div>` : '';
-      const btns = ro ? '' : `<div class="btns grv-btns">${R.GRADES.includes(rec.suggested) && rec.suggested !== rec.confirmed ? `<button type="button" class="btn primary" data-grvok="${esc(kol.kol_id)}">${esc(G.rev.confirm)} ${letterHTML(rec.suggested)}</button>` : ''}` +
-        `<button type="button" class="btn" data-grvover="${esc(kol.kol_id)}">${esc(G.rev.override)}</button><button type="button" class="link small" data-grvkol="${esc(kol.kol_id)}">${esc(G.rev.openKol)} ↗</button></div>`;
+      const btns = ro ? `<div class="hint ro-note grv-ro">${esc(G.rev.viewOnly)}</div>` : `<div class="btns grv-btns">${R.GRADES.includes(rec.suggested) && rec.suggested !== rec.confirmed ? `<button type="button" class="btn primary" data-grvok="${esc(kol.kol_id)}">${esc(G.rev.confirm)} ${letterHTML(rec.suggested)}</button>` : ''}` +
+        `<button type="button" class="btn" data-grvover="${esc(kol.kol_id)}">${esc(R.GRADES.includes(rec.suggested) || R.GRADES.includes(rec.confirmed) ? G.rev.override : G.rev.setGrade)}</button><button type="button" class="link small" data-grvkol="${esc(kol.kol_id)}">${esc(G.rev.openKol)} ↗</button></div>`;
       return `<div class="card grv-card" data-grv="${esc(kol.kol_id)}"><div class="grv-h"><span class="grv-who">${U.avatarHTML(kol, 'sm')}<b>${U.nameHTML(kol.display_name)}</b>${U.partnerChipHTML(kol)} <span class="chip">${esc(tier)}</span></span>` +
           `<span class="grv-g"><span class="muted small">${esc(G.rev.newSug)}</span>${R.GRADES.includes(rec.suggested) ? letterHTML(rec.suggested, { name: true }) : `<span class="gchip g-none">${esc(G.status[rec.status] || G.notGraded)}</span>`}` +
           `<span class="muted small">${esc(G.rev.oldGrade)}</span>${R.GRADES.includes(rec.confirmed) ? letterHTML(rec.confirmed, { name: true }) : `<span class="gchip g-none">${esc(G.notGraded)}</span>`}</span></div>` +
-        `<div class="grv-reason">${esc(reasonText(g.reason))}</div>` +
-        `<div class="grv-nums"><span title="${esc(G.perfTip)}">${esc(G.perfL)} <b>${g.perf_ratio == null ? esc(G.opsOnly) : esc(`${ratioText(g.perf_ratio)} (${G.vsBench(pctOf(g.perf_ratio))})`)}</b></span>` +
-          `<span title="${esc(G.opsTip)}">${esc(G.opsL)} <b>${g.ops_score == null ? '—' : esc(G.outOf100(g.ops_score))}</b></span><span title="${esc(G.scoreTip)}">${esc(G.scoreL)} <b>${g.score == null ? '—' : esc(String(g.score))}</b></span>` +
+        `<div class="grv-reason">${esc(reasonText(g.reason, s))}</div>` + numsHTML(g, false).replace(/<\/div>$/, '') +
           (rec.locked_until ? `<span class="muted small">${esc(G.lockedUntil(R.dmy(rec.locked_until)))}</span>` : '') + `</div>` +
         (posts ? `<details class="grv-pd"${o.kolId ? ' open' : ''}><summary>${esc(G.basisPosts(g.posts.length))}</summary>${posts}</details>` : '') + btns + form + `</div>`;
     }
@@ -83,29 +117,25 @@ KT.grades = (function () {
       return false;
     }
     draw();
+    if (me.editing) { const w = $('grv_why'); if (w) w.focus(); }
     return me;
   }
 
-  /* ===================== KOL modal › Performance: the grade · its two scores · history · the posts used ===================== */
+  /* ===================== KOL modal › Performance: the grade · On time · Avg days late · ER · Revisions · history · the posts used (CR-35 §3.6) ===================== */
   function profileHTML(s, kolId) {
     const rec = R.gradeOf(s, kolId), g = R.gradeEngine(s, kolId, today()), hist = R.historyOf(s, kolId), rules = rulesNow();
     const wait = !!rec && R.needsReview(rec, today(), rules), rev = R.canReview(U.actor());
+    /* KOL Manager / Admin: Review grade · Override · Set grade — anyone else: View (the card, no buttons) */
+    const btn = !rec ? '' : rev ? `<button type="button" class="btn small${wait ? ' primary' : ''}" data-grvopen="${esc(kolId)}">${esc(wait ? G.rev.due : R.GRADES.includes(rec.confirmed) || R.GRADES.includes(rec.suggested) ? G.rev.override : G.rev.setGrade)}</button>`
+      : `<button type="button" class="btn small" data-grvopen="${esc(kolId)}">${esc(G.rev.view)}</button>`;
     const head = `<div class="gp-head">${rec && R.GRADES.includes(rec.confirmed) ? letterHTML(rec.confirmed, { name: true, cls: 'big' }) : `<span class="gchip g-none big">${esc(!rec || rec.status === 'none' ? G.notGraded : rec.status === 'not_enough' ? G.notEnough : G.notGraded)}</span>`}` +
       `<span class="gp-sug"><span class="muted small">${esc(G.suggested)}</span> ${R.GRADES.includes(g.suggested) ? letterHTML(g.suggested, { name: true }) : `<span class="muted">${esc(G.status[g.status] || '—')}</span>`}` +
-      `${g.status === 'ops_only' ? ` <span class="chip">${esc(G.opsOnly)}</span>` : ''}${wait ? ` <span class="chip warn-chip">${esc(G.waiting)}</span>` : ''}</span>` +
-      (rev && rec && (wait || R.GRADES.includes(rec.suggested) || R.GRADES.includes(rec.confirmed)) ? `<button type="button" class="btn small${wait ? ' primary' : ''}" data-grvopen="${esc(kolId)}">${esc(wait ? G.rev.due : G.rev.override)}</button>` : '') + `</div>`;
-    const kv = (l, v, tip) => `<div class="kv"${tip ? ` title="${esc(tip)}"` : ''}><span>${esc(l)}</span><b>${v}</b></div>`;
-    const nums = kv(G.perfL, g.perf_ratio == null ? `<span class="muted">${esc(g.status === 'not_enough' ? G.notEnough : G.opsOnly)}</span>` : esc(`${ratioText(g.perf_ratio)} · ${G.vsBench(pctOf(g.perf_ratio))}`), G.perfTip) +
-      kv(G.opsL, g.ops_score == null ? '—' : esc(G.outOf100(g.ops_score)), G.opsTip) + kv(G.scoreL, g.score == null ? '—' : esc(String(g.score)), G.scoreTip) +
-      (rec && rec.locked_until ? kv(G.rev.override, esc(G.lockedUntil(R.dmy(rec.locked_until)))) : '');
-    const reason = g.reason && g.reason.length ? `<div class="hint gp-reason">${esc(reasonText(g.reason))} · ${esc(G.window(rules.posts, rules.months))}</div>` : '';
+      `${wait ? ` <span class="chip warn-chip">${esc(G.waiting)}</span>` : ''}</span>${btn}</div>`;
+    const lock = rec && rec.locked_until ? `<div class="muted small">${esc(G.lockedUntil(R.dmy(rec.locked_until)))}</div>` : '';
+    const reason = g.reason && g.reason.length ? `<div class="hint gp-reason">${esc(reasonText(g.reason, s))} · ${esc(G.window(rules.window_posts, rules.window_months))}</div>` : '';
     const histHTML = hist.length ? `<ul class="hist-log gp-hist">${hist.map(h => `<li><span class="dt">${esc(R.dmy(String(h.at).slice(0, 10)))}</span><span>${h.from ? letterHTML(h.from) : `<span class="muted">${esc(G.notGraded)}</span>`} → ${letterHTML(h.to)} <span class="muted small">${esc(G.histKind[h.kind] || h.kind)}</span></span>` +
       `<span class="muted">${esc(R.changedByName(s, h.by))}${h.reason ? ` · ${esc(h.reason)}` : ''}</span></li>`).join('')}</ul>` : `<div class="hint">${esc(G.noHistory)}</div>`;
-    const posts = g.posts && g.posts.length ? `<div class="tablewrap"><table class="tbl compact-sm grv-posts"><thead><tr><th>${esc(G.postedL)}</th><th>${esc(G.campaignL)}</th><th>${esc(G.pillarL)}</th><th class="num">${esc(G.costL)}</th><th class="num">${esc(G.cpm)} · ${esc(G.cpcons)} · ${esc(G.roas)}</th><th class="num">${esc(G.ratio)}</th></tr></thead><tbody>` +
-      g.posts.map(p => `<tr class="click" data-deal="${esc(p.deal_id)}" tabindex="0"><td class="nowrap">${esc(R.dmy(p.post_date))}</td><td>${esc(R.campaignName(s, p.campaign_id) || '')}</td><td>${p.pillar ? (U.pillarChipHTML ? U.pillarChipHTML(p.pillar) : esc(p.pillar)) : '<span class="muted">—</span>'}</td>` +
-        `<td class="num">${esc(R.baht(p.cost))}</td><td class="num nowrap">${esc([p.cpm != null ? `฿${p.cpm.toFixed(2)}` : '—', p.cpcons != null ? `฿${p.cpcons.toFixed(2)}` : '—', p.roas != null ? p.roas.toFixed(2) : '—'].join(' · '))}</td>` +
-        `<td class="num"><b class="${p.ratio == null ? 'muted' : p.ratio >= 1 ? 'ok' : 'late'}">${esc(ratioText(p.ratio))}</b></td></tr>`).join('') + `</tbody></table></div>` : '';
-    return { head: head + nums + reason, history: histHTML, posts, n: g.posts ? g.posts.length : 0 };
+    return { head: head + numsHTML(g, true) + lock + reason, history: histHTML, posts: postsUsedHTML(s, g, true), n: (g.posts || []).length };
   }
 
   /* ===================== Incidents (Deal modal › History) ===================== */
@@ -219,5 +249,5 @@ KT.grades = (function () {
     });
   }
 
-  return { CLS, letterHTML, chipHTML, reasonText, ratioText, profileHTML, openQueue, review: (kolId, o = {}) => openQueue(Object.assign({}, o, { kolId })), incidentsHTML, dealClick, incidentDialog, sourceHTML, ratioHTML, openImport };
+  return { CLS, letterHTML, chipHTML, levelHTML, reasonText, reasonOf, numsHTML, postsUsedHTML, ratioText, profileHTML, openQueue, review: (kolId, o = {}) => openQueue(Object.assign({}, o, { kolId })), incidentsHTML, dealClick, incidentDialog, sourceHTML, ratioHTML, openImport };
 })();

@@ -1,13 +1,14 @@
-/* rules-grade.js — CR-34 Partner Grade (A Excellent · B Good · C Needs improvement · D Do not rehire). Every score comes from here (R.gradeEngine):
-     Benchmarks   a Campaign's (campaigns.benchmarks) over the defaults of Settings › Grades (lookups.grade_rules.bench) · Cost per consideration =
-                  CPM ÷ (1,000 × rate) unless typed over
-     Performance  a post's ratio against its pillar's benchmark (> 1 = better): Awareness CPM · Consideration CPCons · Awareness & Consideration the average
-                  of the two · Conversion / an Affiliate ROAS · no pillar → the Phase's default pillar · no benchmark / no numbers → none
-     Operation    a deal 0–100: on time (Draft / Post against their due) 50 · rounds (1 = full, −15 each round more) 30 · no Incident 20
-     Grade        the latest 6 posts in 6 months (Settings) · fewer than 2 = Not enough data · no ratio (or fewer than 2) = Ops only · a serious Incident
-                  (No-show · Breach) = D at once
-   The grade a person confirmed (partner_grades.confirmed) is the one shown everywhere · a suggestion that differs waits in the review queue ·
-   Override locks it 90 days or until 2 new posts · history in grade_history. Pure functions (no DOM, no storage). Adds to KT.rules. */
+/* rules-grade.js — CR-34 Partner Grade (A Excellent · B Good · C Needs improvement · D Do not rehire) · CR-35: the grade is On time only.
+   Every grade comes from here (R.gradeEngine):
+     Posts counted  the posts of the committed deals that have a Post due — posted (Posted on vs Post due) or past due and not posted (Late · open) ·
+                    the latest 6 within 6 months (Settings › Grades) · not due yet = not counted · no Post due = "No due" (shown, not counted)
+     On time        Posted on ≤ Post due + grace days (0: a day late is Late) · On-time rate = on time ÷ counted
+     Grade          A 100% · B ≥ 80% · C ≥ 60% · D below · fewer than 2 counted = Not enough data · a serious Incident (No-show · Breach) = D at once
+     Engagement     ER = Σ (likes + comments + shares + saves) ÷ Σ views of the counted posts — shown, never graded
+   Benchmarks (campaigns.benchmarks over the defaults of Settings › Grades) and a post's ratio against them stay for Dashboard › By campaign — not in
+   the grade. The grade a person confirmed (partner_grades.confirmed) is the one shown (Dashboard › Partners: else the suggested one, dashed) · a
+   suggestion that differs waits in Operations › Review grade · Override locks it 90 days or until 2 new posts · history in grade_history.
+   Pure functions (no DOM, no storage). Adds to KT.rules. */
 Object.assign(KT.rules, (function (R, C) {
   'use strict';
   const { isBlank, isISODate, trim, addDays, dayDiff, totalCost } = R;
@@ -21,28 +22,32 @@ Object.assign(KT.rules, (function (R, C) {
   const pos = v => { const n = num(v); return n != null && n > 0 ? n : null; };
   const r2 = n => Math.round(n * 100) / 100, r4 = n => Math.round(n * 10000) / 10000;
 
-  /* ===================== Settings › Grades ===================== */
-  const GRADE_RULES_DEFAULT = { a_ratio: 1.25, a_ops: 85, b_ratio: 1.0, b_ops: 70, c_ratio: 0.7, c_ops: 50, w_perf: 60, w_ops: 40, posts: 6, months: 6, min_posts: 2,
+  /* ===================== Settings › Grades (CR-35: On time) ===================== */
+  const GRADE_RULES_DEFAULT = { basis: 'on_time', a: 100, b: 80, c: 60, grace_days: 0, min_posts: 2, window_posts: 6, window_months: 6, serious_incident_d: true,
+    lock_days: 90, lock_posts: 2, cons_actions: ['likes', 'comments', 'shares', 'saves'], bench: { cpm: null, cons_rate: null, cpcons: null, roas: null, affiliate_roas: null, clips_target_pct: 20 } };
+  const RULE_NUMS = ['a', 'b', 'c', 'grace_days', 'min_posts', 'window_posts', 'window_months', 'lock_days', 'lock_posts'];
+  /* CR-34's rules (schema 25) — to tell whether a person changed them (migration v26 keeps those in lookups.grade_rules_v25) */
+  const GRADE_RULES_V25 = { a_ratio: 1.25, a_ops: 85, b_ratio: 1.0, b_ops: 70, c_ratio: 0.7, c_ops: 50, w_perf: 60, w_ops: 40, posts: 6, months: 6, min_posts: 2,
     cons_actions: ['likes', 'comments', 'shares', 'saves'], lock_days: 90, lock_posts: 2, bench: { cpm: null, cons_rate: null, cpcons: null, roas: null, affiliate_roas: null, clips_target_pct: 20 } };
   function gradeRules(lookups) {
-    const g = (lookups || {}).grade_rules || {}, d = GRADE_RULES_DEFAULT, out = {};
-    Object.keys(d).forEach(k => { if (k === 'bench' || k === 'cons_actions') return; out[k] = num(g[k]) != null ? num(g[k]) : d[k]; });
+    const g = (lookups || {}).grade_rules || {}, d = GRADE_RULES_DEFAULT, out = { basis: 'on_time' };
+    RULE_NUMS.forEach(k => { out[k] = num(g[k]) != null ? num(g[k]) : d[k]; });
+    out.serious_incident_d = g.serious_incident_d !== false;
     out.cons_actions = Array.isArray(g.cons_actions) && g.cons_actions.length ? g.cons_actions.filter(k => CONS_ACTIONS.includes(k)) : d.cons_actions.slice();
     out.bench = Object.assign({}, d.bench, Object.fromEntries(Object.entries(g.bench || {}).filter(([k, v]) => BENCH_KEYS.includes(k) && num(v) != null).map(([k, v]) => [k, num(v)])));
     return out;
   }
-  /* the form (strings) → { errs } · thresholds A ≥ B ≥ C · weights 0–100 · posts 1–50 · months 1–24 · min 1–posts · actions ≥ 1 · benchmarks ≥ 0 (rate / target 0–100) */
+  /* the form (strings) → { errs } · A ≥ B ≥ C (0–100 %) · grace 0–30 days · posts 1–50 · months 1–24 · min 1–posts · lock 1–365 · actions ≥ 1 · benchmarks ≥ 0 */
   function validateGradeRules(d) {
     const M = C.grade.err, errs = [], bad = (k, msg) => errs.push({ field: k, msg });
-    const n = k => num(d[k]), inRange = (k, a, z) => n(k) != null && n(k) >= a && n(k) <= z;
-    ['a_ratio', 'b_ratio', 'c_ratio'].forEach(k => { if (!inRange(k, 0, 10)) bad(k, M.ratio); });
-    ['a_ops', 'b_ops', 'c_ops', 'w_perf', 'w_ops'].forEach(k => { if (!inRange(k, 0, 100)) bad(k, M.pct); });
-    if (!errs.length && !(n('a_ratio') >= n('b_ratio') && n('b_ratio') >= n('c_ratio') && n('a_ops') >= n('b_ops') && n('b_ops') >= n('c_ops'))) bad('a_ratio', M.order);
-    if (!errs.some(e => /^w_/.test(e.field)) && n('w_perf') + n('w_ops') <= 0) bad('w_perf', M.weights);
-    if (!inRange('posts', 1, 50) || !Number.isInteger(n('posts'))) bad('posts', M.posts);
-    if (!inRange('months', 1, 24) || !Number.isInteger(n('months'))) bad('months', M.months);
-    if (!inRange('min_posts', 1, 50) || !Number.isInteger(n('min_posts')) || (n('posts') && n('min_posts') > n('posts'))) bad('min_posts', M.minPosts);
-    if (!inRange('lock_days', 1, 365) || !Number.isInteger(n('lock_days'))) bad('lock_days', M.lockDays);
+    const n = k => num(d[k]), inRange = (k, a, z) => n(k) != null && n(k) >= a && n(k) <= z, int = k => Number.isInteger(n(k));
+    ['a', 'b', 'c'].forEach(k => { if (!inRange(k, 0, 100)) bad(k, M.pct); });
+    if (!errs.length && !(n('a') >= n('b') && n('b') >= n('c'))) bad('a', M.order);
+    if (!inRange('grace_days', 0, 30) || !int('grace_days')) bad('grace_days', M.grace);
+    if (!inRange('window_posts', 1, 50) || !int('window_posts')) bad('window_posts', M.posts);
+    if (!inRange('window_months', 1, 24) || !int('window_months')) bad('window_months', M.months);
+    if (!inRange('min_posts', 1, 50) || !int('min_posts') || (n('window_posts') && n('min_posts') > n('window_posts'))) bad('min_posts', M.minPosts);
+    if (!inRange('lock_days', 1, 365) || !int('lock_days')) bad('lock_days', M.lockDays);
     if (!Array.isArray(d.cons_actions) || !d.cons_actions.length) bad('cons_actions', M.actions);
     errs.push(...validateBenchmarks(d.bench || {}, 'bench_'));
     return { errs, warns: [], infos: [] };
@@ -143,52 +148,61 @@ Object.assign(KT.rules, (function (R, C) {
     (state.deal_posts || []).forEach(p => { if (!postsBy.has(p.deal_id)) postsBy.set(p.deal_id, []); postsBy.get(p.deal_id).push(p); });
     (state.deals || []).forEach(d => { if (R.isCancelled(d)) return; if (!dealsBy.has(d.kol_id)) dealsBy.set(d.kol_id, []); dealsBy.get(d.kol_id).push(d); });
     (state.deal_incidents || []).forEach(i => { if (i.deleted_at) return; if (!incBy.has(i.deal_id)) incBy.set(i.deal_id, []); incBy.get(i.deal_id).push(i); });
-    return { postsBy, dealsBy, incBy, phaseIdx: R.phaseIndex(state), rules: gradeRules(state.lookups), grace: R.perfSettings(state.lookups).grace, bench: new Map() };
+    return { postsBy, dealsBy, incBy, phaseIdx: R.phaseIndex(state), rules: gradeRules(state.lookups), grace: gradeRules(state.lookups).grace_days, bench: new Map() };
   }
   const monthsBack = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - n); return d.toISOString().slice(0, 10); };
-  /* status: graded · ops_only · not_enough · none (no deal) — suggested null unless graded / ops_only / a serious Incident (D) */
+  /* CR-35 — the posts a grade counts (see the top) → { basis [{post, deal, at, due, posted, open, daysLate, late}] newest first (at = Posted on, else
+     Post due), nodue [{post, deal}] (posted in the window without a Post due) } · a post posted by link without a date is not counted */
+  function gradePosts(state, kolId, today, ix) {
+    const rules = ix.rules, from = monthsBack(today, rules.window_months), grace = rules.grace_days, all = [], nodue = [];
+    (ix.dealsBy.get(kolId) || []).forEach(d => {
+      if (R.isShortlist(state.lookups, d)) return;
+      (ix.postsBy.get(d.deal_id) || []).forEach(p => {
+        const posted = isISODate(p.post_date) && p.post_date <= today, due = isISODate(p.expected_post_date) ? p.expected_post_date : null;
+        if (!due) { if (posted && p.post_date >= from) nodue.push({ post: p, deal: d }); return; }
+        if (!posted && (!isBlank(p.post_link) || addDays(due, grace) >= today)) return;
+        const at = posted ? p.post_date : due; if (at < from) return;
+        const days = posted ? dayDiff(p.post_date, due) : dayDiff(today, due);
+        all.push({ post: p, deal: d, at, due, posted, open: !posted, daysLate: Math.max(0, days), late: days > grace });
+      });
+    });
+    const order = (a, b) => b.at.localeCompare(a.at) || String(b.post.post_id).localeCompare(String(a.post.post_id));
+    return { basis: all.sort(order).slice(0, rules.window_posts), nodue: nodue.map(x => Object.assign({ at: x.post.post_date }, x)).sort(order) };
+  }
+  /* status: graded · not_enough · none (no deal) · suggested A–D when graded · a serious Incident = D (Settings: serious_incident_d) ·
+     posts [{post_id, deal_id, campaign_id, post_date (null = not posted), due, days_late, late, open, pillar, cost, views, er}] · nodue (the same, not counted) */
   function gradeEngine(state, kolId, today, ix) {
     ix = ix || gradeIndex(state);
-    const rules = ix.rules, from = monthsBack(today, rules.months), kol = R.kolById(state, kolId), deals = ix.dealsBy.get(kolId) || [];
-    if (!deals.length) return { kol_id: kolId, status: 'none', suggested: null, basis: [], posts: [] };
-    const all = [];
-    deals.forEach(d => { const ps = ix.postsBy.get(d.deal_id) || []; ps.forEach(p => { if (isISODate(p.post_date) && p.post_date <= today && p.post_date >= from) all.push({ post: p, deal: d, posts: ps }); }); });
-    all.sort((a, b) => b.post.post_date.localeCompare(a.post.post_date) || String(b.post.post_id).localeCompare(String(a.post.post_id)));
-    const basis = all.slice(0, rules.posts);
-    const benchOf = cid => { if (!ix.bench.has(cid)) ix.bench.set(cid, benchmarksOf(state, cid)); return ix.bench.get(cid); };
-    const rows = basis.map(x => Object.assign({ post_id: x.post.post_id, deal_id: x.deal.deal_id, campaign_id: x.deal.campaign_id, post_date: x.post.post_date },
-      postRatio(state, x.deal, x.post, { rules, bench: benchOf(x.deal.campaign_id), posts: x.posts, kol, idx: ix.phaseIdx })));
+    const rules = ix.rules, deals = ix.dealsBy.get(kolId) || [];
+    if (!deals.length) return { kol_id: kolId, status: 'none', suggested: null, basis: [], posts: [], nodue: [], measured: 0, onTime: 0, late: 0, rate: null, avgLate: null, er: null, erPosts: 0,
+      avgRounds: null, serious: [], seriousList: [], reason: [], score: null };
+    const { basis, nodue } = gradePosts(state, kolId, today, ix), from = monthsBack(today, rules.window_months);
+    const row = x => { const p = x.post, v = num(p.views);
+      return { post_id: p.post_id, deal_id: x.deal.deal_id, campaign_id: x.deal.campaign_id, post_date: x.posted ? p.post_date : null, due: x.due || null, days_late: x.due ? x.daysLate : null,
+        late: !!x.late, open: !!x.open, pillar: pillarFor(state, x.deal, p, ix.phaseIdx), cost: r2(R.postShare(x.deal, ix.postsBy.get(x.deal.deal_id) || []) || 0),
+        views: v, er: v > 0 ? r4(R.engagementOf(p) / v) : null }; };
+    const posts = basis.map(row), lateRows = posts.filter(r => r.late), measured = posts.length, onTime = measured - lateRows.length;
+    const seen = basis.filter(x => num(x.post.views) > 0), views = seen.reduce((a, x) => a + num(x.post.views), 0);
     const dealIds = [...new Set(basis.map(x => x.deal.deal_id))];
-    const ops = dealIds.map(id => { const d = deals.find(y => y.deal_id === id); return Object.assign({ deal_id: id }, opsOfDeal(state, d, { grace: ix.grace, posts: ix.postsBy.get(id) || [], incidents: ix.incBy.get(id) || [] })); });
-    /* serious Incidents of the window (any deal of the partner — a No-show may have no post) */
-    const serious = deals.flatMap(d => (ix.incBy.get(d.deal_id) || []).filter(i => isSerious(i) && (!isISODate(i.date) || (i.date >= from && i.date <= today))));
-    const opsScore = ops.length ? Math.round(ops.reduce((a, x) => a + x.score, 0) / ops.length) : null;
-    const ratios = rows.filter(r => r.ratio != null).map(r => r.ratio);
-    const perf = ratios.length >= rules.min_posts ? r4(ratios.reduce((a, v) => a + v, 0) / ratios.length) : null;
-    const onTime = ops.reduce((a, x) => a + x.onTime, 0), measured = ops.reduce((a, x) => a + x.measured, 0), avgRounds = ops.length ? r2(ops.reduce((a, x) => a + x.rounds, 0) / ops.length) : null;
-    const pillars = [...new Set(rows.map(r => r.pillar).filter(Boolean))];
-    const out = { kol_id: kolId, basis: rows.map(r => r.post_id), posts: rows, ops, perf_ratio: perf, ops_score: opsScore, ratios: ratios.length, onTime, measured, avgRounds, serious: serious.map(i => i.incident_id), pillars, from };
-    let status, g = null;
-    if (serious.length) { status = basis.length >= rules.min_posts ? (perf != null ? 'graded' : 'ops_only') : 'not_enough'; g = 'D'; }
-    else if (basis.length < rules.min_posts) status = 'not_enough';
-    else if (perf == null) { status = 'ops_only'; g = opsScore >= rules.a_ops ? 'A' : opsScore >= rules.b_ops ? 'B' : opsScore >= rules.c_ops ? 'C' : 'D'; }
-    else {
-      status = 'graded';
-      g = perf >= rules.a_ratio && opsScore >= rules.a_ops ? 'A' : perf >= rules.b_ratio && opsScore >= rules.b_ops ? 'B' : perf < rules.c_ratio || opsScore < rules.c_ops ? 'D' : 'C';
-    }
-    const wSum = rules.w_perf + rules.w_ops || 1, perfScore = perf == null ? null : Math.min(100, perf / (rules.a_ratio || 1) * 100);
-    out.score = perf == null ? opsScore : Math.round((rules.w_perf * perfScore + rules.w_ops * (opsScore || 0)) / wSum);
+    const avgRounds = dealIds.length ? r2(dealIds.reduce((a, id) => a + Math.max(1, Number((deals.find(d => d.deal_id === id) || {}).draft_rounds) || 1), 0) / dealIds.length) : null;
+    const seriousInc = deals.flatMap(d => (ix.incBy.get(d.deal_id) || []).filter(i => isSerious(i) && (!isISODate(i.date) || (i.date >= from && i.date <= today))).map(i => ({ i, d })));
+    const out = { kol_id: kolId, basis: posts.map(r => r.post_id), posts, nodue: nodue.map(x => row({ post: x.post, deal: x.deal, posted: true, due: null, late: false, open: false })),
+      measured, onTime, late: lateRows.length, rate: measured ? r4(onTime / measured) : null,
+      avgLate: lateRows.length ? Math.round(lateRows.reduce((a, r) => a + r.days_late, 0) / lateRows.length * 10) / 10 : measured ? 0 : null,
+      er: views ? r4(seen.reduce((a, x) => a + R.engagementOf(x.post), 0) / views) : null, erPosts: seen.length, avgRounds,
+      serious: seriousInc.map(x => x.i.incident_id), seriousList: seriousInc.map(x => ({ type: x.i.type, campaign_id: x.d.campaign_id })), from };
+    let status = 'not_enough', g = null;
+    if (measured >= rules.min_posts) { status = 'graded'; const pct = t => onTime * 100 >= t * measured; g = pct(rules.a) ? 'A' : pct(rules.b) ? 'B' : pct(rules.c) ? 'C' : 'D'; }
+    if (rules.serious_incident_d && seriousInc.length) g = 'D';
+    out.score = measured ? Math.round(onTime / measured * 100) : null;
     return Object.assign(out, { status, suggested: g, reason: reasonParts(out, rules) });
   }
-  /* the main reason in parts (the words are the screen's): [{k: 'perf', pct, pillar} · {k: 'ontime', n, of} · {k: 'rounds', n} · {k: 'serious', n} · {k: 'opsOnly'} · {k: 'few', n}] */
+  /* the main reason in parts (the words are the screen's): {k: 'serious', type, campaign_id} each · then {k: 'few', n} · {k: 'late', n, of, avg} · {k: 'ontime', n, of} */
   function reasonParts(g, rules) {
-    const out = [];
-    if (g.serious.length) out.push({ k: 'serious', n: g.serious.length });
-    if (g.perf_ratio != null) out.push({ k: 'perf', pct: Math.round((g.perf_ratio - 1) * 100), pillar: g.pillars.length === 1 ? g.pillars[0] : null });
-    else if (g.basis.length >= rules.min_posts) out.push({ k: 'opsOnly', n: g.ratios });
-    else out.push({ k: 'few', n: g.basis.length });
-    if (g.measured) out.push({ k: 'ontime', n: g.onTime, of: g.measured });
-    if (g.avgRounds != null) out.push({ k: 'rounds', n: g.avgRounds });
+    const out = (rules.serious_incident_d ? g.seriousList || [] : []).map(x => ({ k: 'serious', type: x.type, campaign_id: x.campaign_id || null }));
+    if (g.measured < rules.min_posts) out.push({ k: 'few', n: g.measured });
+    else if (g.late) out.push({ k: 'late', n: g.late, of: g.measured, avg: g.avgLate });
+    else out.push({ k: 'ontime', n: g.onTime, of: g.measured });
     return out;
   }
 
@@ -209,7 +223,7 @@ Object.assign(KT.rules, (function (R, C) {
     if ((rec.serious || []).length) return true;
     return !isLocked(rec, today, rules);
   }
-  const SIG_KEYS = ['suggested', 'status', 'perf_ratio', 'ops_score', 'score'];
+  const SIG_KEYS = ['suggested', 'status', 'on_time_rate', 'late_posts', 'avg_days_late', 'er', 'score'];   // CR-35: perf_ratio / ops_score are no longer written (kept, not removed)
   /* every partner with a deal: the suggestion again (the ones whose numbers changed are written) → { changed [kol_id] } — the confirmed grade never moves here */
   function syncGrades(state, today, nowIso) {
     if (!Array.isArray(state.partner_grades)) state.partner_grades = [];
@@ -217,7 +231,7 @@ Object.assign(KT.rules, (function (R, C) {
     ix.dealsBy.forEach((deals, kolId) => {
       const g = gradeEngine(state, kolId, today, ix);
       let rec = byKol.get(kolId);
-      const next = { suggested: g.suggested, status: g.status, perf_ratio: g.perf_ratio, ops_score: g.ops_score, score: g.score, basis_posts: g.basis, reason: g.reason, serious: g.serious };
+      const next = { suggested: g.suggested, status: g.status, on_time_rate: g.rate, late_posts: g.late, avg_days_late: g.avgLate, er: g.er, score: g.score, basis_posts: g.basis, reason: g.reason, serious: g.serious };
       if (!rec) { rec = Object.assign({ kol_id: kolId, confirmed: null, override_reason: null, locked_until: null, locked_basis: null, reviewed_by: null, reviewed_at: null, computed_at: nowIso || null }, next); state.partner_grades.push(rec); byKol.set(kolId, rec); changed.push(kolId); return; }
       const same = SIG_KEYS.every(k => rec[k] === next[k]) && JSON.stringify(rec.basis_posts || []) === JSON.stringify(next.basis_posts) && JSON.stringify(rec.reason || []) === JSON.stringify(next.reason) && JSON.stringify(rec.serious || []) === JSON.stringify(next.serious);
       if (same) return;
@@ -234,7 +248,7 @@ Object.assign(KT.rules, (function (R, C) {
       .sort((a, b) => (b.rec.suggested === 'D') - (a.rec.suggested === 'D') || String(b.rec.computed_at || '').localeCompare(String(a.rec.computed_at || '')) || a.kol.display_name.localeCompare(b.kol.display_name, 'th'));
   }
   const canReview = user => !!user && R.can(user, 'grade.review');
-  const histEntry = (rec, to, kind, reason, ctx) => ({ id: ctx.historyId, kol_id: rec.kol_id, from: rec.confirmed || null, to, suggested: rec.suggested || null, kind, reason: reason || null, by: ctx.user || null, at: ctx.now, perf_ratio: rec.perf_ratio, ops_score: rec.ops_score });
+  const histEntry = (rec, to, kind, reason, ctx) => ({ id: ctx.historyId, kol_id: rec.kol_id, from: rec.confirmed || null, to, suggested: rec.suggested || null, kind, reason: reason || null, by: ctx.user || null, at: ctx.now, on_time_rate: rec.on_time_rate != null ? rec.on_time_rate : null, avg_days_late: rec.avg_days_late != null ? rec.avg_days_late : null });   // CR-35
   /* Confirm: the suggestion becomes the grade */
   function confirmGrade(state, kolId, ctx) {
     const rec = gradeOf(state, kolId); if (!rec || !GRADES.includes(rec.suggested)) return null;
@@ -256,8 +270,17 @@ Object.assign(KT.rules, (function (R, C) {
   const moveOf = h => (!h.from ? 'new' : GRADES.indexOf(h.to) < GRADES.indexOf(h.from) ? 'up' : GRADES.indexOf(h.to) > GRADES.indexOf(h.from) ? 'down' : 'same');
 
   /* ===================== Dashboard › Partners ===================== */
-  /* f = { from, to, campaign, pillar, partner } · the partners of the committed deals (not cancelled · past Shortlist) of the Campaigns in the range →
-     { rows [{kol, grade (confirmed | null), rec, spend, deals, tier, type}], kpi, mix, tierGrid, movement, top, watch } */
+  /* 15/10/2026 — the level on Dashboard › Partners: the confirmed grade · else the suggested one (shown dashed, "Suggested") · else none */
+  const levelOf = rec => (rec && GRADES.includes(rec.confirmed) ? { level: rec.confirmed, src: 'confirmed' }
+    : rec && GRADES.includes(rec.suggested) ? { level: rec.suggested, src: 'suggested' } : { level: null, src: null });
+  /* CR-35 — a partner's On time from the grade (the posts it counts) → { measured, onTime, late, rate, avgLate } */
+  const onTimeOf = rec => { const n = rec && Array.isArray(rec.basis_posts) ? rec.basis_posts.length : 0, late = (rec && rec.late_posts) || 0;
+    return { measured: n, onTime: n - late, late, rate: n ? (n - late) / n : null, avgLate: rec && rec.avg_days_late != null ? rec.avg_days_late : null }; };
+  /* f = { from, to, campaign, pillar, partner, kols [], levels [A–D · 'none'], tiers [] } · the partners of the committed deals (not cancelled · past Shortlist)
+     of the Campaigns in the range → { rows [{kol, grade (confirmed, else suggested | null), gradeSrc (confirmed | suggested), confirmed, rec, spend, deals, tier,
+     type, posted, views, er, cpv (Deals › Performance's numbers of those deals), ot (onTimeOf: the grade's)}], pool (the rows before Partner · Grade · Tier —
+     the choices of those filters), kpi { …, ontime {measured, onTime, late, rate, avgLate}, engagement {er, posts} }, donut [{g, n, spend, sug}], mix, tierGrid,
+     movement, top, watch } */
   function partnersData(state, f, today) {
     const camps = new Set(R.campaignsInRange(state, f.from, f.to, today, R.DASH_STATUS_DEFAULT || R.CAMPAIGN_STATUSES).map(c => c.campaign_id));
     const rules = state.lookups.tier_rules || [], byKol = new Map();
@@ -268,20 +291,33 @@ Object.assign(KT.rules, (function (R, C) {
       const k = R.kolById(state, d.kol_id); if (!k) return;
       const type = R.partnerTypeOf(k) === 'affiliate' ? 'affiliate' : 'kol';
       if (f.partner && type !== f.partner) return;
-      const x = byKol.get(k.kol_id) || { kol: k, type, spend: 0, deals: 0 }; byKol.set(k.kol_id, x);
-      x.spend += totalCost(d); x.deals++;
+      const x = byKol.get(k.kol_id) || { kol: k, type, spend: 0, deals: 0, dealList: [] }; byKol.set(k.kol_id, x);
+      x.spend += totalCost(d); x.deals++; x.dealList.push(d);
     });
-    const rows = [...byKol.values()].map(x => { const rec = gradeOf(state, x.kol.kol_id), accs = R.accountsOfKol(state, x.kol.kol_id);
-      return Object.assign(x, { spend: r2(x.spend), rec, grade: rec && GRADES.includes(rec.confirmed) ? rec.confirmed : null, tier: R.tierOf(R.maxFollowers(accs), rules) || R.UNKNOWN_TIER, review: needsReview(rec, today, gradeRules(state.lookups)) }); });
+    /* the posted posts of those deals (the rows of Deals › Performance) → each partner's Posts · Views · ER · CPV · On time */
+    const perfBy = new Map(), grules = gradeRules(state.lookups);
+    if (byKol.size) R.perfRows(state, [...byKol.values()].flatMap(x => x.dealList), today, R.dealContext(state)).forEach(r => { const id = r.deal.kol_id; if (!perfBy.has(id)) perfBy.set(id, []); perfBy.get(id).push(r); });
+    const pool = [...byKol.values()].map(x => { const rec = gradeOf(state, x.kol.kol_id), lv = levelOf(rec), accs = R.accountsOfKol(state, x.kol.kol_id), pr = perfBy.get(x.kol.kol_id) || [], m = R.perfMetricsOf(pr);
+      return Object.assign(x, { spend: r2(x.spend), rec, grade: lv.level, gradeSrc: lv.src, confirmed: rec && GRADES.includes(rec.confirmed) ? rec.confirmed : null,
+        tier: R.tierOf(R.maxFollowers(accs), rules) || R.UNKNOWN_TIER, review: needsReview(rec, today, grules),
+        posted: m.posted, views: m.withViews ? m.views : null, er: m.er, cpv: m.cpv, ot: onTimeOf(rec) }); });
+    const kols = new Set(f.kols || []), levels = new Set(f.levels || []), tierSet = new Set(f.tiers || []);
+    const rows = pool.filter(r => (!kols.size || kols.has(r.kol.kol_id)) && (!levels.size || levels.has(r.grade || 'none')) && (!tierSet.size || tierSet.has(r.tier)));
     const graded = rows.filter(r => r.grade), spendAll = r2(rows.reduce((a, r) => a + r.spend, 0));
     const sumOf = l => r2(l.reduce((a, r) => a + r.spend, 0));
     const ab = graded.filter(r => r.grade === 'A' || r.grade === 'B'), cd = graded.filter(r => r.grade === 'C' || r.grade === 'D');
-    const kpi = { graded: graded.length, partners: rows.length, notEnough: rows.filter(r => !r.grade && r.rec && r.rec.status === 'not_enough').length,
+    const kpi = { graded: graded.length, suggested: graded.filter(r => r.gradeSrc === 'suggested').length, partners: rows.length, notEnough: rows.filter(r => !r.grade && r.rec && r.rec.status === 'not_enough').length,
       abShare: graded.length ? ab.length / graded.length : null, abSpendShare: sumOf(graded) ? sumOf(ab) / sumOf(graded) : null,
       cdSpend: sumOf(cd), cdShare: spendAll ? sumOf(cd) / spendAll : null, spend: spendAll, review: rows.filter(r => r.review).length };
+    /* CR-35 §3.2 — On-time posts (the grade's posts of the partners on screen) · Engagement rate (their posted posts in scope, with views) */
+    const ot = rows.reduce((a, r) => { a.measured += r.ot.measured; a.onTime += r.ot.onTime; a.late += r.ot.late; a.days += r.ot.late * (r.ot.avgLate || 0); return a; }, { measured: 0, onTime: 0, late: 0, days: 0 });
+    const pm = R.perfMetricsOf(rows.flatMap(r => perfBy.get(r.kol.kol_id) || []));
+    kpi.ontime = { measured: ot.measured, onTime: ot.onTime, late: ot.late, rate: ot.measured ? ot.onTime / ot.measured : null, avgLate: ot.late ? Math.round(ot.days / ot.late * 10) / 10 : null };
+    kpi.engagement = { er: pm.er, posts: pm.withViews };
     const keys = GRADES.concat(['none']);
+    const donut = keys.map(g => { const m = rows.filter(r => (r.grade || 'none') === g); return { g, n: m.length, spend: sumOf(m), sug: m.filter(r => r.gradeSrc === 'suggested').length }; });
     const mix = ['kol', 'affiliate'].map(t => { const l = rows.filter(r => r.type === t);
-      return { type: t, total: l.length, spend: sumOf(l), by: Object.fromEntries(keys.map(g => { const m = l.filter(r => (r.grade || 'none') === g); return [g, { n: m.length, spend: sumOf(m) }]; })) }; });
+      return { type: t, total: l.length, spend: sumOf(l), by: Object.fromEntries(keys.map(g => { const m = l.filter(r => (r.grade || 'none') === g); return [g, { n: m.length, spend: sumOf(m), sug: m.filter(r => r.gradeSrc === 'suggested').length }]; })) }; });
     const tiers = R.tierOrder(rules).concat([R.UNKNOWN_TIER]).filter((t, i, a) => a.indexOf(t) === i);
     const tierGrid = tiers.map(t => { const l = rows.filter(r => r.tier === t); return { tier: t, total: l.length, by: Object.fromEntries(keys.map(g => { const m = l.filter(r => (r.grade || 'none') === g); return [g, { n: m.length, spend: sumOf(m) }]; })) }; })
       .filter(r => r.total);
@@ -289,9 +325,22 @@ Object.assign(KT.rules, (function (R, C) {
     const moves = (state.grade_history || []).filter(h => ids.has(h.kol_id) && String(h.at).slice(0, 10) >= f.from && String(h.at).slice(0, 10) <= f.to).map(h => Object.assign({ move: moveOf(h), kol: R.kolById(state, h.kol_id) }, h))
       .filter(h => h.move !== 'same').sort((a, b) => String(b.at).localeCompare(String(a.at)));
     const movement = { up: moves.filter(m => m.move === 'up').length, down: moves.filter(m => m.move === 'down').length, fresh: moves.filter(m => m.move === 'new').length, list: moves };
-    const byScore = (a, b) => ((b.rec && b.rec.score) || 0) - ((a.rec && a.rec.score) || 0) || b.spend - a.spend;
+    const byScore = (a, b) => b.spend - a.spend || String(a.kol.display_name).localeCompare(String(b.kol.display_name), 'th');   // CR-35: every A is on time 100%
     const top = rows.filter(r => r.grade === 'A').sort(byScore), watch = rows.filter(r => r.grade === 'C' || r.grade === 'D').sort((a, b) => GRADES.indexOf(b.grade) - GRADES.indexOf(a.grade) || b.spend - a.spend);
-    return { rows, kpi, mix, tierGrid, movement, top, watch };
+    return { rows, pool, kpi, donut, mix, tierGrid, movement, top, watch };
+  }
+  /* Partner performance: any column · blanks last · ties: the grade (A first), then the spend (most first), then the name (CR-35 §3.3) */
+  function sortPartnerRows(rows, key, dir, tierRules) {
+    const tiers = R.tierOrder(tierRules), k = dir === 'desc' ? -1 : 1, lv = r => (r.grade ? GRADES.indexOf(r.grade) : 9);
+    const get = { partner: r => String(r.kol.display_name || '').toLowerCase(), tier: r => tiers.indexOf(r.tier), grade: r => (r.grade ? GRADES.indexOf(r.grade) : null),
+      posts: r => r.posted || null, ontime: r => r.ot.rate, late: r => r.ot.avgLate }[key === 'level' ? 'grade' : key] || (r => r[key]);
+    const empty = v => v == null || v === '' || (typeof v === 'number' && isNaN(v));
+    return rows.slice().sort((a, b) => {
+      const x = get(a), y = get(b);
+      if (empty(x) || empty(y)) { if (empty(x) && !empty(y)) return 1; if (!empty(x) && empty(y)) return -1; }
+      else { const c = typeof x === 'string' ? x.localeCompare(y, 'th') : x - y; if (c) return k * c; }
+      return lv(a) - lv(b) || b.spend - a.spend || String(a.kol.display_name).localeCompare(String(b.kol.display_name), 'th');
+    });
   }
 
   /* ===================== Dashboard › By campaign: clips beating the benchmark ===================== */
@@ -399,8 +448,32 @@ Object.assign(KT.rules, (function (R, C) {
     return obj;
   }
 
-  return { GRADES, CONS_ACTIONS, INCIDENT_TYPES, SERIOUS_INCIDENTS: SERIOUS, BENCH_KEYS, GRADE_RULES_DEFAULT, gradeRules, validateGradeRules, validateBenchmarks, benchRecord, cpconsFrom, benchmarksOf,
-    consActions, pillarFor, postRatio, opsOfDeal, incidentsOfDeal, incidentsOfKol, isSerious, validateIncident, newIncident, removeIncident, gradeIndex, gradeEngine, reasonParts,
-    gradeOf, confirmedGrade, isLocked, needsReview, syncGrades, reviewQueue, canReview, confirmGrade, overrideGrade, historyOf, moveOf, partnersData, campaignBenchmark,
-    IMPORT_COLS, IMPORT_TEMPLATE, planMetricsImport, migrateV25 };
+  /* CR-35 — schema 26: lookups.grade_rules in the On-time shape (a person's changes to the old one are kept in grade_rules_v25 · the window, minimum, lock,
+     consideration actions and default benchmarks carry over) · every partner's suggestion again (confirmed grades stay — a suggestion that differs waits for review) */
+  function rulesChanged(old) {
+    const d = GRADE_RULES_V25, same = (a, b) => (num(a) == null ? null : num(a)) === (num(b) == null ? null : num(b));
+    if (Object.keys(d).some(k => k !== 'bench' && k !== 'cons_actions' && !same(old[k], d[k]))) return true;
+    if (JSON.stringify((old.cons_actions || d.cons_actions).slice().sort()) !== JSON.stringify(d.cons_actions.slice().sort())) return true;
+    return BENCH_KEYS.some(k => !same((old.bench || {})[k], d.bench[k]));
+  }
+  function migrateV26(obj, nowIso, today) {
+    obj.lookups = obj.lookups || {};
+    const old = obj.lookups.grade_rules, next = JSON.parse(JSON.stringify(GRADE_RULES_DEFAULT));
+    if (old && old.basis !== 'on_time') {
+      if (rulesChanged(old) && !obj.lookups.grade_rules_v25) obj.lookups.grade_rules_v25 = JSON.parse(JSON.stringify(old));
+      const carry = { window_posts: old.posts, window_months: old.months, min_posts: old.min_posts, lock_days: old.lock_days, lock_posts: old.lock_posts };
+      Object.entries(carry).forEach(([k, v]) => { if (num(v) != null) next[k] = num(v); });
+      if (Array.isArray(old.cons_actions) && old.cons_actions.length) next.cons_actions = old.cons_actions.filter(k => CONS_ACTIONS.includes(k));
+      if (old.bench) BENCH_KEYS.forEach(k => { if (old.bench[k] !== undefined) next.bench[k] = num(old.bench[k]); });
+      obj.lookups.grade_rules = next;
+    } else if (!old) obj.lookups.grade_rules = next;
+    obj.schema_version = Math.max(obj.schema_version || 0, 26);
+    try { syncGrades(obj, today || String(nowIso || '').slice(0, 10) || R.todayISO(), nowIso); } catch (e) { /* the first sync on load does it */ }
+    return obj;
+  }
+
+  return { GRADES, CONS_ACTIONS, INCIDENT_TYPES, SERIOUS_INCIDENTS: SERIOUS, BENCH_KEYS, GRADE_RULES_DEFAULT, GRADE_RULES_V25, GRADE_RULE_NUMS: RULE_NUMS, gradeRules, validateGradeRules, validateBenchmarks, benchRecord, cpconsFrom, benchmarksOf,
+    consActions, pillarFor, postRatio, opsOfDeal, incidentsOfDeal, incidentsOfKol, isSerious, validateIncident, newIncident, removeIncident, gradeIndex, gradePosts, gradeEngine, reasonParts, onTimeOf,
+    gradeOf, confirmedGrade, isLocked, needsReview, syncGrades, reviewQueue, canReview, confirmGrade, overrideGrade, historyOf, moveOf, levelOf, partnersData, sortPartnerRows, campaignBenchmark,
+    IMPORT_COLS, IMPORT_TEMPLATE, planMetricsImport, migrateV25, migrateV26 };
 })(KT.rules, KT.content));

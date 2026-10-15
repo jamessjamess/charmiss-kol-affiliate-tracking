@@ -2,6 +2,25 @@
 
 ฉบับย่อ: CR ละไม่กี่บรรทัด · รายละเอียดเต็ม (ไฟล์ · ฟังก์ชัน · การตัดสินใจ) อยู่ที่ `docs/archive/CHANGELOG-full-2026-10-07.md` · spec ของแต่ละ CR อยู่ที่ `docs/CR-xx.md`
 
+## CR-35 v1.0 · 15/10/2026 — Grade = On time · Partners: 3 การ์ด + Partner performance · Review grade ใน Operations · "Level" → "Grade"
+schema **25 → 26** (`lookups.grade_rules` รูปแบบ On time · partner_grades + on_time_rate / late_posts / avg_days_late / er) · ยอดเงินเท่าเดิม
+- **เกรด:** On time อย่างเดียว — โพสต์ที่มี Post due 6 ชิ้นล่าสุดใน 6 เดือน · Posted on ≤ Post due (grace 0) · เลย due ยังไม่โพสต์ = Late · A 100% · B ≥ 80% · C ≥ 60% · D ต่ำกว่า หรือ No-show / Breach · < 2 = Not enough data · ER แสดงอย่างเดียว · เหตุผล "On time 3/3" · "Late 2 of 5 posts · avg 3 days late" · "No-show on <Campaign>"
+- **Partners:** Grade mix (donut · Count / Spend · คลิกชิ้น = กรองตาราง) · On-time posts · Engagement rate · Partner performance (Posts · On time · Avg days late · Views · ER · CPV · Spend) · Grade × Tier | Grade movement · Top | Watch · ไม่มี Review queue / คำว่า Level
+- **Operations:** แถบ Review grade (n) → Grade review modal (KOL Manager / Admin) · modal: On time · Avg days late · ER · Posts used (Posted on · Post due · Days late …) · Staff = View (ข้อความอย่างเดียว)
+- **อื่น ๆ:** KOL modal › Performance = On time · Avg days late · ER · Revisions (ตัดส่วน reliability เดิม) · tooltip เกรด (KOL Master · New deal) = เหตุผล · Settings › Grades ใหม่ · Deals › Performance On-time ใช้ grace ของ Grades (0) · Export Partners 17 คอลัมน์
+
+## ปรับย่อย · 15/10/2026 — Dashboard › Partners กลับมา · Partner performance รายคน · Set grade
+ไม่เปลี่ยน schema (ยังเป็น 25) · ยอดเงินเท่าเดิม · **เปลี่ยนการตัดสินใจ CR-34 ข้อ 11** เฉพาะหน้า Partners: Level = Confirmed ถ้าไม่มีใช้ Suggested (ตัวอักษรเส้นประ + "Suggested") · หน้าอื่นยังแสดง Confirmed เท่านั้น
+- **ตัวกรองใหม่:** Partner (เลือกได้หลายคน · ค้นชื่อ / @handle) · Level (A–D · Not graded) · Tier · Clear filters · ตัวเลือกมาจาก partner ในช่วง / Campaign / Pillar / Partner type
+- **Partner performance (ตารางรายคน):** Posts · Views · ER · CPV · On time (Post date vs Post due) · Revisions · vs benchmark · Operation · Spend · ชี้ที่ Level = เหตุผล · No-show / Breach = ชิป "n serious" · เรียงได้ทุกคอลัมน์ · คลิกแถว = KOL modal › Performance · ตัวเลขเดียวกับ Deals › Performance (`R.perfRows`)
+- **Set grade:** ปุ่มทุกแถว (KOL Manager / Admin) — มี Suggested รอ = "Review" (Confirm / Override) · ไม่มีอะไรให้ยืนยัน = เปิดฟอร์มเลือกเกรด + เหตุผลทันที (ล็อก 90 วัน · เก็บประวัติ) · KOL modal › Performance มีปุ่ม "Set grade" ให้คนที่ยังไม่มีเกรดด้วย · Viewer / Staff ไม่เห็นปุ่ม
+- **อื่น ๆ:** KPI "Partners with a level" (+ n suggested) · Grade × Tier คลิกตัวเลข = กรองตารางในหน้า (ไม่ไป KOL Master แล้ว) · Grade mix / Top / Watch ใช้ Level · caption KPI ขึ้นบรรทัดใหม่ (ไม่ตัด …) · Export Partners = แถวและลำดับเดียวกับตาราง (20 คอลัมน์) · `R.levelOf` · `R.sortPartnerRows` · `KT.grades.levelHTML`
+
+## ปรับย่อย · 14/10/2026 — Deals › Performance: Post due vs Post date · ซ่อน Dashboard › Partners
+ไม่เปลี่ยน schema (ยังเป็น 25) · ยอดเงินเท่าเดิม
+- **Deals › Performance:** คอลัมน์ **Post due** + **On-time** ต่อจาก Post date (เปิดเป็นค่าเริ่มต้น · คนที่เคยเลือกคอลัมน์ไว้ได้ 2 คอลัมน์นี้เพิ่มครั้งเดียว) · On-time = Post date − Post due เป็นวัน: "3 d early" · "On due date" · "+1 d (grace)" · "+4 d late" (✓ / ! + คำ ไม่ใช้สีอย่างเดียว · grace จาก Settings › KOL performance) · เรียงได้ · แถว Total "68/69 on time" · KPI ใบที่ 7 **On time** (% · n of m · late เฉลี่ย) · Export มีคำเดียวกัน · `R.perfTiming` · แถวมี `dueDiff`
+- **Dashboard › Partners:** ซ่อนไว้ก่อน (`TABS` ใน screen-overview.js) · ลิงก์ / tab ที่จำไว้กลับไป All campaigns · โค้ด (screen-partners.js) ยังอยู่ · เกรดที่อื่น (KOL Master · KOL modal · New deal · Operations "Review grade" · By campaign Benchmarks) ใช้ได้ตามเดิม
+
 ## CR-34 v1.0 · 12/10/2026 — Partner Grade (A–D) · Benchmarks · Metrics Auto / Import / Manual · Incident · Grade review · Dashboard › Partners
 schema **24 → 25** (deal_incidents · partner_grades · grade_history · campaigns.benchmarks · โพสต์ + Reach / Impressions / Clicks / Sales / ROAS / ที่มา) · ยอดเงินเท่าเดิม
 - **Grade:** `R.gradeEngine` ตัวเดียว — Performance (CPM / CPCons / ROAS เทียบ benchmark ตาม pillar) + Operation (ตรงเวลา 50 · รอบแก้ 30 · ไม่มี Incident 20) · 6 โพสต์ใน 6 เดือน · < 2 = Not enough data · ไม่มี metrics = Ops only · No-show / Breach = D · แสดงเฉพาะเกรดที่คนยืนยัน

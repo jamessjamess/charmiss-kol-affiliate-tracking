@@ -138,7 +138,7 @@ KT.store = (function (R) {
   const BEFORE14_KEY = KEY + '_before_v14';   // CR-15 §3: … and before schema 14
   const BEFORE15_KEY = KEY + '_before_v15';   // CR-16 §3: … and before schema 15 (it takes the place of the v14 copy — room in localStorage)
   const THEME_KEY = 'charmiss_kol_tracker_theme';
-  const SCHEMA_VERSION = 25;   // CR-34: Partner Grade · Benchmarks · Incidents · metrics sources
+  const SCHEMA_VERSION = 26;   // CR-34: Partner Grade · Benchmarks · Incidents · metrics sources · CR-35: the grade = On time (lookups.grade_rules)
   const QUOTA_MB = 5;
   const COLLECTIONS = ['campaigns', 'phases', 'kol_master', 'kol_accounts', 'kol_rate_quotes', 'deals', 'deal_posts', 'deal_status_log', 'deal_events', 'users', 'campaign_events', 'products', 'campaign_products', 'deal_products', 'payee_profiles', 'payment_lines', 'payment_runs', 'sample_shipments', 'pick_lists', 'shipping_addresses', 'campaign_budget_changes', 'kol_packages', 'step_notes', 'deal_gencodes', 'deal_incidents', 'partner_grades', 'grade_history'];
   /* collections that older versions do not have yet (they are created by migrate) */
@@ -340,6 +340,7 @@ KT.store = (function (R) {
   function toV24(obj, now) { R.migrateV24(obj, (now || new Date()).toISOString()); }   // CR-33 §4 (once)
   /* v24 → v25 (CR-34 §4): metrics Manual · Incidents · partner grades (the first suggestion of each) · lookups.grade_rules */
   function toV25(obj, now) { const iso = (now || new Date()).toISOString(); R.migrateV25(obj, iso, R.dateOfTimestamp(iso)); }
+  function toV26(obj, now) { const iso = (now || new Date()).toISOString(); R.migrateV26(obj, iso, R.dateOfTimestamp(iso)); }   // CR-35
   /* upgrade older saved states step by step, once · now: when it runs (the go-live date of v12) */
   function migrate(obj, now) {
     if (obj.schema_version === 1) toV2(obj);
@@ -366,6 +367,7 @@ KT.store = (function (R) {
     if (obj.schema_version === 22) toV23(obj);
     if (obj.schema_version === 23) toV24(obj, now);
     if (obj.schema_version === 24) toV25(obj, now);
+    if (obj.schema_version === 25) toV26(obj, now);
     if (obj.lookups && !Array.isArray(obj.lookups.cancel_reasons)) obj.lookups.cancel_reasons = R.cancelReasonsDefault();   // CR-23 §3.6 (no schema change)
     if (obj.lookups && obj.lookups.ops_stuck_days == null) obj.lookups.ops_stuck_days = R.STUCK_DAYS;   // CR-24 §4.1 (no schema change)
     if (obj.lookups && !Array.isArray(obj.lookups.partner_types)) obj.lookups.partner_types = R.partnerTypesDefault();   // CR-25 §4 (no schema change)

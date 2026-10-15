@@ -1223,14 +1223,14 @@ dialog.xl .pop-wrap{flex:1;min-height:0;overflow:auto}
 .dpl-b .btn{margin-left:auto}
 .post .meta span{min-width:0;overflow-wrap:anywhere}
 /* CR-10 — Deals › Performance: KPI strip · toolbar · one row per posted post */
-.pf-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.pf-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin-bottom:12px}   /* 14/10/2026: + On time */
 .pf-k{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .pf-k .l{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:4px}
 .pf-k .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.25}
 .pf-k .s{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .pf-k.click{cursor:pointer}
 .pf-k.click:hover,.pf-k.click:focus-visible{border-color:var(--accent)}
-@media (max-width:1279px){.pf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1279px){.pf-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:600px){.pf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pf-tools{margin-bottom:8px;flex-wrap:wrap;gap:8px}
 .pf-wrap{max-height:calc(100vh - 300px)}
@@ -1253,6 +1253,10 @@ dialog.xl .pop-wrap{flex:1;min-height:0;overflow:auto}
 .pf-nolink{background:var(--err-soft);color:var(--err);border:0;cursor:pointer;font:inherit;font-size:12px}
 .pf-stale{color:var(--warn);font-weight:600}
 .pf-late{color:var(--err)}
+/* 14/10/2026 — Post date against Post due */
+.pf-tm{font-weight:600}
+.pf-tm.ok{color:var(--ok)}
+.pf-tm.late{color:var(--err)}
 .post.pf-hit{outline:2px solid var(--accent);outline-offset:2px;transition:outline-color .3s}
 .pf-tbl td.pf-kol .kname b,.pm-tbl td.pm-kol .kname b{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 /* CR-10 R2 — metrics in the cell · Paste metrics */
@@ -2631,6 +2635,63 @@ b.ok{color:var(--ok)}
 .grq-list .grq-why{flex:1 1 200px;min-width:0}
 .grq-list .btn{margin-left:auto}
 .gp-tbl td{vertical-align:middle}
+/* 15/10/2026 — Partners: the level (a suggested grade = dashed letter + "Suggested") · Partner performance */
+.gchip.sug{background:transparent;border-style:dashed;border-color:currentColor}
+.lvl{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.lvl-s{font-size:11px;color:var(--muted)}
+.pp-perf{margin-top:16px}
+.pp-hint{margin:0 0 8px}
+.pp-twrap{max-height:560px}
+.pp-tbl td,.pp-tbl th{white-space:nowrap;vertical-align:middle}
+.pp-tbl .pp-who{min-width:150px}
+.pp-tbl td.pp-who{white-space:normal;max-width:180px}
+.pp-tbl td.pp-who b{overflow-wrap:anywhere}
+.pp-tbl .pp-sub{display:block}
+.pp-tbl td.pp-who .kname{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pp-tbl td.pp-who > .muted{display:block}
+.pp-tbl th.sticky{z-index:3;background:var(--surface-2)}
+.pp-tbl b.ok{color:var(--ok)} .pp-tbl b.late{color:var(--err)}
+@media (max-width:600px){.pp-tbl .pp-who{min-width:130px}}
+#pp_kpis .kpi.kc .cap{white-space:normal;text-overflow:clip;overflow:visible}   /* the captions wrap — never cut with … */
+/* CR-35 §3.2 — Partners: 3 cards of the same height · the Grade mix donut · On-time posts · Engagement rate */
+.pp-cards{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}
+.pp-cards>.card{margin:0;min-width:0;display:flex;flex-direction:column}
+@media (max-width:1100px){.pp-cards{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pp-cards>.card:first-child{grid-column:1 / -1}}
+@media (max-width:600px){.pp-cards{grid-template-columns:minmax(0,1fr)}}
+.pp-big{font-size:30px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;margin-top:4px}
+.pp-big.late{color:var(--err)}
+.pp-sub{color:var(--text-2);margin:2px 0 10px}
+.pp-prog{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-bottom:8px}
+.pp-prog i{display:block;height:100%;border-radius:999px;background:var(--ok)}
+.dn-wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.dn{width:132px;height:132px;flex:0 0 132px}
+.dn-seg{fill:none;stroke-width:16;cursor:pointer;transition:stroke-width .12s}
+.dn-seg:hover,.dn-seg.on{stroke-width:20}
+.dn-a{stroke:var(--ok)} .dn-b{stroke:var(--info)} .dn-c{stroke:var(--warn)} .dn-d{stroke:var(--err)} .dn-none{stroke:color-mix(in srgb,var(--muted) 35%,var(--surface))}
+.dn-empty{fill:none;stroke:var(--surface-2);stroke-width:16}
+.dn .dn-v{font-size:17px;font-weight:700;fill:var(--text);text-anchor:middle}
+.dn .dn-l{font-size:10px;fill:var(--muted);text-anchor:middle}
+.dn-legend{display:flex;flex-direction:column;gap:2px;flex:1 1 170px;min-width:0}
+.dn-lg{display:flex;align-items:center;gap:8px;border:1px solid transparent;background:none;border-radius:8px;padding:3px 6px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;text-align:left}
+.dn-lg:hover,.dn-lg:focus-visible{background:var(--surface-2)}
+.dn-lg.on{border-color:var(--accent);background:var(--surface-2)}
+.dn-lg i.gs{display:inline-block;width:10px;height:10px;border-radius:3px;flex:0 0 10px}
+.dn-lg .dn-name{flex:1 1 auto;min-width:0}
+.dn-lg b{font-variant-numeric:tabular-nums}
+/* Grade review · KOL modal: a post without a Post due is shown, not counted */
+.grv-posts tr.grv-nodue td{color:var(--muted)}
+.grv-ro{margin-top:10px}
+/* CR-35 §3.5 — Operations: Review grade (KOL Manager / Admin) */
+.wq-gradebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 0;padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.wq-gradebar .wq-gn{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:12px}
+.wq-gradebar .btn{margin-left:auto}
+.gr-set .gr-sub{margin:10px 0 4px}
+.gr-set .gr-bench{margin-top:20px;padding-top:12px;border-top:1px solid var(--border)}
+.gr-set .gr-serious{margin-top:6px}
+.gr-set .tablewrap:has(.gr-tbl){max-width:560px}
+.gr-set .gr-tbl{width:100%}
+.gr-set .tablewrap + .fields{margin-top:12px}
+.pp-tbl td.pp-who{padding-top:5px;padding-bottom:5px;line-height:1.3}
 /* Dashboard › By campaign: benchmarks */
 .cb-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .cb-pct{font-size:18px}

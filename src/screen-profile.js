@@ -159,7 +159,7 @@ KT.profile = (function () {
     return it(PF.sDeals, esc(R.fmtNum(sum.deals))) + it(PF.sCommitted, esc(R.baht(sum.committed)), PF.committedTip) +
       it(P.colLastWorked, sum.last ? esc(R.dmy(sum.last)) : '—', sum.last ? P.daysAgo(R.dayDiff(td, sum.last)) : '') +
       it(T.colLastCampaign, sum.lastCampaign ? esc(sum.lastCampaign) : '—') +
-      it(C.grade.col, KT.grades.chipHTML(state(), pm.id, { name: true }), sum.perf.measured ? `${P.colOnTime}: ${P.postsOf(sum.perf.onTime, sum.perf.measured)}` : '') +   // CR-34: Grade in place of On-time
+      it(C.grade.col, KT.grades.chipHTML(state(), pm.id, { name: true }), KT.grades.reasonOf(state(), pm.id)) +   // CR-34: Grade in place of On-time · CR-35: its reason (§2)
       it(PF.sLatest, sum.latestRate != null ? esc(R.baht(sum.latestRate)) : '—');
   }
   function bodyHTML(s, k) {
@@ -240,37 +240,24 @@ KT.profile = (function () {
   function perfHTML(s, k, td) {
     const p = R.kolPerformance(s, k.kol_id, td), li = R.lastWorkedInfo(s, k.kol_id), last = li ? li.date : null, pct = v => (v == null ? '—' : `${Math.round(v * 1000) / 10}%`);
     const line = (l, v, cls) => `<div class="kv${cls ? ' ' + cls : ''}"><span>${esc(l)}</span><b>${v}</b></div>`;
-    const head = `<div class="perf-head">${U.reliabilityChip(p)}<span class="muted small">${esc(p.measured ? P.postsOf(p.onTime, p.measured) : P.noData)}</span></div>`;
-    const rows = line(P.onTime, esc(p.measured ? `${pct(p.rate)} (${P.ofN(p.onTime, p.measured)})` : '—')) +
-      line(P.avgDelay, esc(p.avgDelay == null ? '—' : P.days(p.avgDelay))) + line(P.latePosts, esc(R.fmtNum(p.late))) +
-      line(P.overdueNow, p.overdue ? `<span class="late">${esc(R.fmtNum(p.overdue))}</span>` : '0') +
-      line(P.avgDrafts, esc(p.avgDrafts == null ? '—' : String(Math.round(p.avgDrafts * 10) / 10))) +
-      line(P.completion, esc(p.completion == null ? '—' : `${pct(p.completion)} (${P.ofN(p.completeDeals, p.dealsPastList)})`)) +
-      line(P.avgViews, esc(p.avgViews == null ? '—' : U.shortNum(p.avgViews))) + line(P.er, esc(p.er == null ? '—' : `${(Math.round(p.er * 10000) / 100).toFixed(2)}%`)) +
+    /* CR-35 §3.6 — only what the grade does not show (On time · days late · ER · Revisions come from the grade: one On time everywhere) */
+    return line(P.completion, esc(p.completion == null ? '—' : `${pct(p.completion)} (${P.ofN(p.completeDeals, p.dealsPastList)})`)) +
+      line(P.avgViews, esc(p.avgViews == null ? '—' : U.shortNum(p.avgViews))) +
       line(P.cpv, esc(p.cpv == null ? '—' : `฿${p.cpv < 1 ? p.cpv.toFixed(3) : p.cpv.toFixed(2)}`)) +
       line(P.colLastWorked, last ? esc(`${R.dmy(last)} · ${P.daysAgo(R.dayDiff(td, last))}`) : '—') +
       line(T.colLastCampaign, li ? `<span title="${esc(T.lastCampTip(R.campaignName(s, li.campaignId) || '', lastPhaseName(s, li)))}">${esc(R.campaignName(s, li.campaignId) || '')}</span>` : '—');
-    const acc = new Map(s.kol_accounts.map(a => [a.account_id, a])), idx = R.phaseIndex(s), where = l => { const r = idx.post.get(l.post.post_id), c = s.campaigns.find(x => x.campaign_id === l.deal.campaign_id) || {};
-      return `${c.campaign_name || ''}${r && r.phase ? ` › ${R.phaseName(s, r.phase)}` : ''}`; };
-    const late = p.latePosts.length ? `<div class="tablewrap"><table class="tbl compact-sm"><thead><tr><th>${esc(P.colWhere)}</th><th></th><th>${esc(P.colExpected)}</th><th>${esc(P.colPosted)}</th><th class="num">${esc(P.colLate)}</th></tr></thead><tbody>` +
-      p.latePosts.map(l => { const a = acc.get(l.post.account_id) || {}; return `<tr class="click" data-deal="${esc(l.deal.deal_id)}" tabindex="0"><td title="${esc(where(l))}">${esc(where(l))}</td><td>${pfIcon(a.platform || l.post.platform || 'Other')}</td>` +
-        `<td>${esc(R.dmy(l.expected))}</td><td>${esc(R.dmy(l.posted))}</td><td class="num late">${esc(P.plusDays(l.days))}</td></tr>`; }).join('') + `</tbody></table></div>`
-      : p.measured ? `<div class="hint" style="margin-top:6px">${esc(P.noLate)}</div>` : '';
-    return { numbers: head + rows, late };
   }
   function perfTabHTML(s, k) {
-    const td = today(), ph = perfHTML(s, k, td), posts = R.kolPosts(s, k.kol_id), st = R.perfSettings(s.lookups);
+    const td = today(), posts = R.kolPosts(s, k.kol_id);
     const table = posts.length ? `<div class="tablewrap"><table class="tbl compact-sm kpm-ptbl"><thead><tr><th>${esc(PF.colCampaign)}</th><th></th><th>${esc(PF.colPostDate)}</th><th class="num">${esc(PF.colViews)}</th><th class="num">${esc(PF.colEr)}</th><th>${esc(PF.colLink)}</th></tr></thead><tbody>` +
       posts.map(x => `<tr class="click" data-deal="${esc(x.deal.deal_id)}" tabindex="0"><td>${esc(x.campaign)} <span class="muted small">${esc(x.deal.deal_id)}</span></td><td>${pfIcon(x.platform || 'Other')}</td>` +
         `<td class="nowrap">${x.date ? esc(R.dmy(x.date)) : `<span class="muted">${esc(x.expected ? PF.plannedFor(R.dmy(x.expected)) : PF.notPosted)}</span>`}</td>` +
         `<td class="num">${x.views != null ? esc(U.shortNum(x.views)) : '<span class="muted">—</span>'}</td><td class="num">${x.er != null ? esc(`${(Math.round(x.er * 10000) / 100).toFixed(2)}%`) : '<span class="muted">—</span>'}</td>` +
         `<td>${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener" data-nodeal>${esc(PF.openPost)} ↗</a>` : '<span class="muted">—</span>'}</td></tr>`).join('') + `</tbody></table></div>`
       : `<div class="hint">${esc(PF.noPosts)}</div>`;
-    const gr = KT.grades.profileHTML(s, k.kol_id);   // CR-34 §3.7: the grade first
+    const gr = KT.grades.profileHTML(s, k.kol_id);   // CR-34 §3.7: the grade first · CR-35 §3.6: On time · Avg days late · ER · Revisions
     return `<div class="kpm-2"><div class="kpm-col">${sec(C.grade.col, gr.head)}</div><div class="kpm-col">${sec(C.grade.history, gr.history)}</div></div>` +
-      (gr.posts ? sec(C.grade.basisPosts(gr.n), gr.posts) : '') +
-      `<div class="kpm-2"><div class="kpm-col">${sec(P.sec, ph.numbers, U.info({ h: P.info.h, d: P.info.d(st.grace, st.minPosts), f: P.info.f }))}</div>` +
-      `<div class="kpm-col">${ph.late ? sec(P.latePosts, ph.late) : ''}</div></div>` + sec(PF.postsN(posts.length), table);
+      (gr.posts ? sec(C.grade.basisPosts(gr.n), gr.posts) : '') + sec(P.sec, `<div class="kpm-more">${perfHTML(s, k, td)}</div>`) + sec(PF.postsN(posts.length), table);
   }
 
   /* ---------- Rates: Price reference (CR-07) · Rate history (quoted + agreed, newest first) ---------- */

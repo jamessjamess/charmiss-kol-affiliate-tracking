@@ -1,6 +1,6 @@
 # Data model — Charmiss KOL Tracker
 
-schema_version **25** (CR-34 · 12/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
+schema_version **26** (CR-35 · 15/10/2026) · ทั้งหมดอยู่ใน state เดียว (`localStorage` key `charmiss_kol_tracker_v1`) · Backup / Restore = JSON ทั้งก้อน
 ที่มาข้อมูลตั้งต้น: `data/KOL_seed_v2.json` → `data/seed.js` (ห้ามแก้) · การอัปเกรดทำใน `src/store.js` `migrate()` ตอนโหลด (seed · localStorage · Backup เก่า v1–v10) — ทำครั้งเดียวตาม `schema_version` · เพิ่ม field เท่านั้น ไม่ลบข้อมูลเงิน
 
 ## Collections
@@ -351,6 +351,17 @@ migration `rules.migrateV12(obj, today)` (เรียกจาก `store.migrat
 | `shipping_addresses` · `payee_profiles` | สร้างได้ตอน New KOL (เข้ารหัส CR-16 · default) | |
 
 **Migration v23:** `deal_gencodes` = [] · deals `other_fee` = 0 · `other_fee_note` = null · `handle` ตัด @ / ช่องว่าง · ไม่แตะยอดเงิน
+
+## CR-35 — schema 26 (Grade = On time)
+
+| ที่ | เปลี่ยน | หมายเหตุ |
+|---|---|---|
+| `lookups.grade_rules` | { `basis`: on_time · `a` 100 · `b` 80 · `c` 60 (On time ≥ %) · `grace_days` 0 · `min_posts` 2 · `window_posts` 6 · `window_months` 6 · `serious_incident_d` true · `lock_days` 90 · `lock_posts` 2 · `cons_actions` · `bench` } | `cons_actions` / `bench` ใช้กับ Benchmarks ของ Campaign เท่านั้น |
+| `lookups.grade_rules_v25` (มีเมื่อผู้ใช้เคยแก้ค่าเดิม) | สำเนา grade_rules แบบ CR-34 | ไม่ใช้คำนวณ |
+| `partner_grades` | + `on_time_rate` · `late_posts` · `avg_days_late` · `er` · `score` = % ตรงเวลา · `basis_posts` = โพสต์ที่นับ · `reason` = [{k: ontime \| late \| few \| serious, …}] | `perf_ratio` / `ops_score` เดิมคงไว้ ไม่เขียนต่อ |
+| `grade_history` | รายการใหม่เก็บ `on_time_rate` · `avg_days_late` (แทน perf_ratio / ops_score) | |
+
+**Migration v26** (`rules-grade.js migrateV26` · รันซ้ำได้ผลเดิม): grade_rules ใหม่ (window · min posts · lock · consideration actions · default benchmarks ย้ายมาจากค่าเดิม · ถ้าเคยแก้ค่าเดิม → `grade_rules_v25`) · คำนวณ Suggested ใหม่ทุก partner · Confirmed คงไว้ (ต่างจาก Suggested → Operations › Review grade) · ยอดเงินไม่เปลี่ยน
 
 ## CR-34 — schema 25 (Partner Grade · Benchmarks · Incidents · ที่มาของ metrics)
 
