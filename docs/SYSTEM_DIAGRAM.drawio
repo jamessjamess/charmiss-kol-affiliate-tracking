@@ -1,0 +1,968 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="p1" name="1 · Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1640" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p1c1" value="&lt;b&gt;1 · System architecture&lt;/b&gt; — เว็บ HTML ล้วนในเบราว์เซอร์ · ไม่มี backend · ไม่มี build / npm / CDN" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1300" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c2" value="Browser (Edge / Chrome) — เปิด KOL Web Dev/index.html (file://)" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfbfb;strokeColor=#9a9a9a;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=13;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="60" width="1180" height="890" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c3" value='&lt;b&gt;index.html&lt;/b&gt; — โหลดทุก script ตามลำดับ &lt;font style="font-size:10px"&gt;(ลำดับ &amp;lt;script&amp;gt; = ลำดับโหลด · ไฟล์ใหม่วางหลังไฟล์ที่มันเรียกตอนโหลด)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="1120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c4" value="&lt;b&gt;ลำดับโหลด&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="146" width="600" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c5" value='&lt;b&gt;data/seed.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;window.KT_SEED&lt;br&gt;(ห้ามแก้)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c6" value='&lt;b&gt;content.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KT.content&lt;br&gt;labels (EN)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="173" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c7" value='&lt;b&gt;icons.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ไอคอน SVG&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="286" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c8" value='&lt;b&gt;rules*.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KT.rules · 28 ไฟล์&lt;br&gt;pure functions&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="399" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c9" value='&lt;b&gt;store.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KT.store&lt;br&gt;state · migrate&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="512" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c10" value="&lt;b&gt;archive · vault&lt;br&gt;photos · docfiles&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="625" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c11" value="&lt;b&gt;pdf · xlsx&lt;br&gt;export&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="738" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c12" value='&lt;b&gt;ui.js&lt;br&gt;ui-range.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KT.ui&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="851" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c13" value='&lt;b&gt;screen-*.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;หน้า · modal&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="964" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c14" value='&lt;b&gt;app.js&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;shell · menu&lt;br&gt;routing&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1077" y="170" width="100" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c5" target="p1c6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c6" target="p1c7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c17" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c7" target="p1c8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c8" target="p1c9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c9" target="p1c10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c10" target="p1c11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c11" target="p1c12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c12" target="p1c13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c13" target="p1c14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c24" value="&lt;b&gt;Namespace เดียว: window.KT&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="252" width="600" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c25" value='&lt;b&gt;KT.content (C)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ข้อความทุกคำบนจอ (อังกฤษ) · ข้อความที่มีตัวแปรเป็นฟังก์ชัน&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="276" width="212" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c26" value='&lt;b&gt;KT.rules (R)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;กฎธุรกิจ pure function · ไม่แตะ DOM&lt;br&gt;stageRequirements · totalCost · gradeEngine · workQueue …&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="287" y="276" width="212" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c27" value='&lt;b&gt;KT.store (S)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;state · localStorage · migrate v2 → v26&lt;br&gt;newId · Backup / Restore&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="514" y="276" width="212" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c28" value='&lt;b&gt;KT.ui (U)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;state() · commit() · can() / guard()&lt;br&gt;createModal · drawer · multiSelect · toast / Undo&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="741" y="276" width="212" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c29" value='&lt;b&gt;Screens&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KT.screens.* · KT.profile · KT.grades · KT.partners · KT.perf · KT.payee …&lt;br&gt;HTML string + esc() + event delegation&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="968" y="276" width="212" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c30" value="&lt;b&gt;เส้นทางเดียวในการแก้ข้อมูล&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="392" width="600" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c31" value='&lt;b&gt;การกระทำบนจอ&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;คลิก · ฟอร์ม · ลาก&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c32" value='&lt;b&gt;U.guard(สิทธิ์)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ตรวจสิทธิ์ซ้ำก่อนเขียน&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="222" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c33" value='&lt;b&gt;R.* แก้ state&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;คืน event&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="384" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c34" value='&lt;b&gt;push event&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;deal_events · deal_status_log · campaign_events&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="546" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c35" value="&lt;b&gt;U.commit()&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="708" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c36" value='&lt;b&gt;sync ทุก commit&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;cancelDealLines · syncShipments · syncPackages · syncGrades&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="870" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c37" value='&lt;b&gt;store.save()&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;วาดหน้าใหม่ · toast / Undo&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1032" y="416" width="148" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c38" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c31" target="p1c32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c39" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c32" target="p1c33">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c40" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c33" target="p1c34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c41" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c34" target="p1c35">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c42" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c35" target="p1c36">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c43" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c36" target="p1c37">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c44" value="&lt;b&gt;ที่เก็บข้อมูล&lt;/b&gt; — อยู่ในเครื่องนี้เท่านั้น (ไม่มี sync ข้ามเครื่อง)" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="548" width="700" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c45" value='&lt;b&gt;localStorage&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker_v1&lt;br&gt;state ทั้งก้อน (JSON ~1.5 MB · โควต้า ~5 MB)&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c46" value='&lt;b&gt;localStorage&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker_&amp;lt;pref&amp;gt;&lt;br&gt;ค่าส่วนตัวของผู้ดู · theme&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="250" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c47" value='&lt;b&gt;sessionStorage&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker_view_as&lt;br&gt;View as role&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="440" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c48" value='&lt;b&gt;IndexedDB&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker&lt;br&gt;kol_photos · step_images&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="630" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c49" value='&lt;b&gt;IndexedDB&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker_docs&lt;br&gt;doc_files 🔒 เข้ารหัส&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c50" value='&lt;b&gt;IndexedDB&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss_kol_tracker_archive&lt;br&gt;สำเนาก่อนอัปเกรด schema&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="574" width="170" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c51" value="save" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c37" target="p1c45">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1137" y="530" /><mxPoint x="145" y="530" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p1c52" value='&lt;b&gt;Payee vault (vault.js)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;RSA-OAEP 3072 + AES-GCM · passphrase → PBKDF2 600,000 รอบ · ล็อกเองหลังไม่ใช้ 15 นาที&lt;br&gt;เข้ารหัสด้วย public key (บันทึกได้แม้ vault ล็อก) · ถอดรหัสเฉพาะในหน่วยความจำ ตอน Export / Print / Preview&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="730" width="540" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c53" value='&lt;b&gt;กติกาข้อมูลส่วนตัว&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;บัญชี · ที่อยู่ · เบอร์ · ชื่อจริง · ไฟล์เอกสาร อยู่ใน vault เท่านั้น&lt;br&gt;ห้ามถอดรหัสลง state / localStorage / Backup / log · ช่องข้อความอิสระผ่าน R.looksSensitive()&lt;br&gt;นอก vault มีแค่ bank_name · account_last4 · details_filled&lt;/font&gt;' style="shape=note;size=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="640" y="730" width="540" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c54" value="ค่าที่เข้ารหัส" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c52" target="p1c45">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="145" y="705" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p1c55" value="ไฟล์ที่เข้ารหัส" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p1c52" target="p1c49">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="330" y="705" /><mxPoint x="865" y="705" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p1c56" value='&lt;font style="font-size:9px"&gt;&lt;b&gt;Seed:&lt;/b&gt; data/seed.js ← Data/KOL_seed_v2.json (ห้ามแก้) · โหลดครั้งแรกแล้ว migrate ขึ้น schema 26&lt;br&gt;&lt;b&gt;Roles:&lt;/b&gt; Admin · KOL Manager · Staff · Viewer · Accounting — ไม่มี login (เลือกผู้ใช้ / View as role) · สิทธิ์ตรวจด้วย can() ตอนวาด และ guard() ก่อนเขียน&lt;/font&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=12;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="846" width="1120" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c57" value="ไฟล์เข้า-ออก และที่อยู่ของโค้ด" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfbfb;strokeColor=#9a9a9a;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=13;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="60" width="370" height="890" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c58" value='&lt;b&gt;Backup / Restore (.json)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Settings › Data · state ทั้งหมด (ไม่มีค่าถอดรหัส) · Restore แล้ว migrate อัตโนมัติ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="100" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c59" value='&lt;b&gt;Export (.xlsx / .csv)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Dashboard ทุก tab · Deals · Performance · Payments (Export PR) · KOL Master&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="218" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c60" value='&lt;b&gt;Print PDF&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;รอบจ่าย: สรุป + เอกสาร (pdf.js สร้างเอง · หน้าสรุปเป็นภาพ)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="336" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c61" value='&lt;b&gt;Import (.csv / .xlsx)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Master · Metrics · Payee details&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="454" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c62" value='&lt;b&gt;Git repo&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;charmiss-kol-affiliate-tracking (GitHub Desktop)&lt;br&gt;← คัดลอกไฟล์ที่เปลี่ยนจาก KOL Web Dev&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="572" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c63" value='&lt;b&gt;เอกสาร&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;HANDOVER.md · CHANGELOG.md · docs/DATA_MODEL.md · docs/UI_PATTERNS.md · docs/PAYMENTS.md · docs/CR-xx.md&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="690" width="326" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p1c64" value='&lt;b&gt;Production (อนาคต)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Data/KOL_Affiliate_Tracker_Handoff.md · Next.js + Supabase — ยังไม่เริ่ม&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=center;verticalAlign=middle;spacing=5;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="808" width="326" height="96" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p2" name="2 · Business flow">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1660" pageHeight="1180" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p2c1" value="&lt;b&gt;2 · Business flow&lt;/b&gt; — Campaign → Deal → ของตัวอย่าง → โพสต์ → จ่ายเงิน → เกรด Partner" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c2" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#c9d3e3;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="70" width="1600" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c3" value="&lt;b&gt;Campaign &amp;amp; Phase&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="150" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c4" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfaf5;strokeColor=#ddd6bd;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="255" width="1600" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c5" value="&lt;b&gt;Deals · Journey&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="255" width="150" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c6" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#c9d3e3;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="520" width="1600" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c7" value="&lt;b&gt;Shipments&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="150" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c8" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfaf5;strokeColor=#ddd6bd;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="645" width="1600" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c9" value="&lt;b&gt;Posts &amp;amp; metrics&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="645" width="150" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c10" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#c9d3e3;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="780" width="1600" height="175" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c11" value="&lt;b&gt;Payments&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="780" width="150" height="175" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c12" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfaf5;strokeColor=#ddd6bd;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="970" width="1600" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c13" value="&lt;b&gt;Partner grade&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="970" width="150" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c14" value='&lt;b&gt;Create Campaign&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Draft · งบ KOL · ช่วงวันที่ · products&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="210" y="110" width="175" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c15" value='&lt;b&gt;Submit for approval&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Pending approval&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="415" y="118" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c16" value='อนุมัติ?&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Manager / Admin&lt;/font&gt;' style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="595" y="103" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c17" value='&lt;b&gt;Not started → On going&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ตามวันที่ของ Campaign&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="775" y="118" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c18" value='&lt;b&gt;Phases + Phase Planner&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;งบ % / จำนวน · pillar · Benchmarks&lt;br&gt;Adjust budget → ขออนุมัติอีกครั้ง&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="965" y="104" width="250" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c19" value="&lt;b&gt;Wrap-up → Mark complete&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1245" y="118" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c14" target="p2c15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c15" target="p2c16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c22" value="Approve" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c16" target="p2c17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c17" target="p2c18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c18" target="p2c19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c25" value="Return to draft" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c16" target="p2c14">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="670" y="90" /><mxPoint x="297" y="90" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p2c26" value="List" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fffbe8;strokeColor=#e3d39b;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="205" y="275" width="415" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c27" value="Inprocess" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#eef5ff;strokeColor=#b7c9e6;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="624" y="275" width="828" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c28" value="Complete" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#eef8ee;strokeColor=#a8cfa8;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1456" y="275" width="140" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c29" value="&lt;b&gt;Shortlist&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="214" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c30" value="&lt;b&gt;Contacted&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="352" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c31" value="&lt;b&gt;Confirm QT&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="490" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c32" value="&lt;b&gt;Brief&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="628" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c33" value="&lt;b&gt;Script&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="766" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c34" value="&lt;b&gt;Draft 1&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="904" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c35" value="&lt;b&gt;Draft 2&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1042" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c36" value="&lt;b&gt;Draft 3&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c37" value="&lt;b&gt;Approve&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1318" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c38" value="&lt;b&gt;Post&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1456" y="305" width="120" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c39" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c29" target="p2c30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c40" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c30" target="p2c31">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c41" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c31" target="p2c32">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c42" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c32" target="p2c33">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c43" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c33" target="p2c34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c44" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c34" target="p2c35">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c35" target="p2c36">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c46" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c36" target="p2c37">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c47" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c37" target="p2c38">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c48" value='&lt;font style="font-size:9px"&gt;&lt;b&gt;Pending&lt;/b&gt; — ยังไม่กินงบ&lt;/font&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#8a6d00;" vertex="1" parent="1">
+          <mxGeometry x="214" y="400" width="140" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c49" value='&lt;font style="font-size:9px"&gt;&lt;b&gt;Committed&lt;/b&gt; — ตั้งแต่ Confirm QT นับเข้างบ (Budget used) · ยอด deal = R.totalCost&lt;/font&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=11;fontColor=#1f4e8c;" vertex="1" parent="1">
+          <mxGeometry x="640" y="400" width="940" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c50" value='&lt;b&gt;New deal&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;จาก KOL Master / New KOL · Start at · Assign to&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="284" y="440" width="256" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c51" value="Start at" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c50" target="p2c30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c52" value='&lt;b&gt;Cancel&lt;/b&gt; — ได้จากทุกขั้น&lt;br&gt;&lt;font style="font-size:9px"&gt;เหตุผลบังคับ · ปล่อยงบ · ยกเลิกแถวจ่ายที่ยังไม่จ่าย&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="640" y="440" width="420" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c53" value='&lt;b&gt;Move stage&lt;/b&gt; (หรือลากใน Pipeline)&lt;br&gt;&lt;font style="font-size:9px"&gt;ช่องที่ต้องกรอกต่อขั้นมาจาก R.stageRequirements · บันทึก deal_status_log&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="440" width="516" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c54" value='&lt;b&gt;Sample shipment&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;สร้างเมื่อถึง Confirm QT (ถ้าต้องส่งของ)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="545" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c55" value="&lt;b&gt;To ship&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="690" y="550" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c56" value="&lt;b&gt;Shipped&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="830" y="550" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c57" value="&lt;b&gt;Delivered&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="970" y="550" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c58" value='&lt;font style="font-size:9px"&gt;Problem · Not required · KOL purchase&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="550" width="230" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c59" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c31" target="p2c54">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c60" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c54" target="p2c55">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c61" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c55" target="p2c56">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c62" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c56" target="p2c57">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c63" value='&lt;b&gt;Post&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Posted on เทียบ Post due → On time / Late&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1408" y="670" width="216" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c64" value='&lt;b&gt;Metrics D+7&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Manual · Import (CSV / XLSX / Paste) · Auto (เตรียมไว้)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="670" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c65" value='&lt;b&gt;Deals › Performance · Dashboard&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Views · ER · CPV · On-time · Benchmarks&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="800" y="670" width="270" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c66" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c38" target="p2c63">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c67" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c63" target="p2c64">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c68" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c64" target="p2c65">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c69" value='&lt;b&gt;To submit&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Pay to · payee details · เอกสาร&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="214" y="810" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c70" value='&lt;b&gt;Create round&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;PR-yyyy-mm-dd · เฉพาะแถว Ready&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="428" y="810" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c71" value='&lt;b&gt;Submitted&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Accounting: Verify / Return&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="642" y="810" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c72" value='&lt;b&gt;Confirm paid&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ทั้งรอบ · ยกเว้นบางแถวได้&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="856" y="810" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c73" value="&lt;b&gt;Paid (confirmed)&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="810" width="190" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c74" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c69" target="p2c70">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c75" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c70" target="p2c71">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c76" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c71" target="p2c72">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c77" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c72" target="p2c73">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c78" value="Return" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c71" target="p2c69">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="737" y="895" /><mxPoint x="309" y="895" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p2c79" value='&lt;font style="font-size:9px"&gt;Print PDF · Export PR (.xlsx)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="642" y="905" width="190" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c80" value='&lt;font style="font-size:9px"&gt;งวดจ่ายเกิดตาม payment term ของ deal (ตั้งแต่ Confirm QT)&lt;br&gt;Full mode (payment runs) ใช้ข้อมูลชุดเดียวกัน · ภาษี R.calcPaymentTax&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=left;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1262" y="800" width="228" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c81" value='&lt;b&gt;R.gradeEngine&lt;/b&gt; (ทุก commit)&lt;br&gt;&lt;font style="font-size:9px"&gt;On time ของโพสต์ที่มี Post due · 6 ชิ้นล่าสุด / 6 เดือน&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="214" y="1005" width="270" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c82" value='&lt;b&gt;Suggested A–D&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;A 100% · B ≥ 80% · C ≥ 60% · D &amp;lt; 60%&lt;br&gt;No-show / Breach = D · &amp;lt; 2 โพสต์ = Not enough data&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="514" y="1005" width="270" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c83" value="Suggested ≠&lt;br&gt;Confirmed?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="814" y="998" width="160" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c84" value='&lt;b&gt;Operations › Review grade&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Manager / Admin: Confirm · Override (+ เหตุผล · ล็อก 90 วัน)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1004" y="1005" width="250" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c85" value='&lt;b&gt;Confirmed grade&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Master · New deal · KOL modal · Dashboard › Partners&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1284" y="1005" width="312" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c86" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c81" target="p2c82">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c87" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c82" target="p2c83">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c88" value="ใช่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c83" target="p2c84">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c89" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c84" target="p2c85">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2c90" value="ไม่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c83" target="p2c85">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="894" y="1120" /><mxPoint x="1440" y="1120" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p2c91" value="โพสต์ · Posted on · Post due" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p2c63" target="p2c81">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1516" y="958" /><mxPoint x="349" y="958" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p2c92" value='&lt;font style="font-size:9px"&gt;Incident No-show / Breach (Deal modal › History) → Suggested D · ER แสดงอย่างเดียว ไม่คิดเกรด&lt;/font&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#9b2c2c;" vertex="1" parent="1">
+          <mxGeometry x="214" y="1124" width="560" height="22" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p3" name="3 · Payments (Simple)">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1660" pageHeight="840" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p3c1" value="&lt;b&gt;3 · Payments — Simple mode&lt;/b&gt; (ค่าปัจจุบัน · Settings › Operations mode) · รอบวางบิล PR" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c2" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#c9d3e3;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="70" width="1600" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c3" value="&lt;b&gt;System&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="150" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c4" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fbfaf5;strokeColor=#ddd6bd;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="235" width="1600" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c5" value='&lt;b&gt;Team&lt;br&gt;&lt;font style="font-size:9px"&gt;Staff · KOL Manager · Admin&lt;/font&gt;&lt;/b&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="235" width="150" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c6" value="" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#c9d3e3;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="440" width="1600" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c7" value="&lt;b&gt;Accounting&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="150" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c8" value='&lt;b&gt;deal ถึงงวดจ่าย&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ตาม payment term → แถวใน &lt;b&gt;To submit&lt;/b&gt;&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="210" y="105" width="220" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c9" value='Ready?&lt;br&gt;&lt;font style="font-size:9px"&gt;payee ยืนยันแล้ว&lt;br&gt;details ครบ · เอกสารแนบ&lt;/font&gt;' style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="690" y="78" width="260" height="136" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c10" value='&lt;b&gt;Paid (confirmed)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Dashboard: Actual (posted) · Paid&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="105" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c11" value='&lt;b&gt;Pay to&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Confirm payee · Choose payee · + Add new payee&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="210" y="285" width="220" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c12" value='&lt;b&gt;Payee details + เอกสาร&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;🔒 vault · ประเภท · WHT · ธนาคาร · เลขบัญชี · ที่อยู่ตามบัตร&lt;br&gt;ไฟล์เข้ารหัส (IndexedDB) หรือลิงก์ https&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="460" y="280" width="230" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c13" value='&lt;b&gt;Create round&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;PR-yyyy-mm-dd · Expected pay date&lt;br&gt;เฉพาะแถว Ready · Undo 10 วินาที&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="950" y="285" width="230" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c14" value='&lt;b&gt;Print PDF · Export PR&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;จากหัวรอบ · ข้อมูลส่วนตัวต้องปลด vault&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="285" width="230" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c15" value='&lt;b&gt;Submitted by staff&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Verify ทีละแถว ✓ (กดซ้ำ = Unverify)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="950" y="475" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c16" value='&lt;b&gt;Return&lt;/b&gt; (เหตุผลบังคับ)&lt;br&gt;&lt;font style="font-size:9px"&gt;แถวออกจากรอบ → กลับ To submit ของผู้ส่ง&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="650" y="475" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c17" value='&lt;b&gt;Confirm paid&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;วันที่ · Ref · ทั้งรอบ · ติ๊กออก = กลับ To submit&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="475" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c18" value='&lt;font style="font-size:9px"&gt;Undo confirm (เหตุผล) — Admin · KOL Manager · Accounting&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="580" width="230" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c8" target="p3c11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c11" target="p3c12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c12" target="p3c9">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="820" y="330" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p3c22" value="ยังไม่ครบ" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c9" target="p3c12">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="575" y="146" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p3c23" value="Ready" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c9" target="p3c13">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1065" y="146" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p3c24" value="Submitted" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c13" target="p3c15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c13" target="p3c14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c15" target="p3c17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c27" value="ไม่ถูกต้อง" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c15" target="p3c16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c28" value="Return" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c16" target="p3c8">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="198" y="515" /><mxPoint x="198" y="145" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p3c29" value="Paid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c17" target="p3c10">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1495" y="515" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p3c30" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p3c17" target="p3c18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c31" value='&lt;b&gt;ใครทำอะไร&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Create round = Team (Staff ทำได้กับ deal ที่ตัวเองเป็น PIC)&lt;br&gt;Verify / Return = Accounting · Admin&lt;br&gt;Confirm paid = Admin · KOL Manager · Accounting · ผู้ส่งรอบนั้น&lt;br&gt;Undo confirm = Admin · KOL Manager · Accounting (เหตุผลบังคับ)&lt;br&gt;Accounting ไม่เห็น Create round / Add lines / Remove line · ไม่แก้เอกสาร&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="690" width="520" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c32" value='&lt;b&gt;ภาษีและเอกสาร&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;R.calcPaymentTax: VAT / WHT · ปัด half-up 2 ตำแหน่ง&lt;br&gt;ใบ 50 ทวิ (Accounting)&lt;br&gt;เอกสาร: สำเนาบัตร · Book bank · ใบทะเบียน · ภ.พ.20 (ระดับ payee) · Post proof (ต่อรอบ)&lt;br&gt;ชื่อไฟล์ที่อัปโหลดไม่เก็บ → &amp;lt;ชนิดเอกสาร&amp;gt;.&amp;lt;นามสกุล&amp;gt;&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="570" y="690" width="520" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p3c33" value='&lt;b&gt;Full mode&lt;/b&gt; (ทางเลือก · ข้อมูลชุดเดียวกัน)&lt;br&gt;&lt;font style="font-size:9px"&gt;To pay → Request payment → Create payment run (Draft) → Submit to Accounting → With Accounting → Mark paid → Paid → Close run&lt;br&gt;Return to team (เหตุผล) → Draft อีกครั้ง · Reopen / Undo paid = Admin&lt;br&gt;รายละเอียด: docs/PAYMENTS.md&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=left;verticalAlign=top;spacing=5;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="690" width="520" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p4" name="4 · Partner grade">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p4c1" value="&lt;b&gt;4 · Partner grade&lt;/b&gt; — เกรด = On time อย่างเดียว · ทุกหน้าเรียก R.gradeEngine ตัวเดียว" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1200" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c2" value='&lt;b&gt;syncGrades&lt;/b&gt; — ทุก commit และตอนเปิดแอป&lt;br&gt;&lt;font style="font-size:9px"&gt;ทุก partner ที่มี deal (ไม่ Cancel)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="70" width="320" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c3" value='&lt;b&gt;โพสต์ของ deal ที่ committed&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;เลย Shortlist / Contacted แล้ว&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="170" width="320" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c4" value="มี Post due?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="530" y="262" width="200" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c5" value='&lt;b&gt;No due&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;แสดงใน modal · ไม่นับ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="274" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c6" value='โพสต์แล้ว?&lt;br&gt;&lt;font style="font-size:9px"&gt;Posted on ≤ วันนี้&lt;/font&gt;' style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="510" y="382" width="240" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c7" value="เลย Post due?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="386" width="200" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c8" value='&lt;b&gt;Late (open)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;days late = วันนี้ − Post due&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="395" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c9" value='&lt;font style="font-size:9px"&gt;ยังไม่ถึงกำหนด — ยังไม่นับ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="510" width="200" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c10" value='&lt;b&gt;On time&lt;/b&gt; ถ้า Posted on ≤ Post due + Grace (0)&lt;br&gt;&lt;font style="font-size:9px"&gt;ไม่งั้น &lt;b&gt;Late&lt;/b&gt; · days late = Posted on − Post due&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="515" width="320" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c11" value='&lt;b&gt;6 โพสต์ล่าสุด ภายใน 6 เดือน&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;เรียงตาม Posted on (ยังไม่โพสต์ใช้ Post due)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="630" width="320" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c12" value="นับได้ ≥ 2?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="540" y="722" width="180" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c13" value="&lt;b&gt;Not enough data&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="110" y="735" width="220" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c14" value="&lt;b&gt;On-time rate&lt;/b&gt; = on time ÷ ที่นับ" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="842" width="320" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c15" value='&lt;b&gt;A&lt;/b&gt; 100% · &lt;b&gt;B&lt;/b&gt; ≥ 80% · &lt;b&gt;C&lt;/b&gt; ≥ 60% · &lt;b&gt;D&lt;/b&gt; &amp;lt; 60%&lt;br&gt;&lt;font style="font-size:9px"&gt;เทียบด้วยจำนวนเต็ม: on time × 100 ≥ เกณฑ์ × ที่นับ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="930" width="320" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c16" value="Incident No-show / Breach&lt;br&gt;ใน 6 เดือน?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1042" width="260" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c17" value="&lt;b&gt;Suggested = D&lt;/b&gt;" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="1060" width="180" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c18" value='&lt;b&gt;partner_grades&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;suggested · status · on_time_rate · late_posts · avg_days_late · er · basis_posts · reason&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="450" y="1174" width="360" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c19" value="Suggested ≠ Confirmed&lt;br&gt;และไม่ล็อก?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="500" y="1286" width="260" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c20" value='&lt;font style="font-size:9px"&gt;แสดง Confirmed เดิม&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="1305" width="220" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c21" value='&lt;b&gt;Operations › Review grade&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Manager / Admin · Staff เห็นปุ่ม View อย่างเดียว&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="1418" width="320" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c22" value='&lt;b&gt;Confirm&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Confirmed = Suggested&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="250" y="1510" width="300" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c23" value='&lt;b&gt;Override&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;เลือก A–D + เหตุผล · ล็อก 90 วัน หรือจนมีโพสต์ใหม่ 2 ชิ้น&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="710" y="1510" width="330" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c24" value='&lt;b&gt;grade_history&lt;/b&gt; → เกรดที่แสดง&lt;br&gt;&lt;font style="font-size:9px"&gt;KOL Master · New deal · KOL modal (Confirmed) · Dashboard › Partners (Suggested แบบเส้นประเมื่อยังไม่ยืนยัน)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="400" y="1610" width="460" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c2" target="p4c3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c3" target="p4c4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c27" value="ไม่มี" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c4" target="p4c5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c28" value="มี" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c4" target="p4c6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c29" value="ยัง" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c6" target="p4c7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c30" value="ใช่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c7" target="p4c8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c31" value="ยัง" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c7" target="p4c9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c32" value="โพสต์แล้ว" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c6" target="p4c10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c33" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c10" target="p4c11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c8" target="p4c11">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1195" y="658" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c35" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c11" target="p4c12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c36" value="ไม่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c12" target="p4c13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c37" value="ใช่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c12" target="p4c14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c38" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c14" target="p4c15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c39" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c15" target="p4c16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c40" value="ใช่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c16" target="p4c17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c41" value="ไม่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c16" target="p4c18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c42" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c17" target="p4c18">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="970" y="1212" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c43" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c13" target="p4c18">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="220" y="1212" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c44" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;" edge="1" parent="1" source="p4c18" target="p4c19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c45" value="ไม่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c19" target="p4c20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c46" value="ใช่" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c19" target="p4c21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c47" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c21" target="p4c22">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="630" y="1492" /><mxPoint x="400" y="1492" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c48" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c21" target="p4c23">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="630" y="1492" /><mxPoint x="875" y="1492" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c49" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c22" target="p4c24">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="400" y="1592" /><mxPoint x="630" y="1592" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c50" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p4c23" target="p4c24">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="875" y="1592" /><mxPoint x="630" y="1592" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p4c51" value='&lt;b&gt;Settings › Grades&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;A / B / C (On time ≥ %) = 100 / 80 / 60&lt;br&gt;Grace days = 0 (ช้า 1 วันคือ Late)&lt;br&gt;Latest posts 6 · Within 6 months · At least 2&lt;br&gt;Override lock 90 วัน · Incident ร้ายแรง = D&lt;br&gt;Benchmarks (consideration actions · default) ใช้กับ Campaign เท่านั้น&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="70" width="360" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="p4c52" value='&lt;b&gt;แสดงอย่างเดียว — ไม่คิดเกรด&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ER = (likes + comments + shares + saves) ÷ views&lt;br&gt;Revisions (รอบแก้ Draft เฉลี่ย) — KOL modal&lt;br&gt;เหตุผล: "On time 3/3" · "Late 2 of 5 posts · avg 3 days late" · "No-show on &amp;lt;Campaign&amp;gt;"&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=12;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="270" width="360" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p5" name="5 · Data model">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1660" pageHeight="1120" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p5c1" value="&lt;b&gt;5 · Data model&lt;/b&gt; — schema 26 · state เดียวใน localStorage · 27 collections + lookups · 🔒 = อยู่ใน vault (เข้ารหัส)" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c2" value='&lt;b&gt;users&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;user_id · display_name · role&lt;br&gt;PIC ของ deal = ผู้ใช้&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="220" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c3" value='&lt;b&gt;lookups (ค่าตั้งค่า)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;journey_steps · tier_rules · grade_rules&lt;br&gt;payment_settings · ops_mode · pillar_list&lt;br&gt;cancel_reasons · partner_types …&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="220" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c4" value="Campaign" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fffdf2;strokeColor=#e3d39b;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="60" width="990" height="196" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c5" value='&lt;b&gt;campaigns&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;campaign_id · name · status&lt;br&gt;budget_kol · start / end&lt;br&gt;benchmarks (CR-34)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="320" y="92" width="200" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c6" value='&lt;b&gt;phases&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;phase_id · campaign_id · budget · pillar&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="545" y="92" width="230" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c7" value='&lt;b&gt;campaign_budget_changes&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;ขอปรับงบ · อนุมัติ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="795" y="92" width="230" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c8" value='&lt;b&gt;campaign_events&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;approval · benchmarks · log&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="545" y="170" width="230" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c9" value='&lt;b&gt;campaign_products&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;campaign_id · product_id&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="795" y="170" width="230" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c10" value='&lt;b&gt;products&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;product catalog (TR code)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="92" width="200" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c11" value="product_id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#999999;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c10" target="p5c5">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1420" y="248" /><mxPoint x="420" y="248" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c12" value="KOL" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f4f9ff;strokeColor=#b7c9e6;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="290" width="440" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c13" value='&lt;b&gt;kol_master&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;kol_id · display_name · tier&lt;br&gt;partner type (KOL / Affiliate)&lt;br&gt;default payment term&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="322" width="190" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c14" value='&lt;b&gt;kol_accounts&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;account_id · kol_id · platform · handle · followers&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="322" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c15" value='&lt;b&gt;kol_rate_quotes&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;quote_id · kol_id · ราคาที่เสนอ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="414" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c16" value='&lt;b&gt;shipping_addresses 🔒&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;address_id · kol_id · ที่อยู่ส่งของ&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="506" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c17" value='&lt;b&gt;kol_packages&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;package_id · kol_id · โพสต์จ่ายล่วงหน้า&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="598" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c18" value="Grades" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fff6ee;strokeColor=#e8c49a;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="440" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c19" value='&lt;b&gt;partner_grades (1 ต่อ partner)&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;kol_id · suggested · confirmed · status · on_time_rate · late_posts · avg_days_late · er · reason · locked_until&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="762" width="400" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c20" value='&lt;b&gt;grade_history&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;id · kol_id · from → to · kind (confirm / override) · reason · by · at&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="852" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c21" value='&lt;b&gt;deals&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;deal_id · campaign_id · kol_id&lt;br&gt;status · sub_status (Journey)&lt;br&gt;pic · rate / costs · payment_term&lt;br&gt;package_id · payee_id&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="560" y="322" width="230" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c22" value="Deal details (deal_id)" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f3faf3;strokeColor=#a8cfa8;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="290" width="450" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c23" value='&lt;b&gt;deal_status_log&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;การย้ายขั้น Journey&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="860" y="322" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c24" value='&lt;b&gt;deal_events&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;deal · post · payment · payee · incident&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="322" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c25" value='&lt;b&gt;deal_incidents&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;IN- · type · date (No-show / Breach = D)&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="860" y="394" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c26" value='&lt;b&gt;deal_gencodes&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;GC- · code · ช่วงใช้ได้&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="394" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c27" value='&lt;b&gt;step_notes&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;Draft notes · ลิงก์ · รูป&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="860" y="466" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c28" value='&lt;b&gt;deal_products&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;product_id · จำนวน&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="466" width="200" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c29" value='&lt;b&gt;deal_posts&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;post_id · deal_id · account_id&lt;br&gt;Post due · Posted on · link&lt;br&gt;views · likes · … · metrics_source&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="560" y="600" width="230" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c30" value="Shipments" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#fff6ee;strokeColor=#e8c49a;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="840" y="580" width="450" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c31" value='&lt;b&gt;sample_shipments&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;shipment_id · deal_id · status&lt;br&gt;address_id → shipping_addresses 🔒&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="860" y="612" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c32" value='&lt;b&gt;pick_lists&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;pick_list_id · รวมของที่ต้องแพ็ก&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1075" y="612" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c33" value="Payments" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;fillColor=#f8f4fb;strokeColor=#c6b3d6;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="780" width="730" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c34" value='&lt;b&gt;payment_lines&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;line_id · deal_id · payee_id&lt;br&gt;run_id · งวด · gross / WHT / net&lt;br&gt;status · verified / returned&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="580" y="812" width="220" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c35" value='&lt;b&gt;payment_runs&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;run_id · PR-yyyy-mm-dd&lt;br&gt;round (Simple) · sent · paid&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="830" y="812" width="210" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c36" value='&lt;b&gt;payee_profiles 🔒&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;payee_id · kol_id · type · WHT&lt;br&gt;bank_name · account_last4&lt;br&gt;รายละเอียดเข้ารหัส · docs[]&lt;/font&gt;' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1065" y="812" width="205" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c37" value='&lt;b&gt;นอก state&lt;/b&gt;&lt;br&gt;&lt;font style="font-size:9px"&gt;IndexedDB: doc_files 🔒 (ไฟล์เอกสาร) · kol_photos · step_images&lt;br&gt;Backup ไม่มีค่าถอดรหัส&lt;/font&gt;' style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=9;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="812" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c38" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c5" target="p5c21">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="420" y="280" /><mxPoint x="675" y="280" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c39" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.573;exitDx=0;exitDy=0;entryX=0;entryY=0.506;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c13" target="p5c21">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="520" y="408" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c40" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c21" target="p5c29">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c41" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c21" target="p5c31">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="815" y="470" /><mxPoint x="815" y="662" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c42" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c21" target="p5c34">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="530" y="460" /><mxPoint x="530" y="877" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c43" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c35" target="p5c34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c44" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c36" target="p5c34">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1167" y="960" /><mxPoint x="690" y="960" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c45" value="1 — 1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c13" target="p5c19">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="155" y="742" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="p5c46" value="1 — n" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#555555;fontSize=10;labelBackgroundColor=#ffffff;fontColor=#333333;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="p5c19" target="p5c20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5c47" value='&lt;font style="font-size:9px"&gt;&lt;b&gt;อ่านเพิ่ม:&lt;/b&gt; docs/DATA_MODEL.md (ทุก field · ทุก migration) · ID: K0001 · A00001 · D000001 · P000001 · PY-0001 · AD-0001 · PL-000001 · PR-yyyy-mm-dd · SH000001 · GC-00001 · IN-0001 · GH-00001 · DF-…&lt;br&gt;&lt;b&gt;นิยามเงิน:&lt;/b&gt; Committed = deal ตั้งแต่ Confirm QT ที่ไม่ Cancel · Pending = Shortlist / Contacted · Actual (posted) = ยอดของ committed deal ที่โพสต์แรกอยู่ในช่วง · ยอด deal = R.totalCost&lt;br&gt;&lt;b&gt;Event log:&lt;/b&gt; deal_events · deal_status_log · campaign_events — ทุกการเปลี่ยนสำคัญ · ห้ามมีข้อมูลส่วนตัวใน log&lt;/font&gt;' style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;fontSize=12;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="970" width="1580" height="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p6" name="6 · Screens &amp; code">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1660" pageHeight="660" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p6c1" value="&lt;b&gt;6 · Screens &amp;amp; code map&lt;/b&gt; — เมนู → หน้า → ไฟล์ (หน้าจอ · กฎ)" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="14" width="1500" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c2" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Dashboard&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#dashboard&lt;/font&gt;&lt;br&gt;All campaigns · By campaign · Operations (คิวงาน · Review grade) · Partners&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-overview.js · screen-partners.js · export.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-dash.js · rules-overview.js · rules-grade.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="64" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c3" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Campaign &amp;amp; Phase&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#campaigns&lt;/font&gt;&lt;br&gt;Campaign / Phase · Timeline · Phase Planner · Approvals · Budget&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-campaign.js · screen-planner.js · screen-approvals.js · screen-budget.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-phase · approval · request · budget · close · products' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="433" y="64" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c4" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Deals&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#deals&lt;/font&gt;&lt;br&gt;Table · Pipeline · Performance · Filters · Export · Import metrics&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-deals.js · screen-perf.js · screen-move.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-deal · metrics · move · journey · gencode' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="836" y="64" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c5" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Payments&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#payments&lt;/font&gt;&lt;br&gt;Simple: To submit · Submitted · Paid (confirmed)&lt;br&gt;Full: To pay · Payment runs · Accounting&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-payments.js · screen-docs.js · screen-print.js · pdf.js · xlsx.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-pay · ops · package' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1239" y="64" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c6" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Shipments&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#shipments&lt;/font&gt;&lt;br&gt;To ship · In transit · Delivered · Pick lists&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-shipments.js · screen-samples.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-samples · ship' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="202" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c7" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;KOL Master&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#kols&lt;/font&gt;&lt;br&gt;รายชื่อ · ตัวกรอง (Tier · Grade …) · Import · Merge&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-kol.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-kol · io · perf' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="433" y="202" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c8" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Settings&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#settings&lt;/font&gt;&lt;br&gt;Lists · Tier rules · Products · KOL performance · Grades · Shipments · Payments · Operations mode · Data · Go-live&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-settings.js · screen-golive.js · store.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-golive · ops · (ทุก rules ที่มี validate)' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="836" y="202" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c9" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Role Management&lt;/b&gt;&lt;/font&gt; &lt;font style="font-size:10px;color:#666"&gt;#roles&lt;/font&gt;&lt;br&gt;ผู้ใช้และบทบาท (Admin)&lt;br&gt;&lt;br&gt;&lt;b&gt;หน้าจอ:&lt;/b&gt; screen-roles.js&lt;br&gt;&lt;b&gt;กฎ:&lt;/b&gt; rules-roles (PERMISSIONS)' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1239" y="202" width="388" height="124" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c10" value="&lt;b&gt;Modal / ส่วนที่ใช้ร่วมกันหลายหน้า&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=14;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="346" width="1000" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c11" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Deal modal&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.screens.deals.openDealModal(id, {tab})&lt;/i&gt;&lt;br&gt;Overview · Costs &amp;amp; payment · Timeline &amp;amp; content · Shipments &amp;amp; posts · History (+ Incidents)&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-deals.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="380" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c12" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;KOL modal&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.profile.open(id, {tab}) · ไม่ใช่ &amp;lt;dialog&amp;gt;&lt;/i&gt;&lt;br&gt;Overview · Deals &amp;amp; history · Performance (เกรด) · Rates · Payee &amp;amp; shipping&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-profile.js · screen-payee.js · screen-packages.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="433" y="380" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c13" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;New deal&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.newDeal · KT.bulk&lt;/i&gt;&lt;br&gt;From KOL Master (หลายคน) · New KOL · ตัวกรอง Grade (D = Add anyway)&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-newdeal.js · screen-bulk.js · rules-bulk.js · rules-fill.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="836" y="380" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c14" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Move stage&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.move&lt;/i&gt;&lt;br&gt;ช่องบังคับต่อขั้นจาก R.stageRequirements · วันที่ · Note&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-move.js · rules-move.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1239" y="380" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c15" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Grade review&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.grades.openQueue() · review(id)&lt;/i&gt;&lt;br&gt;Confirm · Override (เหตุผล · ล็อก) · Staff = View · Posts used&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-grades.js · rules-grade.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="512" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c16" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Payee details · เอกสาร&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.payee · KT.docs&lt;/i&gt;&lt;br&gt;ฟอร์มเดียวทุกที่ · 🔒 vault · ไฟล์เข้ารหัส / ลิงก์&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-payee.js · screen-docs.js · vault.js · docfiles.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="433" y="512" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c17" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;Print&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.print&lt;/i&gt;&lt;br&gt;PDF ของรอบจ่าย (สรุป + เอกสาร)&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; screen-print.js · pdf.js' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="836" y="512" width="388" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="p6c18" value='&lt;font style="font-size:13px"&gt;&lt;b&gt;ตัวช่วย UI&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;i&gt;KT.ui&lt;/i&gt;&lt;br&gt;createModal · openDrawer · popForm · confirmDialog · multiSelect · dateHTML · toastAction&lt;br&gt;&lt;br&gt;&lt;b&gt;ไฟล์:&lt;/b&gt; ui.js · ui-range.js · docs/UI_PATTERNS.md' style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=left;verticalAlign=top;spacing=5;" vertex="1" parent="1">
+          <mxGeometry x="1239" y="512" width="388" height="118" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
