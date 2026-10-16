@@ -328,7 +328,7 @@ Staff แก้ได้เฉพาะ deal ที่ตัวเองเป�
 | ข้อมูลอยู่เครื่องเดียว | ไม่มี sync ระหว่างคน / เครื่อง · โควต้า localStorage ~5 MB · รูปและไฟล์เอกสารอยู่ใน IndexedDB ของเครื่องนั้น |
 | ไม่มี authentication | ผู้ใช้เลือกจากรายชื่อ · สิทธิ์ป้องกันแค่บนหน้าจอ |
 | PDF สร้างเอง (`pdf.js`) | หน้าสรุปเป็นภาพ (ภาษาไทยถูกต้อง แต่เลือก / ค้นข้อความไม่ได้) — ไม่ใช้ pdf-lib เพราะกติกาไม่มี library ภายนอก |
-| Git repo บน Google Drive | Drive sync `.git` อาจทิ้ง `index.lock` ค้างจน commit ไม่ผ่าน (ลบไฟล์ lock แล้วลองใหม่) · แนะนำย้าย repo ออกนอก Drive |
+| Git repo บน Google Drive | Drive ทำให้ `.git` เสียได้ 2 แบบ: ทิ้ง `index.lock` ค้าง (commit ไม่ผ่าน → ลบไฟล์ lock) และสร้าง `desktop.ini` ในทุกโฟลเดอร์ของ `.git` (GitHub Desktop ขึ้น `fatal: bad ref refs/tags/desktop.ini` → ลบ `desktop.ini` ทุกไฟล์ใน `.git` ไม่กระทบข้อมูล) · repo มี `.gitignore` กัน `desktop.ini` แล้ว · **แนะนำย้าย repo ออกนอก Drive** |
 | Payments 2 โหมด | Simple (ใช้จริง) กับ Full อยู่คู่กันบนข้อมูลชุดเดียว |
 | Grace days 2 ที่ | Settings › **Grades** = On time ทุกที่ (เกรด · Partners · Deals › Performance) · Settings › **KOL performance** = ป้าย Reliable / Watch / Late ใน New deal เท่านั้น |
 | เกรดที่แสดง | Dashboard › Partners แสดง Suggested (เส้นประ) เมื่อยังไม่มี Confirmed · หน้าอื่น (KOL Master · New deal · KOL modal) แสดง Confirmed เท่านั้น |
